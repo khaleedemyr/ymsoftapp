@@ -1,6 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter/material.dart';
+import 'dart:io';
 
 class PushNotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -61,6 +61,13 @@ class PushNotificationService {
       );
 
       print('Push notification permission: ${settings.authorizationStatus}');
+      print('Push notification settings: alert=${settings.alert}, badge=${settings.badge}, sound=${settings.sound}, provisional=${settings.authorizationStatus == AuthorizationStatus.provisional}');
+
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
 
       // Handle foreground messages
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -89,6 +96,11 @@ class PushNotificationService {
 
       _initialized = true;
       print('Push notification service initialized');
+
+      if (Platform.isIOS) {
+        final apnsToken = await _messaging.getAPNSToken();
+        print('Initial APNs token from FirebaseMessaging: ${apnsToken ?? 'null'}');
+      }
     } catch (e) {
       print('Error initializing push notification service: $e');
     }
@@ -132,7 +144,23 @@ class PushNotificationService {
   /// Get FCM token
   static Future<String?> getToken() async {
     try {
-      return await _messaging.getToken();
+      if (Platform.isIOS) {
+        for (var attempt = 0; attempt < 10; attempt++) {
+          final apnsToken = await _messaging.getAPNSToken();
+          if (apnsToken != null && apnsToken.isNotEmpty) {
+            print('APNs token available on attempt ${attempt + 1}: $apnsToken');
+            break;
+          }
+
+          print('APNs token still null on attempt ${attempt + 1}');
+
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+      }
+
+      final token = await _messaging.getToken();
+      print('FCM token fetch result: ${token == null ? 'null' : '${token.substring(0, 20)}...'}');
+      return token;
     } catch (e) {
       print('Error getting FCM token: $e');
       return null;
