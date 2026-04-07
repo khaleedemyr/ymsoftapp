@@ -1,0 +1,98 @@
+{
+  "project_info": {
+    "project_number": "218092221068",
+    "project_id": "justusgroup-46e18",
+    "storage_bucket": "justusgroup-46e18.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:218092221068:android:4acc657ae708931a4701a9",
+        "android_client_info": {
+          "package_name": "com.example.ymsoftapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAs3GHTBWgWfJyLDtEPKbxtAjDmEVgf4M8"
+        },
+        {
+          "current_key": "AIzaSyADC-iXPJPy7u4aWPravlDK7jIPq8mdH0A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:218092221068:android:8cb2a6dbe8d11ea44701a9",
+        "android_client_info": {
+          "package_name": "com.justus.steakhouse"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAs3GHTBWgWfJyLDtEPKbxtAjDmEVgf4M8"
+        },
+        {
+          "current_key": "AIzaSyADC-iXPJPy7u4aWPravlDK7jIPq8mdH0A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:218092221068:android:9dbc1dab7936ed0a4701a9",
+        "android_client_info": {
+          "package_name": "com.ymsoft.erp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAs3GHTBWgWfJyLDtEPKbxtAjDmEVgf4M8"
+        },
+        {
+          "current_key": "AIzaSyADC-iXPJPy7u4aWPravlDK7jIPq8mdH0A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:218092221068:android:973235b3b85976284701a9",
+        "android_client_info": {
+          "package_name": "com.ymsoft.member.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAs3GHTBWgWfJyLDtEPKbxtAjDmEVgf4M8"
+        },
+        {
+          "current_key": "AIzaSyADC-iXPJPy7u4aWPravlDK7jIPq8mdH0A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
