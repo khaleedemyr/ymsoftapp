@@ -361,17 +361,20 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                             return;
                           }
 
-                          Navigator.pop(context);
+                          // Close bottom sheet first.
+                          Navigator.of(context).pop();
                           
-                          // Show loading
                           if (!mounted) return;
+                          bool loadingShown = false;
                           showDialog(
-                            context: context,
+                            context: this.context,
+                            useRootNavigator: true,
                             barrierDismissible: false,
                             builder: (context) => const Center(
                               child: AppLoadingIndicator(),
                             ),
                           );
+                          loadingShown = true;
 
                           try {
                             final result = await _supportService.createConversation(
@@ -382,7 +385,10 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                             );
 
                             if (mounted) {
-                              Navigator.pop(context); // Close loading
+                              if (loadingShown) {
+                                Navigator.of(this.context, rootNavigator: true).pop();
+                                loadingShown = false;
+                              }
                               
                               if (result['success'] == true) {
                                 final conversation = result['conversation'] as SupportConversation;
@@ -390,7 +396,7 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                                 
                                 // Navigate to conversation detail
                                 Navigator.push(
-                                  context,
+                                  this.context,
                                   MaterialPageRoute(
                                     builder: (context) => SupportConversationDetailScreen(
                                       conversationId: conversation.id,
@@ -399,7 +405,7 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                                   ),
                                 );
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                ScaffoldMessenger.of(this.context).showSnackBar(
                                   SnackBar(
                                     content: Text(result['message'] ?? 'Gagal membuat percakapan'),
                                     backgroundColor: Colors.red,
@@ -409,8 +415,11 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                             }
                           } catch (e) {
                             if (mounted) {
-                              Navigator.pop(context); // Close loading
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              if (loadingShown) {
+                                Navigator.of(this.context, rootNavigator: true).pop();
+                                loadingShown = false;
+                              }
+                              ScaffoldMessenger.of(this.context).showSnackBar(
                                 SnackBar(
                                   content: Text('Terjadi kesalahan: ${e.toString()}'),
                                   backgroundColor: Colors.red,

@@ -16,6 +16,8 @@ import '../screens/settings/role_management_screen.dart';
 import '../screens/reports/activity_log_report_screen.dart';
 import '../screens/reports/report_invoice_outlet_screen.dart';
 import '../screens/reports/attendance_report_screen.dart';
+import '../screens/reports/sales_report_simple_screen.dart';
+import '../screens/reports/item_engineering_screen.dart';
 import '../screens/schedule_attendance_correction/schedule_attendance_correction_screen.dart';
 import '../screens/user_shift_input_screen.dart';
 import '../screens/packing_list/packing_list_index_screen.dart';
@@ -55,6 +57,7 @@ import '../screens/units/unit_index_screen.dart';
 import '../screens/data_level/data_level_index_screen.dart';
 import '../screens/jabatan/jabatan_index_screen.dart';
 import '../screens/stock_cut/stock_cut_index_screen.dart';
+import '../screens/mk_production/mk_production_index_screen.dart';
 import 'app_loading_indicator.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -874,6 +877,20 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const AttendanceReportScreen(),
         ),
       );
+    } else if (route == '/report-sales-simple') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const SalesReportSimpleScreen(),
+        ),
+      );
+    } else if (route == '/item-engineering') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ItemEngineeringScreen(),
+        ),
+      );
     } else if (route == '/schedule-attendance-correction') {
       Navigator.push(
         context,
@@ -1158,6 +1175,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const MemberHistorySearchScreen(),
+        ),
+      );
+    } else if (route == '/mk-production') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MKProductionIndexScreen(),
         ),
       );
     } else if (route == '/categories') {

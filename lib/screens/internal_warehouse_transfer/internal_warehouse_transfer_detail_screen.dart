@@ -94,7 +94,7 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 6))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 6))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,7 +119,7 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 6))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 6))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,8 +144,8 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
   Widget _buildItemCard(Map<String, dynamic> item) {
     final name = item['item']?['name']?.toString() ?? '-';
     final sku = item['item']?['sku']?.toString() ?? '-';
-    final qty = item['quantity']?.toString() ?? '0';
-    final unit = item['unit']?['name']?.toString() ?? '-';
+    final qty = _resolveQty(item);
+    final unit = _resolveUnit(item);
     final note = item['note']?.toString();
 
     return Container(
@@ -154,7 +154,7 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,6 +187,64 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
         ],
       ),
     );
+  }
+
+  String _resolveUnit(Map<String, dynamic> item) {
+    final relUnit = item['unit']?['name']?.toString().trim() ?? '';
+    if (relUnit.isNotEmpty && relUnit.toLowerCase() != 'null') return relUnit;
+
+    final unit = item['unit_name']?.toString().trim() ?? '';
+    if (unit.isNotEmpty && unit.toLowerCase() != 'null') return unit;
+
+    final unitRaw = item['unit']?.toString().trim() ?? '';
+    if (unitRaw.isNotEmpty && unitRaw.toLowerCase() != 'null') return unitRaw;
+
+    return '-';
+  }
+
+  String _resolveQty(Map<String, dynamic> item) {
+    final candidates = <dynamic>[
+      item['quantity'],
+      item['qty'],
+      item['qty_input'],
+      item['requested_qty'],
+      item['request_qty'],
+    ];
+
+    for (final candidate in candidates) {
+      final formatted = _formatQty(candidate);
+      if (formatted != null) return formatted;
+    }
+
+    // Fallback: beberapa data lama hanya simpan qty_*.
+    final qtySmall = _toDouble(item['qty_small']);
+    final qtyMedium = _toDouble(item['qty_medium']);
+    final qtyLarge = _toDouble(item['qty_large']);
+    if (qtySmall != 0) return _trimZero(qtySmall);
+    if (qtyMedium != 0) return _trimZero(qtyMedium);
+    if (qtyLarge != 0) return _trimZero(qtyLarge);
+
+    return '0';
+  }
+
+  String? _formatQty(dynamic value) {
+    if (value == null) return null;
+    final numValue = _toDouble(value);
+    // Tetap terima 0 kalau memang explicit dari field utama.
+    return _trimZero(numValue);
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  String _trimZero(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
   }
 
   Widget _buildCreator(String name, String? avatarPath) {
@@ -239,7 +297,7 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
     try {
       return DateFormat('dd MMM yyyy', 'id_ID').format(DateTime.parse(raw));
     } catch (_) {
-      return raw ?? '-';
+      return raw;
     }
   }
 }

@@ -10,12 +10,16 @@ class LeaveRequestModal extends StatefulWidget {
   final List<Map<String, dynamic>> leaveTypes;
   final VoidCallback onSubmitted;
   final int? leaveBalance; // Saldo cuti dari user
+  final int? extraOffBalance; // Saldo extra off
+  final int? phBalance; // Saldo PH
 
   const LeaveRequestModal({
     super.key,
     required this.leaveTypes,
     required this.onSubmitted,
     this.leaveBalance,
+    this.extraOffBalance,
+    this.phBalance,
   });
 
   @override
@@ -37,6 +41,8 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
   bool _isSubmitting = false;
   String? _searchQuery = '';
   int? _userLeaveBalance; // Saldo cuti user
+  int? _extraOffBalance; // Saldo extra off user
+  int? _phBalance; // Saldo PH user
   List<File> _selectedDocuments = []; // Files untuk upload
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -44,6 +50,8 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
   void initState() {
     super.initState();
     _userLeaveBalance = widget.leaveBalance;
+    _extraOffBalance = widget.extraOffBalance;
+    _phBalance = widget.phBalance;
     _loadApprovers();
     _loadUserLeaveBalance();
   }
@@ -70,6 +78,85 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
     );
     final typeName = selectedType['name']?.toString().toLowerCase() ?? '';
     return typeName.contains('annual leave') || typeName.contains('cuti tahunan');
+  }
+
+  bool get _isExtraOff {
+    if (_selectedLeaveTypeId == null) return false;
+    final selectedType = widget.leaveTypes.firstWhere(
+      (type) => type['id'] == _selectedLeaveTypeId,
+      orElse: () => {},
+    );
+    final typeName = selectedType['name']?.toString().toLowerCase() ?? '';
+    final typeDescription = selectedType['description']?.toString().toLowerCase() ?? '';
+    final combined = '$typeName $typeDescription';
+    return combined.contains('extra off');
+  }
+
+  bool get _isPHLeave {
+    if (_selectedLeaveTypeId == null) return false;
+    final selectedType = widget.leaveTypes.firstWhere(
+      (type) => type['id'] == _selectedLeaveTypeId,
+      orElse: () => {},
+    );
+    final typeName = selectedType['name']?.toString().toLowerCase() ?? '';
+    final typeDescription = selectedType['description']?.toString().toLowerCase() ?? '';
+    final combined = '$typeName $typeDescription';
+
+    // Match explicit PH type names and common variants.
+    if (RegExp(r'(^|\W)ph($|\W)', caseSensitive: false).hasMatch(combined)) {
+      return true;
+    }
+    return combined.contains('public holiday') || combined.contains('hari libur');
+  }
+
+  bool get _isRestrictedByBalanceType => _isAnnualLeave || _isExtraOff || _isPHLeave;
+
+  int _currentSelectedBalance() {
+    if (_isAnnualLeave) return _userLeaveBalance ?? 0;
+    if (_isExtraOff) return _extraOffBalance ?? 0;
+    if (_isPHLeave) return _phBalance ?? 0;
+    return 0;
+  }
+
+  DateTime _effectiveMaxDateFromBalance(DateTime fromDate) {
+    // Default upper bound: 1 year ahead.
+    DateTime maxDate = DateTime.now().add(const Duration(days: 365));
+
+    // For leave types that consume balance, cap selectable range by balance.
+    if (_isRestrictedByBalanceType) {
+      final balance = _currentSelectedBalance();
+      if (balance > 0) {
+        final maxByBalance = fromDate.add(Duration(days: balance - 1));
+        if (maxByBalance.isBefore(maxDate)) {
+          maxDate = maxByBalance;
+        }
+      }
+    }
+
+    return maxDate;
+  }
+
+  String _currentSelectedTypeLabel() {
+    if (_isAnnualLeave) return 'Cuti Tahunan';
+    if (_isExtraOff) return 'Extra Off';
+    if (_isPHLeave) return 'PH';
+    return 'izin/cuti ini';
+  }
+
+  bool _canPickDateForSelectedType() {
+    if (!_isRestrictedByBalanceType) return true;
+    final balance = _currentSelectedBalance();
+    if (balance > 0) return true;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saldo ${_currentSelectedTypeLabel()} Anda 0, tidak bisa mengajukan'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    return false;
   }
 
   // Check if selected leave type requires document
@@ -221,6 +308,32 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
       }
     }
 
+    // Validate extra off balance
+    if (_isExtraOff) {
+      if (_extraOffBalance == null || _extraOffBalance == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saldo Extra Off Anda 0, tidak bisa mengajukan'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Validate PH balance
+    if (_isPHLeave) {
+      if (_phBalance == null || _phBalance == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saldo PH Anda 0, tidak bisa mengajukan'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() {
       _isSubmitting = true;
     });
@@ -293,15 +406,8 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
   }
 
   Future<void> _selectDateFrom() async {
-    DateTime? maxDate = DateTime.now().add(const Duration(days: 365));
-    
-    // If Annual Leave, limit max date based on leave balance
-    if (_isAnnualLeave && _userLeaveBalance != null && _userLeaveBalance! > 0) {
-      final maxAllowedDate = DateTime.now().add(Duration(days: _userLeaveBalance! - 1));
-      if (maxAllowedDate.isBefore(maxDate)) {
-        maxDate = maxAllowedDate;
-      }
-    }
+    if (!_canPickDateForSelectedType()) return;
+    final maxDate = _effectiveMaxDateFromBalance(DateTime.now());
     
     final picked = await showDatePicker(
       context: context,
@@ -320,15 +426,16 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
           if (_dateTo != null && _dateTo!.isBefore(_dateFrom!)) {
             _dateTo = null;
           }
-          // If Annual Leave and dateTo is set, ensure it doesn't exceed balance
-          if (_isAnnualLeave && _dateTo != null && _userLeaveBalance != null) {
+          // If type is balance-based and dateTo is set, ensure it doesn't exceed balance.
+          if (_isRestrictedByBalanceType && _dateTo != null) {
+            final balance = _currentSelectedBalance();
             final days = _dateTo!.difference(_dateFrom!).inDays + 1;
-            if (days > _userLeaveBalance!) {
-              _dateTo = _dateFrom!.add(Duration(days: _userLeaveBalance! - 1));
+            if (balance > 0 && days > balance) {
+              _dateTo = _dateFrom!.add(Duration(days: balance - 1));
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Tanggal selesai disesuaikan sesuai saldo cuti ($_userLeaveBalance hari)'),
+                    content: Text('Tanggal selesai disesuaikan sesuai saldo ${_currentSelectedTypeLabel()} ($balance hari)'),
                     backgroundColor: Colors.orange,
                     duration: const Duration(seconds: 2),
                   ),
@@ -367,15 +474,9 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
   }
 
   Future<void> _selectDateTo() async {
-    DateTime? maxDate = DateTime.now().add(const Duration(days: 365));
-    
-    // If Annual Leave, limit max date based on leave balance
-    if (_isAnnualLeave && _userLeaveBalance != null && _userLeaveBalance! > 0 && _dateFrom != null) {
-      final maxAllowedDate = _dateFrom!.add(Duration(days: _userLeaveBalance! - 1));
-      if (maxAllowedDate.isBefore(maxDate)) {
-        maxDate = maxAllowedDate;
-      }
-    }
+    if (!_canPickDateForSelectedType()) return;
+    final baseDate = _dateFrom ?? DateTime.now();
+    final maxDate = _effectiveMaxDateFromBalance(baseDate);
     
     final picked = await showDatePicker(
       context: context,
@@ -388,7 +489,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
         _dateTo = picked;
       });
       
-      // Show warning if exceeding balance
+      // Show warning if exceeding annual leave balance
       if (_isAnnualLeave && _isExceedingBalance) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -560,11 +661,12 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                               // Auto-set date_to if max_days is set
                               if (_hasMaxDays && _dateFrom != null && _maxDays != null) {
                                 _dateTo = _calculateEndDate(_dateFrom!, _maxDays!);
-                              } else if (_isAnnualLeave && _dateFrom != null && _dateTo != null) {
-                                // Re-validate dates if switching to annual leave
+                              } else if (_isRestrictedByBalanceType && _dateFrom != null && _dateTo != null) {
+                                // Re-validate dates if switching to balance-based leave type.
+                                final balance = _currentSelectedBalance();
                                 final days = _calculateDays();
-                                if (_userLeaveBalance != null && days > _userLeaveBalance!) {
-                                  _dateTo = _dateFrom!.add(Duration(days: _userLeaveBalance! - 1));
+                                if (balance > 0 && days > balance) {
+                                  _dateTo = _dateFrom!.add(Duration(days: balance - 1));
                                 }
                               } else {
                                 // Reset date_to if switching to type without max_days

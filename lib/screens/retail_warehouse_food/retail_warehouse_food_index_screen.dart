@@ -179,10 +179,40 @@ class _RetailWarehouseFoodIndexScreenState extends State<RetailWarehouseFoodInde
     return '$first$last';
   }
 
+  String _creatorName(Map<String, dynamic> row) {
+    final creator = row['creator'] is Map<String, dynamic>
+        ? row['creator'] as Map<String, dynamic>
+        : row['creator'] is Map
+            ? Map<String, dynamic>.from(row['creator'] as Map)
+            : <String, dynamic>{};
+    return creator['nama_lengkap']?.toString() ??
+        creator['name']?.toString() ??
+        row['created_by_name']?.toString() ??
+        row['creator_name']?.toString() ??
+        '-';
+  }
+
+  String? _creatorAvatarRaw(Map<String, dynamic> row) {
+    final creator = row['creator'] is Map<String, dynamic>
+        ? row['creator'] as Map<String, dynamic>
+        : row['creator'] is Map
+            ? Map<String, dynamic>.from(row['creator'] as Map)
+            : <String, dynamic>{};
+    final raw = creator['avatar']?.toString() ??
+        creator['avatar_url']?.toString() ??
+        row['created_by_avatar']?.toString() ??
+        row['creator_avatar']?.toString();
+    if (raw == null || raw.isEmpty || raw.toLowerCase() == 'null') return null;
+    return raw;
+  }
+
   String? _getAvatarUrl(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     if (raw.startsWith('http')) return raw;
     final normalized = raw.startsWith('/') ? raw.substring(1) : raw;
+    if (normalized.startsWith('public/')) {
+      return '${AuthService.storageUrl}/${normalized.replaceFirst('public/', 'storage/')}';
+    }
     if (normalized.startsWith('storage/')) {
       return '${AuthService.storageUrl}/$normalized';
     }
@@ -190,20 +220,42 @@ class _RetailWarehouseFoodIndexScreenState extends State<RetailWarehouseFoodInde
   }
 
   Widget _buildCreatorAvatar(Map<String, dynamic> row) {
-    final name = row['created_by_name']?.toString() ?? '-';
-    final avatarRaw = row['created_by_avatar']?.toString();
+    final name = _creatorName(row);
+    final avatarRaw = _creatorAvatarRaw(row);
     final avatarUrl = _getAvatarUrl(avatarRaw);
     final initials = _getInitials(name);
-    return CircleAvatar(
-      radius: 26,
-      backgroundColor: const Color(0xFFE5E7EB),
-      backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
-      child: avatarUrl == null
-          ? Text(
-              initials,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
-            )
-          : null,
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFFE5E7EB),
+      ),
+      child: ClipOval(
+        child: avatarUrl == null
+            ? _buildAvatarInitials(initials)
+            : CachedNetworkImage(
+                imageUrl: avatarUrl,
+                fit: BoxFit.cover,
+                width: 52,
+                height: 52,
+                placeholder: (_, __) => _buildAvatarInitials(initials),
+                errorWidget: (_, __, ___) => _buildAvatarInitials(initials),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarInitials(String initials) {
+    return Center(
+      child: Text(
+        initials,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF4B5563),
+        ),
+      ),
     );
   }
 
@@ -280,7 +332,7 @@ class _RetailWarehouseFoodIndexScreenState extends State<RetailWarehouseFoodInde
     final paymentMethod = row['payment_method']?.toString();
     final transactionDate = row['transaction_date']?.toString();
     final createdAt = row['created_at']?.toString();
-    final creatorName = row['created_by_name']?.toString() ?? '-';
+    final creatorName = _creatorName(row);
 
     return GestureDetector(
       onTap: () => _navigateToDetail(id),
@@ -292,7 +344,7 @@ class _RetailWarehouseFoodIndexScreenState extends State<RetailWarehouseFoodInde
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -410,7 +462,7 @@ class _RetailWarehouseFoodIndexScreenState extends State<RetailWarehouseFoodInde
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
@@ -483,7 +535,7 @@ class _RetailWarehouseFoodIndexScreenState extends State<RetailWarehouseFoodInde
             children: [
               Expanded(
                 child: DropdownButtonFormField<String?>(
-                  value: _paymentMethodFilter,
+                  initialValue: _paymentMethodFilter,
                   decoration: InputDecoration(
                     labelText: 'Pembayaran',
                     filled: true,

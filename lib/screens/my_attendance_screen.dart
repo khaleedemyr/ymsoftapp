@@ -63,6 +63,13 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
   // User data
   Map<String, dynamic>? _userData;
 
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -272,7 +279,9 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
           print('✅ Modal builder called');
           return LeaveRequestModal(
             leaveTypes: _leaveTypes,
-            leaveBalance: _userData?['cuti'] as int?,
+            leaveBalance: _toInt(_userData?['cuti']),
+            extraOffBalance: _toInt(_extraOffData?['current_balance']),
+            phBalance: _toInt(_phData?['total_days']),
             onSubmitted: () {
               print('✅ onSubmitted callback called');
               _loadAttendanceData();
