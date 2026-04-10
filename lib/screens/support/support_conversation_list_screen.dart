@@ -394,8 +394,7 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                                 final conversation = result['conversation'] as SupportConversation;
                                 _loadConversations();
                                 
-                                // Navigate to conversation detail
-                                Navigator.push(
+                                final navResult = await Navigator.push(
                                   this.context,
                                   MaterialPageRoute(
                                     builder: (context) => SupportConversationDetailScreen(
@@ -404,6 +403,13 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                                     ),
                                   ),
                                 );
+                                if (!mounted) return;
+                                if (navResult ==
+                                    SupportConversationDetailScreen
+                                        .resultOpenNewConversation) {
+                                  await _loadConversations(refresh: true);
+                                  _showNewConversationModal();
+                                }
                               } else {
                                 ScaffoldMessenger.of(this.context).showSnackBar(
                                   SnackBar(
@@ -560,7 +566,7 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                                       await _supportService.markMessagesAsRead(conversation.id);
                                     }
                                     
-                                    final result = await Navigator.push(
+                                    final navResult = await Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) => SupportConversationDetailScreen(
@@ -569,9 +575,14 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
                                         ),
                                       ),
                                     );
-                                    
-                                    // Refresh list after returning
-                                    if (result == true) {
+
+                                    if (!mounted) return;
+                                    if (navResult ==
+                                        SupportConversationDetailScreen
+                                            .resultOpenNewConversation) {
+                                      await _loadConversations(refresh: true);
+                                      _showNewConversationModal();
+                                    } else if (navResult == true) {
                                       _loadConversations(refresh: true);
                                     }
                                   },

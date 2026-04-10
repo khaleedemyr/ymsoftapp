@@ -1476,76 +1476,101 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(color: highlight ? Colors.lime.shade300 : Colors.grey.shade200),
                                     ),
-                                    child: Row(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
-                                        Expanded(
-                                          flex: 4,
-                                          child: Text(item.name),
-                                        ),
-                                        SizedBox(
-                                          width: 70,
-                                          child: Text(
-                                            item.unit,
-                                            style: TextStyle(color: Colors.grey.shade600),
-                                            overflow: TextOverflow.ellipsis,
+                                        Text(
+                                          item.name,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 15,
                                           ),
                                         ),
-                                        SizedBox(
-                                          width: 90,
-                                          child: Text(
-                                            'Rp ${NumberFormat('#,###').format(item.price)}',
-                                            textAlign: TextAlign.right,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        SizedBox(
-                                          width: 74,
-                                          child: Focus(
-                                            onFocusChange: (hasFocus) {
-                                              if (!hasFocus) return;
-                                              item.qtyController.selection = TextSelection(
-                                                baseOffset: 0,
-                                                extentOffset: item.qtyController.text.length,
-                                              );
-                                            },
-                                            child: TextField(
-                                              focusNode: item.qtyFocusNode,
-                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                              decoration: const InputDecoration(
-                                                isDense: true,
-                                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.center,
+                                          children: [
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                item.unit,
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 13,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              textAlign: TextAlign.center,
-                                              controller: item.qtyController,
-                                              inputFormatters: [
-                                                TextInputFormatter.withFunction((oldValue, newValue) {
-                                                  final text = newValue.text;
-                                                  if (text.isEmpty) return newValue;
-                                                  final isValid = RegExp(r'^\d*([\.,]\d{0,2})?$').hasMatch(text);
-                                                  return isValid ? newValue : oldValue;
-                                                }),
-                                              ],
-                                              onTap: () {
-                                                if (item.qtyController.text.isNotEmpty) {
-                                                  item.qtyController.text = '';
-                                                  item.qty = 0;
-                                                }
-                                                item.qtyController.selection = const TextSelection(
-                                                  baseOffset: 0,
-                                                  extentOffset: 0,
-                                                );
-                                              },
-                                              onChanged: (value) => _setItemQty(item, value),
                                             ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        SizedBox(
-                                          width: 95,
-                                          child: Text(
-                                            'Rp ${NumberFormat('#,###').format(item.price * item.qty)}',
-                                            textAlign: TextAlign.right,
-                                          ),
+                                            Flexible(
+                                              flex: 2,
+                                              child: Text(
+                                                'Rp ${NumberFormat('#,###').format(item.price)}',
+                                                style: const TextStyle(fontSize: 13),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            SizedBox(
+                                              width: 72,
+                                              child: Focus(
+                                                onFocusChange: (hasFocus) {
+                                                  if (!hasFocus) return;
+                                                  item.qtyController.selection = TextSelection(
+                                                    baseOffset: 0,
+                                                    extentOffset: item.qtyController.text.length,
+                                                  );
+                                                },
+                                                child: TextField(
+                                                  focusNode: item.qtyFocusNode,
+                                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                  decoration: const InputDecoration(
+                                                    isDense: true,
+                                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                  controller: item.qtyController,
+                                                  inputFormatters: [
+                                                    TextInputFormatter.withFunction((oldValue, newValue) {
+                                                      final text = newValue.text;
+                                                      if (text.isEmpty) return newValue;
+                                                      final isValid = RegExp(r'^\d*([\.,]\d{0,2})?$').hasMatch(text);
+                                                      return isValid ? newValue : oldValue;
+                                                    }),
+                                                  ],
+                                                  onTap: () {
+                                                    if (item.qtyController.text.isNotEmpty) {
+                                                      item.qtyController.text = '';
+                                                      item.qty = 0;
+                                                    }
+                                                    item.qtyController.selection = const TextSelection(
+                                                      baseOffset: 0,
+                                                      extentOffset: 0,
+                                                    );
+                                                  },
+                                                  onChanged: (value) => _setItemQty(item, value),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Flexible(
+                                              flex: 2,
+                                              child: Text(
+                                                'Rp ${NumberFormat('#,###').format(item.price * item.qty)}',
+                                                textAlign: TextAlign.right,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),

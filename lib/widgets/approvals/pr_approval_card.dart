@@ -19,6 +19,51 @@ class PRApprovalCard extends StatelessWidget {
     return formatter.format(amount);
   }
 
+  String _modeLabel(String? mode) {
+    switch ((mode ?? '').toLowerCase()) {
+      case 'pr_ops':
+        return 'PR Ops';
+      case 'purchase_payment':
+        return 'Payment';
+      case 'travel_application':
+        return 'Travel';
+      case 'kasbon':
+        return 'Kasbon';
+      default:
+        return mode ?? '';
+    }
+  }
+
+  Color _modeBadgeColor(String? mode) {
+    switch ((mode ?? '').toLowerCase()) {
+      case 'kasbon':
+        return Colors.orange.shade100;
+      case 'travel_application':
+        return Colors.purple.shade100;
+      case 'purchase_payment':
+        return Colors.blue.shade100;
+      case 'pr_ops':
+        return Colors.teal.shade100;
+      default:
+        return Colors.grey.shade200;
+    }
+  }
+
+  Color _modeBadgeTextColor(String? mode) {
+    switch ((mode ?? '').toLowerCase()) {
+      case 'kasbon':
+        return Colors.orange.shade900;
+      case 'travel_application':
+        return Colors.purple.shade900;
+      case 'purchase_payment':
+        return Colors.blue.shade900;
+      case 'pr_ops':
+        return Colors.teal.shade900;
+      default:
+        return Colors.grey.shade800;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -35,10 +80,12 @@ class PRApprovalCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 8,
                   height: 8,
+                  margin: const EdgeInsets.only(top: 5),
                   decoration: BoxDecoration(
                     color: Colors.green.shade500,
                     shape: BoxShape.circle,
@@ -46,13 +93,39 @@ class PRApprovalCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    approval.prNumber,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          approval.prNumber,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (approval.mode != null && approval.mode!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _modeBadgeColor(approval.mode),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _modeLabel(approval.mode),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: _modeBadgeTextColor(approval.mode),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (approval.unreadCommentsCount != null && approval.unreadCommentsCount! > 0)

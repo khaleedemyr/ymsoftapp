@@ -12,6 +12,117 @@ class PurchaseRequisitionService {
     return await authService.getToken();
   }
 
+  /// Shared multipart fields for create/update PR (attachments added separately).
+  void _setPurchaseRequisitionFormFields(
+    http.MultipartRequest request, {
+    required String title,
+    required String mode,
+    required int divisionId,
+    int? categoryId,
+    int? outletId,
+    int? ticketId,
+    String? description,
+    String? priority,
+    String? currency,
+    required List<Map<String, dynamic>> items,
+    List<int>? approvers,
+    List<int>? travelOutletIds,
+    String? travelAgenda,
+    String? travelNotes,
+    num? kasbonAmount,
+    int? kasbonTermin,
+    String? kasbonReason,
+  }) {
+    double totalAmount = 0;
+    if (mode == 'kasbon' && kasbonAmount != null) {
+      totalAmount = kasbonAmount.toDouble();
+    } else {
+      for (final item in items) {
+        totalAmount += (item['subtotal'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+
+    request.fields['title'] = title;
+    request.fields['mode'] = mode;
+    request.fields['division_id'] = divisionId.toString();
+    request.fields['amount'] = totalAmount.toString();
+    if (categoryId != null) request.fields['category_id'] = categoryId.toString();
+    if (outletId != null) request.fields['outlet_id'] = outletId.toString();
+    if (ticketId != null) request.fields['ticket_id'] = ticketId.toString();
+    if (description != null) request.fields['description'] = description;
+    if (priority != null) request.fields['priority'] = priority;
+    if (currency != null) request.fields['currency'] = currency;
+
+    for (int i = 0; i < items.length; i++) {
+      final item = items[i];
+      request.fields['items[$i][item_name]'] = item['item_name'] as String;
+
+      final qty = item['qty'] ?? 0.0;
+      final unitPrice = item['unit_price'] ?? 0.0;
+      final subtotal = item['subtotal'] ?? 0.0;
+
+      request.fields['items[$i][qty]'] = (qty as num).toString();
+      request.fields['items[$i][unit]'] = item['unit'] as String? ?? '';
+      request.fields['items[$i][unit_price]'] = (unitPrice as num).toString();
+      request.fields['items[$i][subtotal]'] = (subtotal as num).toString();
+
+      final itemOutletId = item['outlet_id'];
+      final itemCategoryId = item['category_id'];
+
+      if (itemOutletId != null) {
+        final outletIdStr = itemOutletId is int
+            ? itemOutletId.toString()
+            : (itemOutletId is num ? itemOutletId.toInt().toString() : itemOutletId.toString());
+        request.fields['items[$i][outlet_id]'] = outletIdStr;
+      }
+      if (itemCategoryId != null) {
+        final categoryIdStr = itemCategoryId is int
+            ? itemCategoryId.toString()
+            : (itemCategoryId is num ? itemCategoryId.toInt().toString() : itemCategoryId.toString());
+        request.fields['items[$i][category_id]'] = categoryIdStr;
+      }
+
+      if (item['item_type'] != null) {
+        request.fields['items[$i][item_type]'] = item['item_type'] as String;
+      }
+      if (item['allowance_recipient_name'] != null) {
+        request.fields['items[$i][allowance_recipient_name]'] = item['allowance_recipient_name'] as String;
+      }
+      if (item['allowance_account_number'] != null) {
+        request.fields['items[$i][allowance_account_number]'] = item['allowance_account_number'] as String;
+      }
+      if (item['others_notes'] != null) {
+        request.fields['items[$i][others_notes]'] = item['others_notes'] as String;
+      }
+    }
+
+    if (approvers != null && approvers.isNotEmpty) {
+      for (int i = 0; i < approvers.length; i++) {
+        request.fields['approvers[$i]'] = approvers[i].toString();
+      }
+    }
+
+    if (mode == 'travel_application') {
+      if (travelOutletIds != null && travelOutletIds.isNotEmpty) {
+        for (int i = 0; i < travelOutletIds.length; i++) {
+          request.fields['travel_outlet_ids[$i]'] = travelOutletIds[i].toString();
+        }
+      }
+      if (travelAgenda != null) request.fields['travel_agenda'] = travelAgenda;
+      if (travelNotes != null) request.fields['travel_notes'] = travelNotes;
+    }
+
+    if (mode == 'kasbon') {
+      if (kasbonAmount != null) {
+        request.fields['kasbon_amount'] = kasbonAmount.round().toString();
+      }
+      if (kasbonTermin != null) {
+        request.fields['kasbon_termin'] = kasbonTermin.toString();
+      }
+      if (kasbonReason != null) request.fields['kasbon_reason'] = kasbonReason;
+    }
+  }
+
   // Get list of purchase requisitions
   Future<Map<String, dynamic>?> getPurchaseRequisitions({
     String? search,
@@ -194,6 +305,7 @@ class PurchaseRequisitionService {
     String? travelNotes,
     // For kasbon
     double? kasbonAmount,
+    int? kasbonTermin,
     String? kasbonReason,
     // Attachments (for non-pr_ops/purchase_payment)
     List<File>? attachments,
@@ -204,14 +316,6 @@ class PurchaseRequisitionService {
       final token = await _getToken();
       if (token == null) {
         return {'success': false, 'message': 'No authentication token'};
-      }
-
-      // Calculate total amount
-      double totalAmount = 0;
-      if (mode == 'kasbon' && kasbonAmount != null) {
-        totalAmount = kasbonAmount;
-      } else {
-        totalAmount = items.fold(0.0, (sum, item) => sum + (item['subtotal'] as num).toDouble());
       }
 
       // Prepare form data
@@ -225,90 +329,26 @@ class PurchaseRequisitionService {
         'Accept': 'application/json',
       });
 
-      // Add basic fields
-      request.fields['title'] = title;
-      request.fields['mode'] = mode;
-      request.fields['division_id'] = divisionId.toString();
-      request.fields['amount'] = totalAmount.toString();
-      if (categoryId != null) request.fields['category_id'] = categoryId.toString();
-      if (outletId != null) request.fields['outlet_id'] = outletId.toString();
-      if (ticketId != null) request.fields['ticket_id'] = ticketId.toString();
-      if (description != null) request.fields['description'] = description;
-      if (priority != null) request.fields['priority'] = priority;
-      if (currency != null) request.fields['currency'] = currency;
-
-      // Add items
-      for (int i = 0; i < items.length; i++) {
-        final item = items[i];
-        request.fields['items[$i][item_name]'] = item['item_name'] as String;
-        
-        // Handle nullable qty, unit_price, and subtotal
-        final qty = item['qty'] ?? 0.0;
-        final unitPrice = item['unit_price'] ?? 0.0;
-        final subtotal = item['subtotal'] ?? 0.0;
-        
-        request.fields['items[$i][qty]'] = (qty as num).toString();
-        request.fields['items[$i][unit]'] = item['unit'] as String? ?? '';
-        request.fields['items[$i][unit_price]'] = (unitPrice as num).toString();
-        request.fields['items[$i][subtotal]'] = (subtotal as num).toString();
-        
-        // For pr_ops and purchase_payment
-        final outletId = item['outlet_id'];
-        final categoryId = item['category_id'];
-        
-        if (outletId != null) {
-          // Ensure outlet_id is converted to string safely
-          final outletIdStr = outletId is int 
-              ? outletId.toString() 
-              : (outletId is num ? outletId.toInt().toString() : outletId.toString());
-          request.fields['items[$i][outlet_id]'] = outletIdStr;
-        }
-        if (categoryId != null) {
-          // Ensure category_id is converted to string safely
-          final categoryIdStr = categoryId is int 
-              ? categoryId.toString() 
-              : (categoryId is num ? categoryId.toInt().toString() : categoryId.toString());
-          request.fields['items[$i][category_id]'] = categoryIdStr;
-        }
-        
-        // For travel_application
-        if (item['item_type'] != null) {
-          request.fields['items[$i][item_type]'] = item['item_type'] as String;
-        }
-        if (item['allowance_recipient_name'] != null) {
-          request.fields['items[$i][allowance_recipient_name]'] = item['allowance_recipient_name'] as String;
-        }
-        if (item['allowance_account_number'] != null) {
-          request.fields['items[$i][allowance_account_number]'] = item['allowance_account_number'] as String;
-        }
-        if (item['others_notes'] != null) {
-          request.fields['items[$i][others_notes]'] = item['others_notes'] as String;
-        }
-      }
-
-      // Add approvers
-      if (approvers != null && approvers.isNotEmpty) {
-        for (int i = 0; i < approvers.length; i++) {
-          request.fields['approvers[$i]'] = approvers[i].toString();
-        }
-      }
-
-      // For travel_application
-      if (mode == 'travel_application') {
-        if (travelOutletIds != null && travelOutletIds.isNotEmpty) {
-          for (int i = 0; i < travelOutletIds.length; i++) {
-            request.fields['travel_outlet_ids[$i]'] = travelOutletIds[i].toString();
-          }
-        }
-        if (travelAgenda != null) request.fields['travel_agenda'] = travelAgenda;
-        if (travelNotes != null) request.fields['travel_notes'] = travelNotes;
-      }
-
-      // For kasbon
-      if (mode == 'kasbon') {
-        if (kasbonAmount != null) request.fields['kasbon_amount'] = kasbonAmount.toString();
-        if (kasbonReason != null) request.fields['kasbon_reason'] = kasbonReason;
-      }
+      _setPurchaseRequisitionFormFields(
+        request,
+        title: title,
+        mode: mode,
+        divisionId: divisionId,
+        categoryId: categoryId,
+        outletId: outletId,
+        ticketId: ticketId,
+        description: description,
+        priority: priority,
+        currency: currency,
+        items: items,
+        approvers: approvers,
+        travelOutletIds: travelOutletIds,
+        travelAgenda: travelAgenda,
+        travelNotes: travelNotes,
+        kasbonAmount: kasbonAmount,
+        kasbonTermin: kasbonTermin,
+        kasbonReason: kasbonReason,
+      );
 
       // Add attachments (for non-pr_ops/purchase_payment)
       if (attachments != null && attachments.isNotEmpty && mode != 'pr_ops' && mode != 'purchase_payment') {
@@ -365,6 +405,7 @@ class PurchaseRequisitionService {
     String? travelNotes,
     // For kasbon
     double? kasbonAmount,
+    int? kasbonTermin,
     String? kasbonReason,
     // Attachments
     List<File>? attachments,
@@ -375,9 +416,8 @@ class PurchaseRequisitionService {
         return {'success': false, 'message': 'No authentication token'};
       }
 
-      // Similar to create, but use PUT method
       final request = http.MultipartRequest(
-        'POST', // Laravel uses POST with _method=PUT
+        'POST',
         Uri.parse('$baseUrl/api/approval-app/purchase-requisitions/$id'),
       );
 
@@ -388,8 +428,40 @@ class PurchaseRequisitionService {
 
       request.fields['_method'] = 'PUT';
 
-      // Add all fields same as create
-      // ... (same as create method)
+      _setPurchaseRequisitionFormFields(
+        request,
+        title: title,
+        mode: mode,
+        divisionId: divisionId,
+        categoryId: categoryId,
+        outletId: outletId,
+        ticketId: ticketId,
+        description: description,
+        priority: priority,
+        currency: currency,
+        items: items,
+        approvers: approvers,
+        travelOutletIds: travelOutletIds,
+        travelAgenda: travelAgenda,
+        travelNotes: travelNotes,
+        kasbonAmount: kasbonAmount,
+        kasbonTermin: kasbonTermin,
+        kasbonReason: kasbonReason,
+      );
+
+      if (attachments != null && attachments.isNotEmpty && mode != 'pr_ops' && mode != 'purchase_payment') {
+        for (int i = 0; i < attachments.length; i++) {
+          final file = attachments[i];
+          final fileName = file.path.split('/').last;
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'attachments[$i]',
+              file.path,
+              filename: fileName,
+            ),
+          );
+        }
+      }
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);

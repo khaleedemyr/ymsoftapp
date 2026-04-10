@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/approval_models.dart';
 import '../screens/approvals/pr_approval_detail_screen.dart';
 import '../screens/approvals/po_ops_approval_detail_screen.dart';
@@ -8,6 +7,8 @@ import '../screens/approvals/category_cost_approval_detail_screen.dart';
 import '../screens/approvals/stock_adjustment_approval_detail_screen.dart';
 import '../screens/outlet_transfer/outlet_transfer_detail_screen.dart';
 import '../screens/stock_opname/stock_opname_detail_screen.dart';
+import '../screens/warehouse_stock_opname/warehouse_stock_opname_detail_screen.dart';
+import '../screens/approvals/cctv_access_request_approval_detail_screen.dart';
 import '../screens/approvals/contra_bon_approval_detail_screen.dart';
 import '../screens/approvals/movement_approval_detail_screen.dart';
 import '../screens/approvals/coaching_approval_detail_screen.dart';
@@ -24,6 +25,8 @@ import 'approvals/leave_approval_card.dart';
 import 'approvals/category_cost_approval_card.dart';
 import 'approvals/stock_adjustment_approval_card.dart';
 import 'approvals/stock_opname_approval_card.dart';
+import 'approvals/warehouse_stock_opname_approval_card.dart';
+import 'approvals/cctv_access_request_approval_card.dart';
 import 'approvals/outlet_transfer_approval_card.dart';
 import 'app_loading_indicator.dart';
 import 'approvals/contra_bon_approval_card.dart';
@@ -69,6 +72,8 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
   final Set<int> _selectedApprovals = {};
   bool _isApproving = false;
   bool _isLoading = false;
+  /// Filter mode PR — selaras Home.vue ERP (`prModeFilter`). `null` / kosong = semua.
+  String? _prModeFilter;
 
   @override
   void initState() {
@@ -115,6 +120,12 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           break;
         case 'stock_opname':
           approvals = await _approvalService.getPendingStockOpnameApprovals();
+          break;
+        case 'warehouse_stock_opname':
+          approvals = await _approvalService.getPendingWarehouseStockOpnameApprovals();
+          break;
+        case 'cctv_access_request':
+          approvals = await _approvalService.getPendingCctvAccessRequestApprovals();
           break;
         case 'outlet_transfer':
           approvals = await _approvalService.getPendingOutletTransferApprovals();
@@ -169,20 +180,45 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
   }
 
   void _filterApprovals() {
-    final query = _searchController.text.toLowerCase();
+    final query = _searchController.text.toLowerCase().trim();
     setState(() {
+      List<dynamic> list = List.from(_approvals);
+
+      if (widget.type == 'pr' &&
+          _prModeFilter != null &&
+          _prModeFilter!.isNotEmpty) {
+        list = list.where((a) {
+          final m = (a as PurchaseRequisitionApproval).mode ?? '';
+          return m == _prModeFilter;
+        }).toList();
+      }
+
       if (query.isEmpty) {
-        _filteredApprovals = List.from(_approvals);
-      } else {
-        _filteredApprovals = _approvals.where((approval) {
+        _filteredApprovals = list;
+        return;
+      }
+
+      _filteredApprovals = list.where((approval) {
           // Search logic based on approval type
           switch (widget.type) {
             case 'pr':
               final pr = approval as PurchaseRequisitionApproval;
+              final modeStr = (pr.mode ?? '').toLowerCase();
+              final modeLabel = modeStr == 'kasbon'
+                  ? 'kasbon'
+                  : modeStr == 'travel_application'
+                      ? 'travel'
+                      : modeStr == 'purchase_payment'
+                          ? 'payment'
+                          : modeStr == 'pr_ops'
+                              ? 'pr ops'
+                              : modeStr;
               return pr.prNumber.toLowerCase().contains(query) ||
                   (pr.title?.toLowerCase().contains(query) ?? false) ||
                   (pr.divisionName?.toLowerCase().contains(query) ?? false) ||
-                  (pr.outletName?.toLowerCase().contains(query) ?? false);
+                  (pr.outletName?.toLowerCase().contains(query) ?? false) ||
+                  modeStr.contains(query) ||
+                  modeLabel.contains(query);
             case 'po_ops':
               final po = approval as PurchaseOrderOpsApproval;
               return po.number.toLowerCase().contains(query) ||
@@ -207,6 +243,18 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
               return so.opnameNumber.toLowerCase().contains(query) ||
                   (so.outletName?.toLowerCase().contains(query) ?? false) ||
                   (so.creatorName?.toLowerCase().contains(query) ?? false);
+            case 'warehouse_stock_opname':
+              final w = approval as WarehouseStockOpnameApproval;
+              return w.opnameNumber.toLowerCase().contains(query) ||
+                  (w.warehouseName?.toLowerCase().contains(query) ?? false) ||
+                  (w.divisionName?.toLowerCase().contains(query) ?? false) ||
+                  (w.creatorName?.toLowerCase().contains(query) ?? false);
+            case 'cctv_access_request':
+              final c = approval as CctvAccessRequestApproval;
+              return c.accessTypeLabel.toLowerCase().contains(query) ||
+                  c.accessType.toLowerCase().contains(query) ||
+                  (c.requesterName?.toLowerCase().contains(query) ?? false) ||
+                  (c.reason?.toLowerCase().contains(query) ?? false);
             case 'outlet_transfer':
               final ot = approval as OutletTransferApproval;
               return ot.transferNumber.toLowerCase().contains(query) ||
@@ -259,7 +307,6 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
               return true;
           }
         }).toList();
-      }
     });
   }
 
@@ -278,6 +325,10 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         return 'Cari Outlet atau Tipe Adjustment...';
       case 'stock_opname':
         return 'Cari No. Opname atau Outlet...';
+      case 'warehouse_stock_opname':
+        return 'Cari No. Opname, Gudang, atau Divisi...';
+      case 'cctv_access_request':
+        return 'Cari pemohon, jenis akses, atau alasan...';
       case 'outlet_transfer':
         return 'Cari No. Transfer atau Outlet...';
       case 'contra_bon':
@@ -319,6 +370,10 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         return (approval as StockAdjustmentApproval).id;
       case 'stock_opname':
         return (approval as StockOpnameApproval).id;
+      case 'warehouse_stock_opname':
+        return (approval as WarehouseStockOpnameApproval).id;
+      case 'cctv_access_request':
+        return (approval as CctvAccessRequestApproval).id;
       case 'outlet_transfer':
         return (approval as OutletTransferApproval).id;
       case 'contra_bon':
@@ -442,8 +497,12 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
               result = await _approvalService.approveStockAdjustment(id, approvalFlowId: null);
               break;
             case 'stock_opname':
+            case 'warehouse_stock_opname':
               // Stock opname approval is done in detail screen only
               return {'success': false};
+            case 'cctv_access_request':
+              result = await _approvalService.approveCctvAccessRequest(id, approvalNotes: null);
+              break;
             case 'outlet_transfer':
               // Outlet transfer approval is done in detail screen only
               return {'success': false};
@@ -590,6 +649,18 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
         );
         break;
+      case 'warehouse_stock_opname':
+        card = WarehouseStockOpnameApprovalCard(
+          approval: approval as WarehouseStockOpnameApproval,
+          onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
+        );
+        break;
+      case 'cctv_access_request':
+        card = CctvAccessRequestApprovalCard(
+          approval: approval as CctvAccessRequestApproval,
+          onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
+        );
+        break;
       case 'outlet_transfer':
         card = OutletTransferApprovalCard(
           approval: approval as OutletTransferApproval,
@@ -709,6 +780,15 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         break;
       case 'stock_opname':
         detailScreen = StockOpnameDetailScreen(opnameId: (approval as StockOpnameApproval).id);
+        break;
+      case 'warehouse_stock_opname':
+        detailScreen =
+            WarehouseStockOpnameDetailScreen(opnameId: (approval as WarehouseStockOpnameApproval).id);
+        break;
+      case 'cctv_access_request':
+        detailScreen = CctvAccessRequestApprovalDetailScreen(
+          requestId: (approval as CctvAccessRequestApproval).id,
+        );
         break;
       case 'outlet_transfer':
         detailScreen = OutletTransferDetailScreen(transferId: (approval as OutletTransferApproval).id);
@@ -986,6 +1066,45 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
                 ),
               ],
             ),
+            if (widget.type == 'pr') ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                value: _prModeFilter,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Mode',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                items: const [
+                  DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Semua'),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: 'pr_ops',
+                    child: Text('PR Ops'),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: 'purchase_payment',
+                    child: Text('Purchase Payment'),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: 'travel_application',
+                    child: Text('Travel Application'),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: 'kasbon',
+                    child: Text('Kasbon'),
+                  ),
+                ],
+                onChanged: (v) {
+                  _prModeFilter = v;
+                  _filterApprovals();
+                },
+              ),
+            ],
             const SizedBox(height: 16),
             
             // Approval list

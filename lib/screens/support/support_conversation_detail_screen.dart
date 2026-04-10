@@ -11,6 +11,9 @@ import '../../widgets/image_lightbox.dart';
 import '../../widgets/app_loading_indicator.dart';
 
 class SupportConversationDetailScreen extends StatefulWidget {
+  /// Pop [resultOpenNewConversation] so the list can open "new conversation".
+  static const String resultOpenNewConversation = 'support_open_new_conversation';
+
   final int conversationId;
   final SupportConversation? conversation;
 
@@ -45,9 +48,13 @@ class _SupportConversationDetailScreenState
   void initState() {
     super.initState();
     _conversation = widget.conversation;
-    _loadUserData();
-    _loadConversation();
-    _loadMessages();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _loadUserData();
+    if (!mounted) return;
+    await _loadMessages();
   }
 
   @override
@@ -75,17 +82,56 @@ class _SupportConversationDetailScreenState
     }
   }
 
-  Future<void> _loadConversation() async {
-    // If conversation is already provided, use it
-    if (_conversation != null) {
-      return;
-    }
+  bool _userCannotSendMessage() {
+    if (_isAdmin) return false;
+    final s = _conversation?.status.toLowerCase();
+    return s == 'closed';
+  }
 
-    // Otherwise, load from API (you might need to add this method)
-    // For now, we'll use the conversation from widget
+  Future<void> _refreshConversationStatusForUser() async {
+    if (_isAdmin) return;
+    try {
+      final list = await _supportService.getUserConversations();
+      SupportConversation? found;
+      for (final c in list) {
+        if (c.id == widget.conversationId) {
+          found = c;
+          break;
+        }
+      }
+      if (found != null && mounted) {
+        setState(() {
+          _conversation = found;
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _applyConversationClosedLocally() {
+    final c = _conversation;
+    if (c == null) return;
     setState(() {
-      _conversation = widget.conversation;
+      _conversation = SupportConversation(
+        id: c.id,
+        subject: c.subject,
+        status: 'closed',
+        priority: c.priority,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        lastMessage: c.lastMessage,
+        lastMessageAt: c.lastMessageAt,
+        lastSenderName: c.lastSenderName,
+        lastSenderType: c.lastSenderType,
+        unreadCount: c.unreadCount,
+        customerName: c.customerName,
+        customerEmail: c.customerEmail,
+        customerOutlet: c.customerOutlet,
+        customerDivisi: c.customerDivisi,
+        customerJabatan: c.customerJabatan,
+      );
+      _selectedFiles = [];
     });
+    _messageController.clear();
   }
 
   Future<void> _loadMessages() async {
@@ -103,6 +149,14 @@ class _SupportConversationDetailScreenState
           _messages = messages;
           _isLoading = false;
         });
+
+        await _refreshConversationStatusForUser();
+        if (mounted && _userCannotSendMessage()) {
+          _messageController.clear();
+          setState(() {
+            _selectedFiles = [];
+          });
+        }
 
         // Scroll to bottom
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -131,6 +185,9 @@ class _SupportConversationDetailScreenState
   }
 
   Future<void> _sendReply() async {
+    if (_userCannotSendMessage()) {
+      return;
+    }
     if ((_messageController.text.trim().isEmpty && _selectedFiles.isEmpty) ||
         _isSending) {
       return;
@@ -173,15 +230,19 @@ class _SupportConversationDetailScreenState
       } else if (mounted) {
         // Handle conversation closed error
         if (result['conversation_closed'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Percakapan ini telah ditutup oleh tim support. Silakan buat percakapan baru jika Anda memerlukan bantuan lebih lanjut.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 5),
-            ),
-          );
-          // Refresh conversation to update status
-          _loadMessages();
+          _applyConversationClosedLocally();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Percakapan ini telah ditutup oleh tim support. Silakan buat percakapan baru jika Anda memerlukan bantuan lebih lanjut.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          await _loadMessages();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -210,6 +271,7 @@ class _SupportConversationDetailScreenState
   }
 
   Future<void> _pickFiles() async {
+    if (_userCannotSendMessage()) return;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -262,6 +324,7 @@ class _SupportConversationDetailScreenState
   }
 
   Future<void> _pickImageFromCamera() async {
+    if (_userCannotSendMessage()) return;
     try {
       final picker = ImagePicker();
       final image = await picker.pickImage(
@@ -295,6 +358,7 @@ class _SupportConversationDetailScreenState
   }
 
   Future<void> _pickImageFromGallery() async {
+    if (_userCannotSendMessage()) return;
     try {
       final picker = ImagePicker();
       final images = await picker.pickMultiImage(imageQuality: 85);
@@ -779,7 +843,7 @@ class _SupportConversationDetailScreenState
             ),
 
             // File Preview
-            if (_selectedFiles.isNotEmpty)
+            if (!_userCannotSendMessage() && _selectedFiles.isNotEmpty)
               Container(
                 height: 80,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -800,62 +864,95 @@ class _SupportConversationDetailScreenState
               color: Colors.white,
               child: SafeArea(
                 top: false,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // File Upload Button
-                    IconButton(
-                      icon: const Icon(Icons.attach_file),
-                      onPressed: _pickFiles,
-                      tooltip: 'Attach File',
-                    ),
-                    // Camera Button
-                    IconButton(
-                      icon: const Icon(Icons.camera_alt),
-                      onPressed: _pickImageFromCamera,
-                      tooltip: 'Take Photo',
-                    ),
-                    // Gallery Button
-                    IconButton(
-                      icon: const Icon(Icons.photo_library),
-                      onPressed: _pickImageFromGallery,
-                      tooltip: 'Pick from Gallery',
-                    ),
-                    // Message Input
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        maxLines: null,
-                        textInputAction: TextInputAction.newline,
-                        decoration: InputDecoration(
-                          hintText: 'Type your reply...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
+                child: _userCannotSendMessage()
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.amber.shade200),
+                            ),
+                            child: const Text(
+                              'Percakapan ini sudah ditutup. Untuk mengirim pesan lagi, buat percakapan baru.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF78350F),
+                              ),
+                            ),
                           ),
-                          filled: true,
-                          fillColor: Colors.grey.shade100,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(
+                                context,
+                                SupportConversationDetailScreen.resultOpenNewConversation,
+                              );
+                            },
+                            icon: const Icon(Icons.add_comment_outlined),
+                            label: const Text('Buat percakapan baru'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6366F1),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
                           ),
-                        ),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.attach_file),
+                            onPressed: _pickFiles,
+                            tooltip: 'Attach File',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.camera_alt),
+                            onPressed: _pickImageFromCamera,
+                            tooltip: 'Take Photo',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.photo_library),
+                            onPressed: _pickImageFromGallery,
+                            tooltip: 'Pick from Gallery',
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _messageController,
+                              maxLines: null,
+                              textInputAction: TextInputAction.newline,
+                              decoration: InputDecoration(
+                                hintText: 'Type your reply...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey.shade100,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: _isSending
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: AppLoadingIndicator(
+                                        size: 20, strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.send),
+                            onPressed: _isSending ? null : _sendReply,
+                            color: const Color(0xFF6366F1),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Send Button
-                    IconButton(
-                      icon: _isSending
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: AppLoadingIndicator(size: 20, strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send),
-                      onPressed: _isSending ? null : _sendReply,
-                      color: const Color(0xFF6366F1),
-                    ),
-                  ],
-                ),
               ),
             ),
           ],

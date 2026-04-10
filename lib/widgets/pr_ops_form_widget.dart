@@ -67,7 +67,9 @@ class _PROpsFormWidgetState extends State<PROpsFormWidget> {
     // Filter out categories containing "transport" and "kasbon" for pr_ops and purchase_payment modes
     return widget.categories.where((cat) {
       final name = (cat['name'] ?? cat['nama'] ?? '').toString().toLowerCase();
-      return !name.contains('transport') && !name.contains('kasbon');
+      return !name.contains('transport') &&
+          !name.contains('akomodasi') &&
+          !name.contains('kasbon');
     }).toList();
   }
 

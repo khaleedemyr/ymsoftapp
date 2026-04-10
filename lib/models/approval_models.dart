@@ -345,6 +345,135 @@ class StockOpnameApproval {
   }
 }
 
+/// Pending approval card for warehouse (gudang) stock opname — API key `warehouse_stock_opnames`.
+class WarehouseStockOpnameApproval {
+  final int id;
+  final String opnameNumber;
+  final String? warehouseName;
+  final String? divisionName;
+  final String? opnameDate;
+  final String? creatorName;
+  final String? approverName;
+  final int? approvalLevel;
+  final Map<String, dynamic>? warehouse;
+  final Map<String, dynamic>? warehouseDivision;
+  final Map<String, dynamic>? creator;
+
+  WarehouseStockOpnameApproval({
+    required this.id,
+    required this.opnameNumber,
+    this.warehouseName,
+    this.divisionName,
+    this.opnameDate,
+    this.creatorName,
+    this.approverName,
+    this.approvalLevel,
+    this.warehouse,
+    this.warehouseDivision,
+    this.creator,
+  });
+
+  factory WarehouseStockOpnameApproval.fromJson(Map<String, dynamic> json) {
+    return WarehouseStockOpnameApproval(
+      id: json['id'] ?? 0,
+      opnameNumber: json['opname_number']?.toString() ?? '',
+      warehouseName: json['warehouse'] is Map
+          ? (json['warehouse'] as Map)['name']?.toString()
+          : null,
+      divisionName: json['warehouse_division'] is Map
+          ? (json['warehouse_division'] as Map)['name']?.toString()
+          : null,
+      opnameDate: json['opname_date']?.toString(),
+      creatorName: json['creator'] is Map
+          ? (json['creator'] as Map)['nama_lengkap']?.toString()
+          : null,
+      approverName: json['approver_name']?.toString(),
+      approvalLevel: json['approval_level'] is int
+          ? json['approval_level'] as int
+          : int.tryParse(json['approval_level']?.toString() ?? ''),
+      warehouse: json['warehouse'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(json['warehouse'] as Map)
+          : null,
+      warehouseDivision: json['warehouse_division'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(json['warehouse_division'] as Map)
+          : null,
+      creator: json['creator'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(json['creator'] as Map)
+          : null,
+    );
+  }
+}
+
+/// Pending CCTV access request (IT Manager) — list from `data` array on pending API.
+class CctvAccessRequestApproval {
+  final int id;
+  final String accessType;
+  final String? requesterName;
+  final String? reason;
+  final List<dynamic>? outletIds;
+  final String? email;
+  final String? area;
+  final DateTime? createdAt;
+  final Map<String, dynamic>? user;
+
+  CctvAccessRequestApproval({
+    required this.id,
+    required this.accessType,
+    this.requesterName,
+    this.reason,
+    this.outletIds,
+    this.email,
+    this.area,
+    this.createdAt,
+    this.user,
+  });
+
+  String get accessTypeLabel {
+    switch (accessType) {
+      case 'live_view':
+        return 'Live View';
+      case 'playback':
+        return 'Playback';
+      default:
+        return accessType;
+    }
+  }
+
+  int get outletCount => outletIds?.length ?? 0;
+
+  factory CctvAccessRequestApproval.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? userMap;
+    final u = json['user'];
+    if (u is Map) {
+      userMap = Map<String, dynamic>.from(u);
+    }
+    List<dynamic>? oids;
+    final raw = json['outlet_ids'];
+    if (raw is List) oids = raw;
+
+    DateTime? created;
+    final ca = json['created_at'];
+    if (ca != null) {
+      created = DateTime.tryParse(ca.toString());
+    }
+
+    final idVal = json['id'];
+    final id = idVal is int ? idVal : int.tryParse(idVal?.toString() ?? '0') ?? 0;
+
+    return CctvAccessRequestApproval(
+      id: id,
+      accessType: json['access_type']?.toString() ?? '',
+      requesterName: userMap?['nama_lengkap']?.toString(),
+      reason: json['reason']?.toString(),
+      outletIds: oids,
+      email: json['email']?.toString(),
+      area: json['area']?.toString(),
+      createdAt: created,
+      user: userMap,
+    );
+  }
+}
+
 class OutletTransferApproval {
   final int id;
   final String transferNumber;

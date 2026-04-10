@@ -81,6 +81,13 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
         } else if (data['itemsBudgetInfo'] != null && _approvalData != null) {
           _approvalData!['items_budget_info'] = data['itemsBudgetInfo'];
         }
+        // Sama Home.vue ERP: travel/kasbon pakai mode_specific_data dari root response
+        if (_approvalData != null) {
+          final msd = data['mode_specific_data'] ?? data['modeSpecificData'];
+          if (msd != null && msd is Map) {
+            _approvalData!['mode_specific_data'] = Map<String, dynamic>.from(msd as Map);
+          }
+        }
         // Ensure items is included if it exists at root level
         if (data['items'] != null && _approvalData != null && 
             (_approvalData!['items'] == null || (_approvalData!['items'] as List).isEmpty)) {
@@ -807,6 +814,7 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
     }
 
     final pr = _approvalData!;
+    final modeLower = pr['mode']?.toString().toLowerCase() ?? '';
     // Budget info is at the same level as purchase_requisition in the API response
     final budgetInfo = _approvalData!['budget_info'];
     final approvalFlows = _approvalData!['approval_flows'] as List<dynamic>? ?? [];
@@ -958,8 +966,15 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
                         icon: Icons.info_outline,
                       ),
 
-                      // Budget Info
-                      if (budgetInfo != null) ...[
+                      // Kasbon — selaras Home.vue (Informasi Kasbon)
+                      if (modeLower == 'kasbon' && pr['mode_specific_data'] != null) ...[
+                        _buildKasbonInfoSection(
+                          Map<String, dynamic>.from(pr['mode_specific_data'] as Map),
+                        ),
+                      ],
+
+                      // Budget Info (disembunyikan untuk kasbon di ERP)
+                      if (budgetInfo != null && modeLower != 'kasbon') ...[
                         _buildBudgetInfoSection(budgetInfo),
                       ],
 
@@ -968,8 +983,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
                         _buildApprovalFlowSection(approvalFlows),
                       ],
 
-                      // Items
-                      if (items.isNotEmpty) ...[
+                      // Items (kasbon: baris item otomatis dari backend, tidak ditampilkan seperti web)
+                      if (items.isNotEmpty && modeLower != 'kasbon') ...[
                         _buildItemsSection(items),
                       ],
 
@@ -1233,6 +1248,110 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Blok Informasi Kasbon — sama konsep dengan `Home.vue` (modal approval PR).
+  Widget _buildKasbonInfoSection(Map<String, dynamic> msd) {
+    final amount = _parseDouble(msd['kasbon_amount']) ?? 0.0;
+    final reason = msd['kasbon_reason']?.toString() ?? '';
+    final terminRaw = msd['kasbon_termin'];
+    final termin = terminRaw is int
+        ? terminRaw
+        : (terminRaw is num ? terminRaw.toInt() : int.tryParse(terminRaw?.toString() ?? '') ?? 1);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.payments_outlined, color: Colors.orange.shade600, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'Informasi Kasbon',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Nilai Kasbon',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _formatCurrency(amount),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade900,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Termin',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${termin}x Termin',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade900,
+            ),
+          ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Reason / Alasan Kasbon',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: SelectableText(
+                reason,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.45,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

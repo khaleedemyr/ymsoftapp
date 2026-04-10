@@ -25,7 +25,6 @@ class SalesOutletDashboardData {
   final List<TopItem> topItems;
   final List<PaymentMethod> paymentMethods;
   final List<HourlySales> hourlySales;
-  final List<RecentOrder> recentOrders;
   final PromoUsage promoUsage;
   final BankPromoDiscount bankPromoDiscount;
   final AverageOrderValue avgOrderValue;
@@ -43,7 +42,6 @@ class SalesOutletDashboardData {
     required this.topItems,
     required this.paymentMethods,
     required this.hourlySales,
-    required this.recentOrders,
     required this.promoUsage,
     required this.bankPromoDiscount,
     required this.avgOrderValue,
@@ -73,10 +71,6 @@ class SalesOutletDashboardData {
           [],
       hourlySales: (json['hourlySales'] as List<dynamic>?)
               ?.map((e) => HourlySales.fromJson(e))
-              .toList() ??
-          [],
-      recentOrders: (json['recentOrders'] as List<dynamic>?)
-              ?.map((e) => RecentOrder.fromJson(e))
               .toList() ??
           [],
       promoUsage: PromoUsage.fromJson(json['promoUsage'] ?? {}),
@@ -275,50 +269,6 @@ class HourlySales {
       orders: _toInt(json['orders']),
       revenue: _toDouble(json['revenue']),
       avgOrderValue: _toDouble(json['avg_order_value']),
-    );
-  }
-}
-
-class RecentOrder {
-  final int id;
-  final String nomor;
-  final String? table;
-  final String? memberName;
-  final int pax;
-  final double grandTotal;
-  final String status;
-  final String createdAt;
-  final String? waiters;
-  final String kodeOutlet;
-  final String outletName;
-
-  RecentOrder({
-    required this.id,
-    required this.nomor,
-    this.table,
-    this.memberName,
-    required this.pax,
-    required this.grandTotal,
-    required this.status,
-    required this.createdAt,
-    this.waiters,
-    required this.kodeOutlet,
-    required this.outletName,
-  });
-
-  factory RecentOrder.fromJson(Map<String, dynamic> json) {
-    return RecentOrder(
-      id: _toInt(json['id']),
-      nomor: json['nomor']?.toString() ?? '',
-      table: json['table']?.toString(),
-      memberName: json['member_name']?.toString(),
-      pax: _toInt(json['pax']),
-      grandTotal: _toDouble(json['grand_total']),
-      status: json['status']?.toString() ?? '',
-      createdAt: json['created_at']?.toString() ?? '',
-      waiters: json['waiters']?.toString(),
-      kodeOutlet: json['kode_outlet']?.toString() ?? '',
-      outletName: json['outlet_name']?.toString() ?? '',
     );
   }
 }

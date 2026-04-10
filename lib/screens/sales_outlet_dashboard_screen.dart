@@ -168,10 +168,6 @@ class _SalesOutletDashboardScreenState extends State<SalesOutletDashboardScreen>
                             
                             // Promo Usage
                             _buildPromoUsage(_dashboardData!.promoUsage, _dashboardData!.bankPromoDiscount),
-                            const SizedBox(height: 16),
-                            
-                            // Recent Orders
-                            _buildRecentOrders(_dashboardData!.recentOrders),
                           ],
                         ),
                       ),
@@ -1132,68 +1128,6 @@ class _SalesOutletDashboardScreenState extends State<SalesOutletDashboardScreen>
             _buildInfoRow('Orders with Bank Promo', '${bankPromo.ordersWithBankPromo}'),
             _buildInfoRow('Total Discount', _formatCurrency(bankPromo.totalBankDiscountAmount)),
             _buildInfoRow('Bank Promo %', '${bankPromo.bankPromoPercentage.toStringAsFixed(1)}%'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentOrders(List<RecentOrder> recentOrders) {
-    if (recentOrders.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Recent Orders',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...recentOrders.take(10).map((order) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              order.nomor,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              order.outletName,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        _formatCurrency(order.grandTotal),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF10B981),
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
           ],
         ),
       ),

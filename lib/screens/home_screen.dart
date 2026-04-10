@@ -16,6 +16,8 @@ import '../widgets/approvals/leave_approval_card.dart';
 import '../widgets/approvals/category_cost_approval_card.dart';
 import '../widgets/approvals/stock_adjustment_approval_card.dart';
 import '../widgets/approvals/stock_opname_approval_card.dart';
+import '../widgets/approvals/warehouse_stock_opname_approval_card.dart';
+import '../widgets/approvals/cctv_access_request_approval_card.dart';
 import '../widgets/approvals/outlet_transfer_approval_card.dart';
 import '../widgets/approvals/contra_bon_approval_card.dart';
 import '../widgets/approvals/movement_approval_card.dart';
@@ -35,6 +37,8 @@ import 'approvals/category_cost_approval_detail_screen.dart';
 import 'approvals/stock_adjustment_approval_detail_screen.dart';
 import 'outlet_transfer/outlet_transfer_detail_screen.dart';
 import 'stock_opname/stock_opname_detail_screen.dart';
+import 'warehouse_stock_opname/warehouse_stock_opname_detail_screen.dart';
+import 'approvals/cctv_access_request_approval_detail_screen.dart';
 import 'approvals/contra_bon_approval_detail_screen.dart';
 import 'approvals/movement_approval_detail_screen.dart';
 import 'approvals/coaching_approval_detail_screen.dart';
@@ -80,6 +84,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<CategoryCostApproval> _categoryCostApprovals = [];
   List<StockAdjustmentApproval> _stockAdjustmentApprovals = [];
   List<StockOpnameApproval> _stockOpnameApprovals = [];
+  List<WarehouseStockOpnameApproval> _warehouseStockOpnameApprovals = [];
+  List<CctvAccessRequestApproval> _cctvAccessRequestApprovals = [];
   List<OutletTransferApproval> _outletTransferApprovals = [];
   List<ContraBonApproval> _contraBonApprovals = [];
   List<EmployeeMovementApproval> _movementApprovals = [];
@@ -496,6 +502,40 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingWarehouseStockOpnameApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingWarehouseStockOpnameApprovals();
+      final rawCache = _approvalService.getRawJsonCache();
+      if (rawCache.containsKey('warehouse_stock_opnames')) {
+        _cachedApprovalsJson['warehouse_stock_opnames'] = rawCache['warehouse_stock_opnames']!;
+      }
+      if (mounted) {
+        setState(() {
+          _warehouseStockOpnameApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Warehouse Stock Opname approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingCctvAccessRequestApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingCctvAccessRequestApprovals();
+      final rawCache = _approvalService.getRawJsonCache();
+      if (rawCache.containsKey('cctv_access_requests')) {
+        _cachedApprovalsJson['cctv_access_requests'] = rawCache['cctv_access_requests']!;
+      }
+      if (mounted) {
+        setState(() {
+          _cctvAccessRequestApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading CCTV access request approvals: $e');
+    }
+  }
+
   Future<void> _loadPendingOutletTransferApprovals() async {
     try {
       final approvals = await _approvalService.getPendingOutletTransferApprovals();
@@ -692,6 +732,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               _stockOpnameApprovals = (_cachedApprovalsJson['stock_opnames'] as List<dynamic>?)
                       ?.map((e) => StockOpnameApproval.fromJson(e))
                       .toList() ?? [];
+              _warehouseStockOpnameApprovals =
+                  (_cachedApprovalsJson['warehouse_stock_opnames'] as List<dynamic>?)
+                          ?.map((e) => WarehouseStockOpnameApproval.fromJson(e))
+                          .toList() ??
+                      [];
+              _cctvAccessRequestApprovals =
+                  (_cachedApprovalsJson['cctv_access_requests'] as List<dynamic>?)
+                          ?.map((e) => CctvAccessRequestApproval.fromJson(e))
+                          .toList() ??
+                      [];
               _outletTransferApprovals = (_cachedApprovalsJson['outlet_transfer'] as List<dynamic>?)
                       ?.map((e) => OutletTransferApproval.fromJson(e))
                       .toList() ?? [];
@@ -775,6 +825,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'stock_opname':
           await _loadPendingStockOpnameApprovals();
           break;
+        case 'warehouse_stock_opname':
+          await _loadPendingWarehouseStockOpnameApprovals();
+          break;
+        case 'cctv_access_request':
+          await _loadPendingCctvAccessRequestApprovals();
+          break;
         case 'outlet_transfer':
           await _loadPendingOutletTransferApprovals();
           break;
@@ -845,6 +901,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _loadPendingCategoryCostApprovals(),
       _loadPendingStockAdjustmentApprovals(),
       _loadPendingStockOpnameApprovals(),
+      _loadPendingWarehouseStockOpnameApprovals(),
+      _loadPendingCctvAccessRequestApprovals(),
       _loadPendingOutletTransferApprovals(),
       _loadPendingContraBonApprovals(),
       _loadPendingMovementApprovals(),
@@ -873,7 +931,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       setState(() {
         _isLoadingApprovals = false;
       });
-      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}');
+      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}');
     }
   }
 
@@ -885,6 +943,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _categoryCostApprovals.length +
         _stockAdjustmentApprovals.length +
         _stockOpnameApprovals.length +
+        _warehouseStockOpnameApprovals.length +
+        _cctvAccessRequestApprovals.length +
         _outletTransferApprovals.length +
         _contraBonApprovals.length +
         _movementApprovals.length +
@@ -2702,6 +2762,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ],
 
+            // Warehouse Stock Opname (gudang)
+            if (_warehouseStockOpnameApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Stock Opname Gudang',
+                _warehouseStockOpnameApprovals.length,
+                const Color(0xFF7C3AED),
+                _warehouseStockOpnameApprovals.map((approval) => WarehouseStockOpnameApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => WarehouseStockOpnameDetailScreen(opnameId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('warehouse_stock_opname');
+                      }
+                    });
+                  },
+                )).toList(),
+                'warehouse_stock_opname',
+              ),
+            ],
+
+            // CCTV Access Request (IT Manager)
+            if (_cctvAccessRequestApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Akses CCTV',
+                _cctvAccessRequestApprovals.length,
+                const Color(0xFF546E7A),
+                _cctvAccessRequestApprovals.map((approval) => CctvAccessRequestApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            CctvAccessRequestApprovalDetailScreen(requestId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('cctv_access_request');
+                      }
+                    });
+                  },
+                )).toList(),
+                'cctv_access_request',
+              ),
+            ],
+
             // Outlet Transfer Approvals
             if (_outletTransferApprovals.isNotEmpty) ...[
               const SizedBox(height: 20),
@@ -3165,6 +3278,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         break;
       case 'stock_opname':
         approvals = _stockOpnameApprovals;
+        break;
+      case 'warehouse_stock_opname':
+        approvals = _warehouseStockOpnameApprovals;
+        break;
+      case 'cctv_access_request':
+        approvals = _cctvAccessRequestApprovals;
         break;
       case 'outlet_transfer':
         approvals = _outletTransferApprovals;

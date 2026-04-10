@@ -785,6 +785,168 @@ class ApprovalService {
     }
   }
 
+  Future<List<WarehouseStockOpnameApproval>> getPendingWarehouseStockOpnameApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/warehouse-stock-opnames/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['warehouse_stock_opnames'] != null) {
+          final List<dynamic> approvalsJson = data['warehouse_stock_opnames'];
+          _rawJsonCache['warehouse_stock_opnames'] = approvalsJson;
+          return approvalsJson
+              .map((json) => WarehouseStockOpnameApproval.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Warehouse Stock Opname approvals: $e');
+      return [];
+    }
+  }
+
+  Future<List<CctvAccessRequestApproval>> getPendingCctvAccessRequestApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/cctv-access-requests/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final List<dynamic> list = data['data'] is List ? data['data'] as List<dynamic> : [];
+          _rawJsonCache['cctv_access_requests'] = list;
+          return list
+              .map((json) => CctvAccessRequestApproval.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading CCTV access request approvals: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCctvAccessRequestDetail(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/cctv-access-requests/$id'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data'] as Map);
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error loading CCTV access request detail: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> approveCctvAccessRequest(int id, {String? approvalNotes}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Sesi habis. Silakan login kembali.'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/cctv-access-requests/$id/approve'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'approval_notes': approvalNotes,
+        }),
+      );
+
+      Map<String, dynamic> data;
+      try {
+        data = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'success': false, 'message': 'Respons server tidak valid (${response.statusCode})'};
+      }
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data;
+      }
+      return {
+        'success': false,
+        'message': data['message']?.toString() ?? 'Gagal menyetujui permintaan',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  Future<Map<String, dynamic>> rejectCctvAccessRequest(int id, String approvalNotes) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Sesi habis. Silakan login kembali.'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/cctv-access-requests/$id/reject'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'approval_notes': approvalNotes,
+        }),
+      );
+
+      Map<String, dynamic> data;
+      try {
+        data = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'success': false, 'message': 'Respons server tidak valid (${response.statusCode})'};
+      }
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data;
+      }
+      return {
+        'success': false,
+        'message': data['message']?.toString() ?? 'Gagal menolak permintaan',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
   /// Returns { 'adjustments': List<WarehouseStockAdjustmentApproval>, 'error': String? }
   Future<Map<String, dynamic>> getPendingWarehouseStockAdjustmentApprovalsWithError() async {
     try {

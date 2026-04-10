@@ -10,6 +10,7 @@ import '../screens/sales_outlet_dashboard_screen.dart';
 import '../screens/web_only_feature_screen.dart';
 import '../screens/my_attendance_screen.dart';
 import '../screens/purchase_requisition_list_screen.dart';
+import '../screens/tickets/ticket_list_screen.dart';
 import '../screens/support/support_admin_panel_screen.dart';
 import '../screens/settings/user_role_settings_screen.dart';
 import '../screens/settings/role_management_screen.dart';
@@ -903,6 +904,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const PurchaseRequisitionListScreen(),
+        ),
+      );
+    } else if (route == '/tickets') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const TicketListScreen(),
         ),
       );
     } else if (route == '/support/admin') {

@@ -12,14 +12,29 @@ import 'purchase_requisition_detail_screen.dart';
 
 class PurchaseRequisitionCreateScreen extends StatefulWidget {
   final Map<String, dynamic>? editData;
-  
-  const PurchaseRequisitionCreateScreen({super.key, this.editData});
+
+  /// Dari ticket list: buka form Payment Application dengan ticket terisi.
+  final int? initialTicketId;
+  final String? initialTicketNumber;
+  final String? initialTicketTitle;
+
+  const PurchaseRequisitionCreateScreen({
+    super.key,
+    this.editData,
+    this.initialTicketId,
+    this.initialTicketNumber,
+    this.initialTicketTitle,
+  });
 
   @override
   State<PurchaseRequisitionCreateScreen> createState() => _PurchaseRequisitionCreateScreenState();
 }
 
 class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCreateScreen> {
+  /// Sama dengan ymsofterp `Create.vue` — nilai & termin wajib dari pilihan terbatas.
+  static const List<int> _kasbonAmountOptions = [500000, 1000000, 1500000, 2000000, 2500000, 3000000];
+  static const List<int> _kasbonTerminOptions = [1, 2, 3];
+
   final PurchaseRequisitionService _service = PurchaseRequisitionService();
   final AuthService _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
@@ -49,8 +64,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   final _travelNotesController = TextEditingController();
   List<int> _travelOutletIds = [];
   
-  // For kasbon
-  final _kasbonAmountController = TextEditingController();
+  // For kasbon (dropdown seperti web ERP — bukan input bebas)
+  int? _kasbonAmount;
+  int _kasbonTermin = 1;
   final _kasbonReasonController = TextEditingController();
   
   // Items (for pr_ops, purchase_payment, travel_application)
@@ -69,6 +85,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _outletOptions = [];
   List<Map<String, dynamic>> _tickets = [];
+
+  /// Label nomor ticket untuk banner (dari deep link ticket).
+  String? _linkedTicketNumber;
   
   // Attachments (for non-pr_ops/purchase_payment)
   List<File> _attachments = [];
@@ -91,11 +110,32 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   @override
   void initState() {
     super.initState();
+    if (widget.editData == null && widget.initialTicketId != null) {
+      _selectedMode = 'purchase_payment';
+      _selectedTicketId = widget.initialTicketId;
+      final n = widget.initialTicketNumber?.trim();
+      _linkedTicketNumber = (n != null && n.isNotEmpty) ? n : null;
+    }
     _loadUserDataAndOptions();
     if (widget.editData != null) {
       _loadEditData();
     } else {
       _initializeForm();
+      _applyInitialTicketPrefill();
+    }
+  }
+
+  void _applyInitialTicketPrefill() {
+    if (widget.initialTicketId == null) return;
+    final tn = widget.initialTicketNumber?.trim() ?? '';
+    final tt = widget.initialTicketTitle?.trim() ?? '';
+    if (_titleController.text.trim().isNotEmpty) return;
+    if (tn.isNotEmpty && tt.isNotEmpty) {
+      _titleController.text = '$tt ($tn)';
+    } else if (tn.isNotEmpty) {
+      _titleController.text = 'Payment — $tn';
+    } else if (tt.isNotEmpty) {
+      _titleController.text = tt;
     }
   }
 
@@ -132,7 +172,6 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     _descriptionController.dispose();
     _travelAgendaController.dispose();
     _travelNotesController.dispose();
-    _kasbonAmountController.dispose();
     _kasbonReasonController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -201,8 +240,40 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
       // Load travel items
       // ...
     } else if (_selectedMode == 'kasbon') {
-      // Load kasbon data
-      // ...
+      Map<String, dynamic>? msd;
+      final raw = data['mode_specific_data'];
+      if (raw is Map<String, dynamic>) {
+        msd = raw;
+      } else if (raw is Map) {
+        msd = Map<String, dynamic>.from(raw);
+      }
+      int? amt;
+      if (msd != null && msd['kasbon_amount'] != null) {
+        final v = msd['kasbon_amount'];
+        amt = v is int ? v : (v is num ? v.toInt() : int.tryParse(v.toString()));
+      }
+      if (amt == null && data['kasbon_amount'] != null) {
+        final v = data['kasbon_amount'];
+        amt = v is int ? v : (v is num ? v.toInt() : int.tryParse(v.toString()));
+      }
+      if (amt != null && _kasbonAmountOptions.contains(amt)) {
+        _kasbonAmount = amt;
+      } else {
+        _kasbonAmount = null;
+      }
+      int termin = 1;
+      if (msd != null && msd['kasbon_termin'] != null) {
+        final v = msd['kasbon_termin'];
+        termin = v is int ? v : (v is num ? v.toInt() : int.tryParse(v.toString()) ?? 1);
+      } else if (data['kasbon_termin'] != null) {
+        final v = data['kasbon_termin'];
+        termin = v is int ? v : (v is num ? v.toInt() : int.tryParse(v.toString()) ?? 1);
+      }
+      _kasbonTermin = _kasbonTerminOptions.contains(termin) ? termin : 1;
+      final reasonRaw = msd != null && msd['kasbon_reason'] != null
+          ? msd['kasbon_reason']
+          : data['description'];
+      _kasbonReasonController.text = reasonRaw?.toString() ?? '';
     }
   }
 
@@ -334,13 +405,13 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
         }
       }
 
-      // Validasi kasbon (sama dengan web): periode 10–20 bulan berjalan + cek duplikat per outlet
+      // Validasi kasbon — selaras Create.vue ERP: periode, nilai/termin terpilih, alasan, outlet, kategori, duplikat (user outlet != 1)
       if (_selectedMode == 'kasbon') {
         if (!_isWithinKasbonPeriod()) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Tidak dapat input kasbon di luar periode. Bisa ajukan: tanggal 10–20 bulan berjalan. Periode aktif: ${_getKasbonPeriodText()}',
+                'Tidak dapat input kasbon di luar periode. Periode kasbon: tanggal 10 hingga tanggal 20 bulan berjalan. Periode aktif: ${_getKasbonPeriodText()}',
               ),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 5),
@@ -349,7 +420,63 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           setState(() => _isLoading = false);
           return;
         }
-        if (_selectedOutletId != null) {
+        if (_kasbonAmount == null || !_kasbonAmountOptions.contains(_kasbonAmount)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Silakan pilih nilai kasbon dari pilihan yang tersedia'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() => _isLoading = false);
+          return;
+        }
+        if (!_kasbonTerminOptions.contains(_kasbonTermin)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Silakan pilih termin kasbon (1x, 2x, atau 3x)'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() => _isLoading = false);
+          return;
+        }
+        final reasonTrim = _kasbonReasonController.text.trim();
+        if (reasonTrim.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Silakan isi alasan atau tujuan penggunaan kasbon'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() => _isLoading = false);
+          return;
+        }
+        if (_selectedOutletId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Outlet diperlukan. Pilih outlet untuk pengajuan kasbon.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() => _isLoading = false);
+          return;
+        }
+        if (_selectedCategoryId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Kategori kasbon tidak terdeteksi. Muat ulang atau hubungi admin.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() => _isLoading = false);
+          return;
+        }
+        if (_shouldValidateKasbonDuplicate()) {
           final checkResult = await _service.checkKasbonPeriod(
             outletId: _selectedOutletId!,
             excludeId: widget.editData?['id'],
@@ -432,17 +559,11 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           });
         }
       } else if (_selectedMode == 'kasbon') {
-        // Kasbon - single item
-        items.add({
-          'item_name': _kasbonReasonController.text,
-          'qty': 1.0,
-          'unit': 'pcs',
-          'unit_price': double.tryParse(_kasbonAmountController.text) ?? 0.0,
-          'subtotal': double.tryParse(_kasbonAmountController.text) ?? 0.0,
-        });
+        // Backend ERP membuat item otomatis dari kasbon_amount / kasbon_reason (sama seperti web — items dikosongkan)
+        items = [];
       }
 
-      if (items.isEmpty) {
+      if (items.isEmpty && _selectedMode != 'kasbon') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please add at least one item'),
@@ -505,7 +626,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           categoryId: _selectedCategoryId,
           outletId: _selectedOutletId,
           ticketId: _selectedTicketId,
-          description: _descriptionController.text,
+          description: _selectedMode == 'kasbon' ? _kasbonReasonController.text.trim() : _descriptionController.text,
           priority: _selectedPriority,
           currency: _selectedCurrency,
           items: items,
@@ -513,8 +634,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           travelOutletIds: _selectedMode == 'travel_application' ? _travelOutletIds : null,
           travelAgenda: _selectedMode == 'travel_application' ? _travelAgendaController.text : null,
           travelNotes: _selectedMode == 'travel_application' ? _travelNotesController.text : null,
-          kasbonAmount: _selectedMode == 'kasbon' ? double.tryParse(_kasbonAmountController.text) : null,
-          kasbonReason: _selectedMode == 'kasbon' ? _kasbonReasonController.text : null,
+          kasbonAmount: _selectedMode == 'kasbon' ? _kasbonAmount?.toDouble() : null,
+          kasbonTermin: _selectedMode == 'kasbon' ? _kasbonTermin : null,
+          kasbonReason: _selectedMode == 'kasbon' ? _kasbonReasonController.text.trim() : null,
           attachments: _selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' ? _attachments : null,
         );
       } else {
@@ -525,7 +647,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           categoryId: _selectedCategoryId,
           outletId: _selectedOutletId,
           ticketId: _selectedTicketId,
-          description: _descriptionController.text,
+          description: _selectedMode == 'kasbon' ? _kasbonReasonController.text.trim() : _descriptionController.text,
           priority: _selectedPriority,
           currency: _selectedCurrency,
           items: items,
@@ -533,8 +655,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           travelOutletIds: _selectedMode == 'travel_application' ? _travelOutletIds : null,
           travelAgenda: _selectedMode == 'travel_application' ? _travelAgendaController.text : null,
           travelNotes: _selectedMode == 'travel_application' ? _travelNotesController.text : null,
-          kasbonAmount: _selectedMode == 'kasbon' ? double.tryParse(_kasbonAmountController.text) : null,
-          kasbonReason: _selectedMode == 'kasbon' ? _kasbonReasonController.text : null,
+          kasbonAmount: _selectedMode == 'kasbon' ? _kasbonAmount?.toDouble() : null,
+          kasbonTermin: _selectedMode == 'kasbon' ? _kasbonTermin : null,
+          kasbonReason: _selectedMode == 'kasbon' ? _kasbonReasonController.text.trim() : null,
           attachments: _selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' ? _attachments : null,
         );
       }
@@ -670,6 +793,10 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     
     setState(() {
       _selectedMode = newMode;
+      if (newMode == 'travel_application' || newMode == 'kasbon') {
+        _selectedTicketId = null;
+        _linkedTicketNumber = null;
+      }
       // Clear kasbon errors if mode is not kasbon
       if (newMode != 'kasbon') {
         _kasbonPeriodError = null;
@@ -686,9 +813,14 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
         }
       }
       
-      // Auto-set category for kasbon mode
-      if (newMode == 'kasbon' && _categories.isNotEmpty) {
-        _autoSetKasbonCategory();
+      // Reset & auto-set kasbon fields (selaras web: termin default 1, nilai wajib dipilih)
+      if (newMode == 'kasbon') {
+        _kasbonAmount = null;
+        _kasbonTermin = 1;
+        _kasbonReasonController.clear();
+        if (_categories.isNotEmpty) {
+          _autoSetKasbonCategory();
+        }
       }
       
       // Auto-set category for travel_application mode
@@ -760,7 +892,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
       return _categories.where((cat) {
         final name = (cat['name'] ?? cat['nama'] ?? '').toString().toLowerCase();
-        return !name.contains('transport') && !name.contains('kasbon');
+        return !name.contains('transport') &&
+            !name.contains('akomodasi') &&
+            !name.contains('kasbon');
       }).toList();
     }
     // For other modes, return all categories
@@ -893,6 +1027,21 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     return null; // No validation errors
   }
 
+  /// `id_outlet == 1` di backend: lewati cek duplikat kasbon antar-user (sama perilaku ERP).
+  int? _currentUserOutletId() {
+    if (_userData == null) return null;
+    final v = _userData!['id_outlet'] ?? _userData!['outlet_id'];
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
+  bool _shouldValidateKasbonDuplicate() {
+    final o = _currentUserOutletId();
+    return o != null && o != 1;
+  }
+
   /// Periode kasbon sama dengan web: bisa ajukan hanya tanggal 10–20 bulan berjalan.
   bool _isWithinKasbonPeriod() {
     final now = DateTime.now();
@@ -1002,14 +1151,13 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
         _kasbonPeriodError = null;
       });
       
-      // Check if there's already a kasbon from another user for this outlet in the period
-      // Only check if outlet is selected
-      if (_selectedOutletId != null) {
+      // Duplikat per outlet: hanya jika user login bukan outlet pusat (id_outlet != 1), sama Create.vue
+      if (_shouldValidateKasbonDuplicate() && _selectedOutletId != null) {
         final checkResult = await _service.checkKasbonPeriod(
           outletId: _selectedOutletId!,
           excludeId: widget.editData?['id'],
         );
-        
+
         if (checkResult['exists'] == true) {
           setState(() {
             _kasbonExistsError = checkResult['message'] ?? 'Sudah ada pengajuan kasbon untuk outlet ini di periode yang sama.';
@@ -1019,6 +1167,10 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             _kasbonExistsError = null;
           });
         }
+      } else {
+        setState(() {
+          _kasbonExistsError = null;
+        });
       }
     } catch (e) {
       print('Error checking kasbon period: $e');
@@ -1067,16 +1219,31 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
                   border: Border.all(color: Colors.grey.shade300),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(Icons.tag, size: 20, color: Colors.grey.shade700),
                     const SizedBox(width: 10),
-                    Text(
-                      'No. PR (akan diberikan saat simpan): ',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                    ),
-                    Text(
-                      _nextPrNumber!,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'No. PR (akan diberikan saat simpan):',
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _nextPrNumber!,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1240,6 +1407,47 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
               return null;
             },
           ),
+          if (_selectedTicketId != null &&
+              (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment')) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFC7D2FE)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.confirmation_number_rounded, color: Color(0xFF4F46E5), size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ticket terkait',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                        ),
+                        Text(
+                          _linkedTicketNumber != null && _linkedTicketNumber!.isNotEmpty
+                              ? _linkedTicketNumber!
+                              : 'ID #$_selectedTicketId',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                            color: Color(0xFF3730A3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           
           // Division
@@ -1711,6 +1919,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   }
 
   Widget _buildKasbonForm() {
+    final periodInfoStyle = TextStyle(color: Colors.blue.shade700, fontSize: 13);
+    final smallInfoStyle = TextStyle(color: Colors.blue.shade600, fontSize: 11);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -1733,16 +1944,13 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
               const SizedBox(width: 8),
               const Text(
                 'Kasbon Information',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          
-          // Periode Aktif (sama dengan web): tampilkan saat dalam periode
+          const SizedBox(height: 16),
+
+          // Periode Kasbon — copy struktur Create.vue
           if (_kasbonPeriodError == null && _isWithinKasbonPeriod())
             Container(
               margin: const EdgeInsets.only(bottom: 16),
@@ -1750,27 +1958,50 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
               decoration: BoxDecoration(
                 color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
+                border: Border.all(color: Colors.blue.shade300),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.calendar_today, color: Colors.blue.shade700, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Periode Aktif: ${_getKasbonPeriodText()}',
-                      style: TextStyle(
-                        color: Colors.blue.shade900,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, color: Colors.blue.shade800, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Periode Kasbon',
+                        style: TextStyle(
+                          color: Colors.blue.shade800,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: 'Periode Aktif: ', style: periodInfoStyle.copyWith(fontWeight: FontWeight.w700)),
+                        TextSpan(text: _getKasbonPeriodText(), style: periodInfoStyle),
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan',
+                    style: smallInfoStyle,
+                  ),
+                  if (_shouldValidateKasbonDuplicate()) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Per periode hanya diijinkan 1 user saja per outlet. Jika sudah ada user lain yang mengajukan kasbon di periode ini, pengajuan akan ditolak.',
+                      style: TextStyle(color: Colors.amber.shade800, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ],
               ),
             ),
-          
-          // Kasbon Period Error
+
           if (_kasbonPeriodError != null)
             Container(
               margin: const EdgeInsets.only(bottom: 16),
@@ -1781,23 +2012,20 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
                 border: Border.all(color: Colors.red.shade300),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _kasbonPeriodError!,
-                      style: TextStyle(
-                        color: Colors.red.shade900,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: Colors.red.shade900, fontSize: 14),
                     ),
                   ),
                 ],
               ),
             ),
-          
-          // Kasbon Exists Error
+
           if (_kasbonExistsError != null)
             Container(
               margin: const EdgeInsets.only(bottom: 16),
@@ -1808,62 +2036,129 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
                 border: Border.all(color: Colors.orange.shade300),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _kasbonExistsError!,
-                      style: TextStyle(
-                        color: Colors.orange.shade900,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: Colors.orange.shade900, fontSize: 14),
                     ),
                   ),
                 ],
               ),
             ),
-          
-          // Kasbon Amount
-          TextFormField(
-            controller: _kasbonAmountController,
-            keyboardType: TextInputType.number,
+
+          // Nilai Kasbon — dropdown (sama ERP)
+          Text(
+            'Nilai Kasbon *',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade800),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<int>(
+            value: _kasbonAmount,
             decoration: InputDecoration(
-              labelText: 'Nilai Kasbon *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
               fillColor: Colors.grey.shade50,
-              prefixText: 'Rp ',
+              hintText: 'Pilih nilai kasbon',
             ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Nilai kasbon is required';
-              }
-              if (double.tryParse(value) == null || double.parse(value) <= 0) {
-                return 'Please enter a valid amount';
-              }
-              return null;
+            items: _kasbonAmountOptions
+                .map(
+                  (a) => DropdownMenuItem<int>(
+                    value: a,
+                    child: Text(NumberFormat.currency(symbol: 'Rp ', decimalDigits: 0).format(a)),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) => setState(() => _kasbonAmount = v),
+          ),
+          if (_kasbonAmount != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Total: ${_formatCurrency(_kasbonAmount!.toDouble())}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ),
+          const SizedBox(height: 16),
+
+          // Termin
+          Text(
+            'Termin *',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade800),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<int>(
+            value: _kasbonTermin,
+            decoration: InputDecoration(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.grey.shade50,
+            ),
+            items: _kasbonTerminOptions
+                .map(
+                  (t) => DropdownMenuItem<int>(
+                    value: t,
+                    child: Text('${t}x Termin'),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) {
+              if (v != null) setState(() => _kasbonTermin = v);
             },
           ),
           const SizedBox(height: 16),
-          
-          // Kasbon Reason
+
+          // Alasan
+          Text(
+            'Reason / Alasan Kasbon *',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade800),
+          ),
+          const SizedBox(height: 8),
           TextFormField(
             controller: _kasbonReasonController,
             maxLines: 6,
             decoration: InputDecoration(
-              labelText: 'Reason / Alasan Kasbon *',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
               fillColor: Colors.grey.shade50,
               hintText: 'Masukkan alasan atau tujuan penggunaan kasbon...',
             ),
             validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Reason is required';
+              if (value == null || value.trim().isEmpty) {
+                return 'Alasan kasbon wajib diisi';
               }
               return null;
             },
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Jelaskan secara detail alasan dan tujuan penggunaan kasbon, termasuk rencana pelunasan',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade300),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue.shade800, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Untuk pengajuan kasbon/uang muka, pastikan informasi lengkap termasuk tujuan penggunaan dan rencana pelunasan',
+                    style: TextStyle(color: Colors.blue.shade800, fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
