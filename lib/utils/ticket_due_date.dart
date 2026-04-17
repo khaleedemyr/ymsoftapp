@@ -15,6 +15,8 @@ class TicketDueDateStyle {
   static TicketDueDateStyle compute({
     required String? dueIso,
     String? statusSlug,
+    String? closedAtIso,
+    String? resolvedAtIso,
   }) {
     const grayBg = Color(0xFFF3F4F6);
     const grayFg = Color(0xFF6B7280);
@@ -38,6 +40,43 @@ class TicketDueDateStyle {
       );
     }
 
+    final normalizedStatus = (statusSlug ?? '').toLowerCase();
+    final isResolved = normalizedStatus == 'resolved';
+    final isClosed = normalizedStatus == 'closed';
+    final isCompleted = isResolved || isClosed;
+
+    DateTime? completedAt;
+    final completedRaw = isClosed ? closedAtIso : (isResolved ? resolvedAtIso : null);
+    if (completedRaw != null && completedRaw.isNotEmpty) {
+      try {
+        completedAt = DateTime.parse(completedRaw);
+      } catch (_) {
+        completedAt = null;
+      }
+    }
+
+    if (isCompleted) {
+      if (completedAt != null && !completedAt.isAfter(due)) {
+        return TicketDueDateStyle(
+          badgeLabel: isResolved ? 'Resolved On Time' : 'Closed On Time',
+          backgroundColor: const Color(0xFFDCFCE7),
+          foregroundColor: const Color(0xFF15803D),
+        );
+      }
+      if (completedAt != null && completedAt.isAfter(due)) {
+        return TicketDueDateStyle(
+          badgeLabel: isResolved ? 'Resolved Late' : 'Closed Late',
+          backgroundColor: const Color(0xFFFEE2E2),
+          foregroundColor: const Color(0xFFDC2626),
+        );
+      }
+      return TicketDueDateStyle(
+        badgeLabel: isResolved ? 'Resolved' : 'Closed',
+        backgroundColor: const Color(0xFFD1FAE5),
+        foregroundColor: const Color(0xFF065F46),
+      );
+    }
+
     final now = DateTime.now();
     final diffMs = due.millisecondsSinceEpoch - now.millisecondsSinceEpoch;
     final diffDays = (diffMs / Duration.millisecondsPerDay).ceil();
@@ -58,13 +97,6 @@ class TicketDueDateStyle {
         badgeLabel: statusText,
         backgroundColor: const Color(0xFFFEE2E2),
         foregroundColor: const Color(0xFFDC2626),
-      );
-    }
-    if (statusSlug == 'closed' || statusSlug == 'resolved') {
-      return TicketDueDateStyle(
-        badgeLabel: statusText,
-        backgroundColor: const Color(0xFFDCFCE7),
-        foregroundColor: const Color(0xFF16A34A),
       );
     }
     if (diffDays == 0) {
@@ -100,6 +132,8 @@ class TicketDueDateStyle {
 class TicketDueDateRow extends StatelessWidget {
   final String dueIso;
   final String? statusSlug;
+  final String? closedAtIso;
+  final String? resolvedAtIso;
   final String dateLabel;
   final double fontSize;
   final bool showDuePrefix;
@@ -112,6 +146,8 @@ class TicketDueDateRow extends StatelessWidget {
     required this.dueIso,
     required this.dateLabel,
     this.statusSlug,
+    this.closedAtIso,
+    this.resolvedAtIso,
     this.fontSize = 10,
     this.showDuePrefix = true,
     this.expandDateToFit = true,
@@ -119,7 +155,12 @@ class TicketDueDateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = TicketDueDateStyle.compute(dueIso: dueIso, statusSlug: statusSlug);
+    final style = TicketDueDateStyle.compute(
+      dueIso: dueIso,
+      statusSlug: statusSlug,
+      closedAtIso: closedAtIso,
+      resolvedAtIso: resolvedAtIso,
+    );
     final prefix = showDuePrefix ? 'Due ' : '';
 
     final dateText = Text(

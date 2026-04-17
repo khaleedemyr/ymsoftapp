@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../services/menu_service.dart';
 import '../models/menu_models.dart';
 import '../screens/video_tutorial_gallery_screen.dart';
@@ -11,6 +10,7 @@ import '../screens/web_only_feature_screen.dart';
 import '../screens/my_attendance_screen.dart';
 import '../screens/purchase_requisition_list_screen.dart';
 import '../screens/tickets/ticket_list_screen.dart';
+import '../screens/guest_comment/guest_comment_list_screen.dart';
 import '../screens/support/support_admin_panel_screen.dart';
 import '../screens/settings/user_role_settings_screen.dart';
 import '../screens/settings/role_management_screen.dart';
@@ -911,6 +911,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const TicketListScreen(),
+        ),
+      );
+    } else if (route == '/guest-comment-forms') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const GuestCommentListScreen(),
         ),
       );
     } else if (route == '/support/admin') {

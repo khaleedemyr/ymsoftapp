@@ -360,6 +360,7 @@ class MenuService {
         {'name': 'Inject Point Manual', 'icon': 'fa-solid fa-syringe', 'route': '/manual-point', 'code': 'manual_point'},
         {'name': 'Member Apps Settings', 'icon': 'fa-solid fa-mobile-screen-button', 'route': '/admin/member-apps-settings', 'code': 'member_apps_settings'},
         {'name': 'Member History & Preferences', 'icon': 'fa-solid fa-history', 'route': '/member-history', 'code': 'member_history_preferences'},
+        {'name': 'Guest Comment (OCR)', 'icon': 'fa-solid fa-comment-dots', 'route': '/guest-comment-forms', 'code': 'guest_comment_form'},
       ],
     },
     {

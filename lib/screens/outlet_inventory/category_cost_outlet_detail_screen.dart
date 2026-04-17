@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:math';
 
 import 'package:intl/intl.dart';
 import '../../services/outlet_category_cost_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/attendance_service.dart';
 import '../../widgets/app_loading_indicator.dart';
 
 
@@ -23,9 +25,9 @@ class _ItemSearchDialog extends StatefulWidget {
   State<_ItemSearchDialog> createState() => _ItemSearchDialogState();
 }
 
+/// Sama sumber data & perilaku pencarian dengan izin (My Attendance): GET attendance/approvers.
 class _ApproverSearchDialog extends StatefulWidget {
-  final OutletCategoryCostService service;
-  const _ApproverSearchDialog({Key? key, required this.service}) : super(key: key);
+  const _ApproverSearchDialog({Key? key}) : super(key: key);
 
   @override
   State<_ApproverSearchDialog> createState() => _ApproverSearchDialogState();
@@ -33,18 +35,48 @@ class _ApproverSearchDialog extends StatefulWidget {
 
 class _ApproverSearchDialogState extends State<_ApproverSearchDialog> {
   final TextEditingController _q = TextEditingController();
-  bool _loading = false;
+  final AttendanceService _attendance = AttendanceService();
+  bool _loading = true;
   List<Map<String, dynamic>> _results = [];
+  Timer? _debounce;
 
-  Future<void> _search() async {
-    final q = _q.text.trim();
-    if (q.length < 2) return;
+  @override
+  void initState() {
+    super.initState();
+    _loadApprovers();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _q.dispose();
+    super.dispose();
+  }
+
+  void _onSearchTextChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), _loadApprovers);
+  }
+
+  Future<void> _loadApprovers() async {
     setState(() => _loading = true);
-    final res = await widget.service.searchApprovers(search: q);
-    setState(() {
-      _results = res;
-      _loading = false;
-    });
+    try {
+      final q = _q.text.trim();
+      final res = await _attendance.getApprovers(
+        search: q.isEmpty ? null : q,
+      );
+      if (!mounted) return;
+      setState(() {
+        _results = res;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _results = [];
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -56,8 +88,9 @@ class _ApproverSearchDialogState extends State<_ApproverSearchDialog> {
         children: [
           TextField(
             controller: _q,
-            decoration: const InputDecoration(hintText: 'Ketik nama, email, atau jabatan'),
-            onSubmitted: (_) => _search(),
+            decoration: const InputDecoration(hintText: 'Cari approver...'),
+            onChanged: _onSearchTextChanged,
+            onSubmitted: (_) => _loadApprovers(),
           ),
           const SizedBox(height: 8),
           _loading
@@ -66,19 +99,29 @@ class _ApproverSearchDialogState extends State<_ApproverSearchDialog> {
                   height: 260,
                   width: double.maxFinite,
                   child: _results.isEmpty
-                      ? const Center(child: Text('No results'))
+                      ? const Center(child: Text('Tidak ada approver tersedia'))
                       : ListView.separated(
                           itemCount: _results.length,
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (context, index) {
                             final it = _results[index];
+                            final name =
+                                it['nama_lengkap']?.toString() ?? it['name']?.toString() ?? '';
                             return ListTile(
-                              title: Text(it['name'] ?? ''),
-                              subtitle: Text(it['email'] ?? ''),
-                              trailing: (it['jabatan'] != null && it['jabatan'].toString().isNotEmpty)
-                                  ? Text(it['jabatan'])
+                              title: Text(name),
+                              subtitle: Text(it['email']?.toString() ?? ''),
+                              trailing: (it['jabatan'] != null &&
+                                      it['jabatan'].toString().isNotEmpty)
+                                  ? Text(
+                                      it['jabatan'].toString(),
+                                      style: const TextStyle(fontSize: 12),
+                                    )
                                   : null,
-                              onTap: () => Navigator.pop(context, it),
+                              onTap: () {
+                                final m = Map<String, dynamic>.from(it);
+                                m['name'] = m['nama_lengkap'] ?? m['name'] ?? '';
+                                Navigator.pop(context, m);
+                              },
                             );
                           },
                         ),
@@ -87,7 +130,7 @@ class _ApproverSearchDialogState extends State<_ApproverSearchDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-        TextButton(onPressed: _search, child: const Text('Cari')),
+        TextButton(onPressed: _loadApprovers, child: const Text('Cari')),
       ],
     );
   }
@@ -422,7 +465,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
     final selected = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
-        return _ApproverSearchDialog(service: _service);
+        return const _ApproverSearchDialog();
       },
     );
 

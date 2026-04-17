@@ -717,6 +717,8 @@ class _TicketCard extends StatelessWidget {
     final divisi = data['divisi'] is Map ? data['divisi']['nama_divisi']?.toString() : null;
     final outlet = data['outlet'] is Map ? data['outlet']['nama_outlet']?.toString() : null;
     final due = data['due_date']?.toString();
+    final closedAt = data['closed_at']?.toString();
+    final resolvedAt = data['resolved_at']?.toString();
     final comments = (data['comments_count'] as num?)?.toInt() ?? 0;
     final creator = data['creator'] is Map ? data['creator'] as Map<String, dynamic> : null;
     final assigned = data['assigned_users'] as List<dynamic>? ?? [];
@@ -1009,6 +1011,8 @@ class _TicketCard extends StatelessWidget {
                                       child: TicketDueDateRow(
                                         dueIso: due,
                                         statusSlug: statusSlug,
+                                        closedAtIso: closedAt,
+                                        resolvedAtIso: resolvedAt,
                                         dateLabel: _fmtDate(due),
                                         fontSize: 10,
                                       ),

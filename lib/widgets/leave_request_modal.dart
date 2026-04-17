@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'dart:async';
 import 'dart:io';
 import '../services/attendance_service.dart';
 import '../services/auth_service.dart';
@@ -39,7 +40,8 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
   List<Map<String, dynamic>> _availableApprovers = [];
   bool _isLoadingApprovers = false;
   bool _isSubmitting = false;
-  String? _searchQuery = '';
+  final TextEditingController _approverSearchController = TextEditingController();
+  Timer? _approverSearchDebounce;
   int? _userLeaveBalance; // Saldo cuti user
   int? _extraOffBalance; // Saldo extra off user
   int? _phBalance; // Saldo PH user
@@ -215,8 +217,17 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
     return days > _userLeaveBalance!;
   }
 
+  int? _coerceUserId(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
   @override
   void dispose() {
+    _approverSearchDebounce?.cancel();
+    _approverSearchController.dispose();
     _reasonController.dispose();
     super.dispose();
   }
@@ -227,8 +238,9 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
     });
 
     try {
+      final q = _approverSearchController.text.trim();
       final approvers = await _attendanceService.getApprovers(
-        search: _searchQuery?.isEmpty ?? true ? null : _searchQuery,
+        search: q.isEmpty ? null : q,
       );
       setState(() {
         _availableApprovers = approvers;
@@ -1210,31 +1222,40 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                           ],
                         ),
                         child: TextField(
+                          controller: _approverSearchController,
                           decoration: InputDecoration(
                             hintText: 'Cari approver...',
                             hintStyle: TextStyle(color: Colors.grey[400]),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                             prefixIcon: Icon(Icons.search, color: Colors.purple.shade400),
-                            suffixIcon: _searchQuery != null && _searchQuery!.isNotEmpty
+                            suffixIcon: _approverSearchController.text.isNotEmpty
                                 ? IconButton(
                                     icon: Icon(Icons.clear, color: Colors.grey[600]),
                                     onPressed: () {
-                                      setState(() {
-                                        _searchQuery = '';
-                                      });
+                                      _approverSearchDebounce?.cancel();
+                                      _approverSearchController.clear();
+                                      setState(() {});
                                       _loadApprovers();
                                     },
                                   )
                                 : null,
                           ),
                           style: const TextStyle(fontSize: 15),
-                          onChanged: (value) {
-                            setState(() {
-                              _searchQuery = value;
-                            });
+                          onChanged: (_) {
+                            setState(() {});
+                            _approverSearchDebounce?.cancel();
+                            _approverSearchDebounce = Timer(
+                              const Duration(milliseconds: 400),
+                              () {
+                                if (mounted) _loadApprovers();
+                              },
+                            );
                           },
-                          onSubmitted: (_) => _loadApprovers(),
+                          onSubmitted: (_) {
+                            _approverSearchDebounce?.cancel();
+                            _loadApprovers();
+                          },
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -1279,7 +1300,10 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                             itemCount: _availableApprovers.length,
                             itemBuilder: (context, index) {
                               final approver = _availableApprovers[index];
-                              final approverId = approver['id'] as int;
+                              final approverId = _coerceUserId(approver['id']);
+                              if (approverId == null) {
+                                return const SizedBox.shrink();
+                              }
                               final isSelected = _selectedApprovers.contains(approverId);
                               return Container(
                                 decoration: BoxDecoration(
@@ -1360,7 +1384,7 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
                             runSpacing: 8,
                             children: _selectedApprovers.map((approverId) {
                               final approver = _availableApprovers.firstWhere(
-                                (a) => a['id'] == approverId,
+                                (a) => _coerceUserId(a['id']) == approverId,
                                 orElse: () => {},
                               );
                               final approverName = approver['nama_lengkap'] ?? 'Unknown';

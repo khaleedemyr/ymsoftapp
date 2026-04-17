@@ -337,6 +337,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     final div = t['divisi'] is Map ? t['divisi']['nama_divisi']?.toString() : null;
     final out = t['outlet'] is Map ? t['outlet']['nama_outlet']?.toString() : null;
     final due = t['due_date']?.toString();
+    final closedAt = t['closed_at']?.toString();
+    final resolvedAt = t['resolved_at']?.toString();
     final desc = t['description']?.toString() ?? '';
 
     final assignees = t['assigned_users'] as List<dynamic>? ?? [];
@@ -364,6 +366,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
                 TicketDueDateRow(
                   dueIso: due,
                   statusSlug: statusSlug,
+                  closedAtIso: closedAt,
+                  resolvedAtIso: resolvedAt,
                   dateLabel: _fmt(due),
                   fontSize: 11,
                   expandDateToFit: false,

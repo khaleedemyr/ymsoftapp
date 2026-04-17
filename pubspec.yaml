@@ -61,6 +61,7 @@ dependencies:
   
   # Video Player
   video_player: ^2.8.1
+  new_version_plus: ^0.1.1
 
 dev_dependencies:
   flutter_test:

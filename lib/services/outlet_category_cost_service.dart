@@ -185,37 +185,6 @@ class OutletCategoryCostService {
     return [];
   }
 
-  Future<List<Map<String, dynamic>>> searchApprovers({String? search}) async {
-    try {
-      final token = await _getToken();
-      if (token == null) return [];
-
-      final queryParams = <String, String>{};
-      if (search != null && search.isNotEmpty) queryParams['search'] = search;
-
-      final uri = Uri.parse('$baseUrl/api/approval-app/outlet-internal-use-waste/approvers').replace(
-        queryParameters: queryParams.isNotEmpty ? queryParams : null,
-      );
-
-      final resp = await http.get(uri, headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      });
-
-      if (resp.statusCode == 200) {
-        final decoded = jsonDecode(resp.body);
-        if (decoded is Map<String, dynamic> && decoded['users'] is List) {
-          return (decoded['users'] as List)
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-        }
-      }
-    } catch (e) {
-      print('Error searching approvers: $e');
-    }
-    return [];
-  }
-
   Future<Map<String, dynamic>?> save(Map<String, dynamic> payload) async {
     try {
       final token = await _getToken();

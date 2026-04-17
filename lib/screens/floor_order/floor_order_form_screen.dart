@@ -98,8 +98,17 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     try {
       final userData = await _authService.getUserData();
       _userData = userData;
-      _outletId = userData?['id_outlet'] as int?;
-      _regionId = userData?['region_id'] as int?;
+      // Sama Form.vue: outlet_id = id_outlet; region_id = region_id || outlet.region_id
+      _outletId = _coerceInt(userData?['id_outlet']);
+      if (_outletId == null && userData?['outlet'] is Map<String, dynamic>) {
+        final o = userData!['outlet'] as Map<String, dynamic>;
+        _outletId = _coerceInt(o['id_outlet']) ?? _coerceInt(o['id']);
+      }
+      _regionId = _coerceInt(userData?['region_id']);
+      if (_regionId == null && userData?['outlet'] is Map<String, dynamic>) {
+        final o = userData!['outlet'] as Map<String, dynamic>;
+        _regionId = _coerceInt(o['region_id']);
+      }
         _outletName = userData?['outlet']?['nama_outlet']?.toString() ??
           userData?['outlet_name']?.toString() ??
           userData?['nama_outlet']?.toString() ??
@@ -282,10 +291,19 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     return grouped;
   }
 
+  int? _coerceInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
   void _buildCategoriesFromItems(List<Map<String, dynamic>> items) {
     final Map<int, _CategoryGroup> grouped = {};
     for (final item in items) {
-      final categoryId = item['category_id'] as int? ?? 0;
+      final itemId = _coerceInt(item['id']);
+      if (itemId == null) continue;
+      final categoryId = _coerceInt(item['category_id']) ?? 0;
       final categoryName = (item['category_name']?.toString().trim().isNotEmpty ?? false)
           ? item['category_name']?.toString() ?? 'Tanpa Kategori'
           : 'Tanpa Kategori';
@@ -294,7 +312,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         () => _CategoryGroup(id: categoryId, name: categoryName, items: []),
       );
       grouped[categoryId]!.items.add(_ScheduleItem(
-        id: item['id'] as int,
+        id: itemId,
         name: item['name']?.toString() ?? '-',
         unit: item['unit_medium_name']?.toString() ??
             item['unit_medium']?.toString() ??
@@ -423,14 +441,26 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       }
     }
 
+    final scheduleId = _coerceInt(schedule['id']);
+    if (scheduleId == null) {
+      setState(() {
+        _isCheckingSchedule = false;
+        _scheduleError = 'Jadwal tidak valid';
+      });
+      return;
+    }
     setState(() {
       _foSchedules = [schedule];
-      _foScheduleId = schedule['id'] as int?;
+      _foScheduleId = scheduleId;
       _scheduleData = schedule;
       _scheduleError = null;
     });
-    await _loadItemsForSchedule(_foScheduleId!);
+    await _loadItemsForSchedule(scheduleId);
   }
+
+  /// Selaras Form.vue mode Tab: fetchItemsByFOSchedule pakai exclude_supplier true;
+  /// cabang RO Supplier (Form.vue) tidak mengirim exclude_supplier pada by-fo-schedule / fallback khusus.
+  bool get _excludeSupplierForItemFetch => _foMode != 'RO Supplier';
 
   Future<void> _loadItemsForSchedule(int scheduleId) async {
     setState(() {
@@ -440,7 +470,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       scheduleId: scheduleId,
       outletId: _outletId,
       regionId: _regionId,
-      excludeSupplier: true,
+      excludeSupplier: _excludeSupplierForItemFetch,
     );
     if (!mounted) return;
     setState(() {
@@ -461,7 +491,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     final items = await _service.getItemsByFOKhusus(
       outletId: _outletId,
       regionId: _regionId,
-      excludeSupplier: true,
+      excludeSupplier: _excludeSupplierForItemFetch,
     );
     if (!mounted) return;
     setState(() {
@@ -485,10 +515,11 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
 
     if (scheduleRes != null && scheduleRes['schedule'] != null) {
       final schedule = scheduleRes['schedule'] as Map<String, dynamic>;
-      if (schedule['is_active'] == true && schedule['id'] != null) {
-        _foScheduleId = schedule['id'] as int?;
+      final sid = _coerceInt(schedule['id']);
+      if (schedule['is_active'] == true && sid != null) {
+        _foScheduleId = sid;
         _scheduleData = schedule;
-        await _loadItemsForSchedule(_foScheduleId!);
+        await _loadItemsForSchedule(sid);
         return;
       }
     }
@@ -662,7 +693,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       }
 
       setState(() {
-        _items[index].itemId = selected['id'] as int?;
+        _items[index].itemId = _coerceInt(selected['id']);
         _items[index].nameController.text = selected['name']?.toString() ?? '';
         _items[index].availableUnits = units.toList();
         _items[index].unit = _items[index].availableUnits.isNotEmpty
@@ -1493,25 +1524,24 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                                           crossAxisAlignment: CrossAxisAlignment.center,
                                           children: [
                                             Expanded(
-                                              flex: 2,
-                                              child: Text(
-                                                item.unit,
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade600,
-                                                  fontSize: 13,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            Flexible(
-                                              flex: 2,
-                                              child: Text(
-                                                'Rp ${NumberFormat('#,###').format(item.price)}',
-                                                style: const TextStyle(fontSize: 13),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.right,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    item.unit,
+                                                    style: TextStyle(
+                                                      color: Colors.grey.shade600,
+                                                      fontSize: 13,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'Rp ${NumberFormat('#,###').format(item.price)}',
+                                                    style: const TextStyle(fontSize: 13),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                             const SizedBox(width: 8),
@@ -1557,8 +1587,8 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                                               ),
                                             ),
                                             const SizedBox(width: 8),
-                                            Flexible(
-                                              flex: 2,
+                                            SizedBox(
+                                              width: 108,
                                               child: Text(
                                                 'Rp ${NumberFormat('#,###').format(item.price * item.qty)}',
                                                 textAlign: TextAlign.right,
@@ -1566,8 +1596,8 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.w600,
                                                 ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 2,
+                                                softWrap: true,
                                               ),
                                             ),
                                           ],

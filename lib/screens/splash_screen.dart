@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/app_update_service.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 import '../widgets/app_loading_indicator.dart';
@@ -47,8 +48,11 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _checkAuthStatus() async {
     // Minimum splash screen duration: 3 seconds
     await Future.delayed(const Duration(seconds: 3));
-    
     if (!mounted) return;
+
+    // Force update check saat app dibuka.
+    final updateRequired = await AppUpdateService.instance.checkAndPromptMandatoryUpdate(context);
+    if (updateRequired || !mounted) return;
 
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');

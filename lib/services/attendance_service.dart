@@ -200,7 +200,7 @@ class AttendanceService {
     }
   }
 
-  // Get approvers for leave request
+  // Get approvers for leave request (backend tidak mem-batasi jumlah hasil)
   Future<List<Map<String, dynamic>>> getApprovers({String? search}) async {
     try {
       final token = await _getToken();
@@ -225,9 +225,19 @@ class AttendanceService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['users'] != null) {
-          return List<Map<String, dynamic>>.from(data['users']);
+        if (data is Map && (data['success'] == true || data['success'] == 1)) {
+          final raw = data['users'];
+          if (raw is List) {
+            return raw.map<Map<String, dynamic>>((e) {
+              final m = Map<String, dynamic>.from(e as Map);
+              final id = m['id'];
+              if (id is num) m['id'] = id.toInt();
+              return m;
+            }).toList();
+          }
         }
+      } else {
+        print('getApprovers HTTP ${response.statusCode}: ${response.body}');
       }
 
       return [];
