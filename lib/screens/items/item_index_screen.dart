@@ -235,6 +235,30 @@ class _ItemIndexScreenState extends State<ItemIndexScreen> {
     }
   }
 
+  String _storageImageUrl(String? path) {
+    final p = (path ?? '').trim();
+    if (p.isEmpty) return '';
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    final normalized = p.startsWith('/') ? p.substring(1) : p;
+    return '${ItemService.baseUrl}/storage/$normalized';
+  }
+
+  String _itemThumbnailUrl(Map<String, dynamic> row) {
+    final images = row['images'];
+    if (images is List) {
+      for (final image in images) {
+        if (image is! Map) continue;
+        final map = Map<String, dynamic>.from(image);
+        final path = map['path']?.toString();
+        if (path != null && path.trim().isNotEmpty) {
+          return _storageImageUrl(path);
+        }
+      }
+    }
+    final directPath = row['image']?.toString() ?? row['image_path']?.toString();
+    return _storageImageUrl(directPath);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -431,6 +455,7 @@ class _ItemIndexScreenState extends State<ItemIndexScreen> {
     final type = row['type']?.toString() ?? 'product';
     final status = row['status']?.toString() ?? 'active';
     final isActive = status == 'active';
+    final thumbnailUrl = _itemThumbnailUrl(row);
     String categoryName = '-';
     if (row['category'] != null && row['category'] is Map) {
       categoryName = (row['category'] as Map)['name']?.toString() ?? '-';
@@ -451,6 +476,30 @@ class _ItemIndexScreenState extends State<ItemIndexScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      color: const Color(0xFFF1F5F9),
+                      child: thumbnailUrl.isEmpty
+                          ? Icon(
+                              Icons.inventory_2_outlined,
+                              color: Colors.grey.shade500,
+                              size: 24,
+                            )
+                          : Image.network(
+                              thumbnailUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.grey.shade500,
+                                size: 24,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(

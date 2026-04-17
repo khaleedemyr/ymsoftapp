@@ -7,7 +7,7 @@ import '../screens/member_history_search_screen.dart';
 import '../screens/categories/category_index_screen.dart';
 import '../screens/sub_categories/sub_category_index_screen.dart';
 import '../screens/units/unit_index_screen.dart';
-import '../screens/web_only_feature_screen.dart';
+import '../screens/items/item_index_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -49,7 +49,7 @@ class AppDrawer extends StatelessWidget {
                     Text(
                       'Pilih menu yang ingin Anda akses',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 14,
                       ),
                     ),
@@ -183,17 +183,14 @@ class AppDrawer extends StatelessWidget {
                       context,
                       icon: Icons.inventory_2_outlined,
                       title: 'Items',
-                      subtitle: 'Master data item / produk (akses via web)',
+                      subtitle: 'Master data item / produk',
                       color: const Color(0xFF2563EB),
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const WebOnlyFeatureScreen(
-                              featureName: 'Items',
-                              webPath: '/items',
-                            ),
+                            builder: (context) => const ItemIndexScreen(),
                           ),
                         );
                       },
@@ -437,7 +434,7 @@ class AppDrawer extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: itemColor.withOpacity(0.1),
+          color: itemColor.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(

@@ -231,4 +231,38 @@ class RetailNonFoodService {
       return {'success': false, 'message': 'Error: $e'};
     }
   }
+
+  Future<Map<String, dynamic>> deleteRetailNonFood(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No authentication token'};
+      }
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/api/approval-app/retail-non-food/$id'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        if (response.body.trim().isEmpty) {
+          return {'success': true, 'message': 'Transaksi retail non food berhasil dihapus'};
+        }
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': true, ...data};
+      }
+
+      try {
+        final error = jsonDecode(response.body) as Map<String, dynamic>;
+        return {'success': false, 'message': error['message'] ?? 'Gagal menghapus'};
+      } catch (_) {
+        return {'success': false, 'message': 'Gagal menghapus (Status: ${response.statusCode})'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
 }

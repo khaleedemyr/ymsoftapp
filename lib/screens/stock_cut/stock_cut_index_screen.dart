@@ -21,7 +21,7 @@ class _StockCutIndexScreenState extends State<StockCutIndexScreen> {
   int _currentPage = 1;
   int _total = 0;
   int _lastPage = 1;
-  int _perPage = 15;
+  int _perPage = 10;
   // Filter (client-side, sama seperti web)
   final _searchController = TextEditingController();
   String _searchQuery = '';
@@ -101,6 +101,18 @@ class _StockCutIndexScreenState extends State<StockCutIndexScreen> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  List<int> _pageNumbers() {
+    if (_lastPage <= 7) {
+      return List.generate(_lastPage, (i) => i + 1);
+    }
+    final pages = <int>{1, _lastPage};
+    for (var p = _currentPage - 1; p <= _currentPage + 1; p++) {
+      if (p > 1 && p < _lastPage) pages.add(p);
+    }
+    final sorted = pages.toList()..sort();
+    return sorted;
   }
 
   String _typeName(dynamic typeFilter) {
@@ -304,26 +316,8 @@ class _StockCutIndexScreenState extends State<StockCutIndexScreen> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        itemCount: _filteredLogs.length + 1,
+                        itemCount: _filteredLogs.length,
                         itemBuilder: (context, index) {
-                          if (index == _filteredLogs.length) {
-                            if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: AppLoadingIndicator(useLogo: true, size: 40)));
-                            if (_currentPage < _lastPage) {
-                              return Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Center(
-                                  child: TextButton(
-                                    onPressed: () {
-                                      setState(() => _currentPage++);
-                                      _loadLogs();
-                                    },
-                                    child: const Text('Muat lebih banyak'),
-                                  ),
-                                ),
-                              );
-                            }
-                            return const SizedBox(height: 24);
-                          }
                           final log = _filteredLogs[index];
                           return _buildLogCard(log);
                         },
@@ -333,16 +327,82 @@ class _StockCutIndexScreenState extends State<StockCutIndexScreen> {
           if (_logs.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      Text('Tampilkan:', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                      const SizedBox(width: 8),
+                      DropdownButton<int>(
+                        value: _perPage,
+                        items: const [10, 25, 50, 100]
+                            .map((e) => DropdownMenuItem<int>(value: e, child: Text('$e')))
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() {
+                            _perPage = v;
+                            _currentPage = 1;
+                          });
+                          _loadLogs();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Text('per halaman', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                    ],
+                  ),
                   Text(
-                    _filteredLogs.length == _logs.length
-                        ? 'Total: $_total'
-                        : 'Ditampilkan: ${_filteredLogs.length} dari ${_logs.length} (halaman ini)',
+                    'Menampilkan ${_filteredLogs.length} dari $_total data',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
-                  Text('Halaman $_currentPage / $_lastPage', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: (_currentPage <= 1 || _loading)
+                              ? null
+                              : () {
+                                  setState(() => _currentPage -= 1);
+                                  _loadLogs();
+                                },
+                          child: const Text('Sebelumnya'),
+                        ),
+                        ..._pageNumbers().map((page) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 2),
+                              child: OutlinedButton(
+                                onPressed: _loading
+                                    ? null
+                                    : () {
+                                        setState(() => _currentPage = page);
+                                        _loadLogs();
+                                      },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: _currentPage == page
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                  foregroundColor: _currentPage == page
+                                      ? Colors.white
+                                      : null,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                ),
+                                child: Text('$page'),
+                              ),
+                            )),
+                        TextButton(
+                          onPressed: (_currentPage >= _lastPage || _loading)
+                              ? null
+                              : () {
+                                  setState(() => _currentPage += 1);
+                                  _loadLogs();
+                                },
+                          child: const Text('Selanjutnya'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),

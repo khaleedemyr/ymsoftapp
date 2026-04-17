@@ -10,23 +10,32 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/app_loading_indicator.dart';
 
 class VideoTutorialGalleryScreen extends StatefulWidget {
-  const VideoTutorialGalleryScreen({super.key});
+  final int? initialGroupId;
+  final String? initialTitle;
+
+  const VideoTutorialGalleryScreen({
+    super.key,
+    this.initialGroupId,
+    this.initialTitle,
+  });
 
   @override
-  State<VideoTutorialGalleryScreen> createState() => _VideoTutorialGalleryScreenState();
+  State<VideoTutorialGalleryScreen> createState() =>
+      _VideoTutorialGalleryScreenState();
 }
 
-class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen> {
+class _VideoTutorialGalleryScreenState
+    extends State<VideoTutorialGalleryScreen> {
   final VideoTutorialService _service = VideoTutorialService();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
+
   List<VideoTutorial> _videos = [];
   List<VideoTutorialGroup> _groups = [];
   Map<String, dynamic>? _stats;
   bool _isLoading = true;
   String? _error;
-  
+
   String? _selectedGroupId;
   String _sortBy = 'newest';
   int _currentPage = 1;
@@ -36,6 +45,9 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.initialGroupId != null) {
+      _selectedGroupId = widget.initialGroupId!.toString();
+    }
     _loadVideos();
     _scrollController.addListener(_onScroll);
   }
@@ -76,7 +88,8 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
     try {
       final result = await _service.getGallery(
         search: _searchController.text.isEmpty ? null : _searchController.text,
-        groupId: _selectedGroupId != null ? int.tryParse(_selectedGroupId!) : null,
+        groupId:
+            _selectedGroupId != null ? int.tryParse(_selectedGroupId!) : null,
         sort: _sortBy,
         page: _currentPage,
       );
@@ -90,10 +103,10 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
           }
           _groups = result['groups'] as List<VideoTutorialGroup>;
           _stats = result['stats'] as Map<String, dynamic>;
-          
+
           final pagination = result['pagination'] as Map<String, dynamic>;
           _lastPage = pagination['last_page'] as int?;
-          
+
           _isLoading = false;
           _isLoadingMore = false;
         });
@@ -128,7 +141,7 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Video Tutorial Gallery',
+      title: widget.initialTitle ?? 'Video Tutorial Gallery',
       body: _isLoading && _videos.isEmpty
           ? Center(child: AppLoadingIndicator())
           : _error != null && _videos.isEmpty
@@ -158,10 +171,10 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
                   children: [
                     // Statistics Cards
                     if (_stats != null) _buildStatsSection(),
-                    
+
                     // Search and Filters
                     _buildSearchAndFilters(),
-                    
+
                     // Video List
                     Expanded(
                       child: _videos.isEmpty
@@ -172,7 +185,8 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
                                 controller: _scrollController,
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 padding: const EdgeInsets.all(8),
-                                itemCount: _videos.length + (_isLoadingMore ? 1 : 0),
+                                itemCount:
+                                    _videos.length + (_isLoadingMore ? 1 : 0),
                                 itemBuilder: (context, index) {
                                   if (index == _videos.length) {
                                     return const Padding(
@@ -182,7 +196,7 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
                                       ),
                                     );
                                   }
-                                  
+
                                   final video = _videos[index];
                                   return _buildVideoCard(video);
                                 },
@@ -221,7 +235,8 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+      String label, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -329,9 +344,9 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
                           child: Text('Semua Group'),
                         ),
                         ..._groups.map((group) => DropdownMenuItem<String>(
-                          value: group.id.toString(),
-                          child: Text(group.name),
-                        )),
+                              value: group.id.toString(),
+                              child: Text(group.name),
+                            )),
                       ],
                       onChanged: (value) {
                         setState(() {
@@ -358,7 +373,8 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
                     items: const [
                       DropdownMenuItem(value: 'newest', child: Text('Terbaru')),
                       DropdownMenuItem(value: 'oldest', child: Text('Terlama')),
-                      DropdownMenuItem(value: 'title', child: Text('Judul A-Z')),
+                      DropdownMenuItem(
+                          value: 'title', child: Text('Judul A-Z')),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -424,7 +440,10 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
                                 child: SizedBox(
                                   width: 24,
                                   height: 24,
-                                  child: AppLoadingIndicator(size: 24, color: Colors.white, strokeWidth: 2),
+                                  child: AppLoadingIndicator(
+                                      size: 24,
+                                      color: Colors.white,
+                                      strokeWidth: 2),
                                 ),
                               ),
                             ),
@@ -620,18 +639,6 @@ class _VideoTutorialGalleryScreenState extends State<VideoTutorialGalleryScreen>
       ),
     );
   }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final hours = twoDigits(duration.inHours);
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    
-    if (duration.inHours > 0) {
-      return '$hours:$minutes:$seconds';
-    }
-    return '$minutes:$seconds';
-  }
 }
 
 class _VideoPlayerDialog extends StatefulWidget {
@@ -659,15 +666,15 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
-      
+
       final headers = <String, String>{
         'Accept': 'application/json',
       };
-      
+
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
       }
-      
+
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.video.videoUrl),
         httpHeaders: headers,
@@ -699,7 +706,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
   void _toggleFullscreen() {
     if (_isFullscreen) {
       // Exit fullscreen
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+          overlays: SystemUiOverlay.values);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -721,7 +729,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
             controller: _controller!,
             video: widget.video,
             onExit: () {
-              SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
+              SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+                  overlays: SystemUiOverlay.values);
               SystemChrome.setPreferredOrientations([
                 DeviceOrientation.portraitUp,
                 DeviceOrientation.portraitDown,
@@ -743,7 +752,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
   void dispose() {
     _controller?.removeListener(_videoListener);
     if (!_isFullscreen) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+          overlays: SystemUiOverlay.values);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
@@ -791,7 +801,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () {
-                      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
+                      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+                          overlays: SystemUiOverlay.values);
                       SystemChrome.setPreferredOrientations([
                         DeviceOrientation.portraitUp,
                         DeviceOrientation.portraitDown,
@@ -812,7 +823,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.error_outline, color: Colors.white, size: 48),
+                            Icon(Icons.error_outline,
+                                color: Colors.white, size: 48),
                             SizedBox(height: 16),
                             Text(
                               'Gagal memuat video',
@@ -855,7 +867,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                                     ),
                                     const SizedBox(height: 8),
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         IconButton(
                                           icon: Icon(
@@ -867,7 +880,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                                           ),
                                           onPressed: () {
                                             setState(() {
-                                              if (_controller!.value.isPlaying) {
+                                              if (_controller!
+                                                  .value.isPlaying) {
                                                 _controller!.pause();
                                               } else {
                                                 _controller!.play();
@@ -877,9 +891,11 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                                         ),
                                         const SizedBox(width: 16),
                                         Text(
-                                          _formatVideoDuration(_controller!.value.position) +
+                                          _formatVideoDuration(
+                                                  _controller!.value.position) +
                                               ' / ' +
-                                              _formatVideoDuration(_controller!.value.duration),
+                                              _formatVideoDuration(
+                                                  _controller!.value.duration),
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 14,
@@ -906,7 +922,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                       : Container(
                           color: Colors.black,
                           child: const Center(
-                            child: AppLoadingIndicator(size: 24, color: Colors.white),
+                            child: AppLoadingIndicator(
+                                size: 24, color: Colors.white),
                           ),
                         ),
             ),
@@ -925,7 +942,8 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                   _buildInfoRow(
                     'Tanggal',
                     widget.video.createdAt != null
-                        ? DateFormat('dd MMMM yyyy', 'id_ID').format(widget.video.createdAt!)
+                        ? DateFormat('dd MMMM yyyy', 'id_ID')
+                            .format(widget.video.createdAt!)
                         : '-',
                   ),
                 ],
@@ -969,7 +987,7 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
     final hours = twoDigits(duration.inHours);
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
-    
+
     if (duration.inHours > 0) {
       return '$hours:$minutes:$seconds';
     }
@@ -1031,7 +1049,7 @@ class _FullscreenVideoPlayerState extends State<_FullscreenVideoPlayer> {
     final hours = twoDigits(duration.inHours);
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
-    
+
     if (duration.inHours > 0) {
       return '$hours:$minutes:$seconds';
     }
@@ -1077,7 +1095,8 @@ class _FullscreenVideoPlayerState extends State<_FullscreenVideoPlayer> {
                         child: Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.arrow_back, color: Colors.white),
+                              icon: const Icon(Icons.arrow_back,
+                                  color: Colors.white),
                               onPressed: () {
                                 widget.onExit();
                                 Navigator.of(context).pop();
@@ -1138,9 +1157,11 @@ class _FullscreenVideoPlayerState extends State<_FullscreenVideoPlayer> {
                                 ),
                                 const SizedBox(width: 24),
                                 Text(
-                                  _formatVideoDuration(widget.controller.value.position) +
+                                  _formatVideoDuration(
+                                          widget.controller.value.position) +
                                       ' / ' +
-                                      _formatVideoDuration(widget.controller.value.duration),
+                                      _formatVideoDuration(
+                                          widget.controller.value.duration),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
@@ -1174,4 +1195,3 @@ class _FullscreenVideoPlayerState extends State<_FullscreenVideoPlayer> {
     );
   }
 }
-

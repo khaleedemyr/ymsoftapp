@@ -98,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<ROKhususApproval> _roKhususApprovals = [];
   List<EmployeeResignationApproval> _employeeResignationApprovals = [];
   bool _isLoadingApprovals = false;
+  bool _isApprovalsRefreshInProgress = false;
   
   // Animation controller
   late AnimationController _animationController;
@@ -874,64 +875,76 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   // Load all approvals with caching and parallel loading
   Future<void> _loadAllApprovals({bool showLoading = true, bool backgroundRefresh = false}) async {
-    // Load from cache first (instant display) - unless it's a background refresh
-    if (!backgroundRefresh) {
-      await _loadCachedApprovals();
+    if (_isApprovalsRefreshInProgress) {
+      print('Skipping approvals reload: previous request still in progress');
+      return;
     }
 
-    if (showLoading && mounted && !backgroundRefresh) {
-      setState(() {
-        _isLoadingApprovals = true;
-      });
-    }
+    _isApprovalsRefreshInProgress = true;
+    try {
+      // Load from cache first (instant display) - unless it's a background refresh
+      if (!backgroundRefresh) {
+        await _loadCachedApprovals();
+      }
 
-    print('Loading all approvals from API...');
-    
-    // Load approvals in parallel batches for faster loading
-    // Batch 1: Most common approvals
-    await Future.wait([
-      _loadPendingPrApprovals(),
-      _loadPendingPoOpsApprovals(),
-      _loadPendingLeaveApprovals(),
-      _loadPendingHrdApprovals(),
-    ], eagerError: false);
+      if (showLoading && mounted && !backgroundRefresh) {
+        setState(() {
+          _isLoadingApprovals = true;
+        });
+      }
 
-    // Batch 2: Other approvals
-    await Future.wait([
-      _loadPendingCategoryCostApprovals(),
-      _loadPendingStockAdjustmentApprovals(),
-      _loadPendingStockOpnameApprovals(),
-      _loadPendingWarehouseStockOpnameApprovals(),
-      _loadPendingCctvAccessRequestApprovals(),
-      _loadPendingOutletTransferApprovals(),
-      _loadPendingContraBonApprovals(),
-      _loadPendingMovementApprovals(),
-    ], eagerError: false);
+      print('Loading all approvals from API...');
+      
+      // Load approvals in parallel batches for faster loading
+      // Batch 1: Most common approvals
+      await Future.wait([
+        _loadPendingPrApprovals(),
+        _loadPendingPoOpsApprovals(),
+        _loadPendingLeaveApprovals(),
+        _loadPendingHrdApprovals(),
+      ], eagerError: false);
 
-    // Batch 3: Remaining approvals
-    await Future.wait([
-      _loadPendingCoachingApprovals(),
-      _loadPendingCorrectionApprovals(),
-      _loadPendingFoodPaymentApprovals(),
-      _loadPendingNonFoodPaymentApprovals(),
-    ], eagerError: false);
+      // Batch 2: Other approvals
+      await Future.wait([
+        _loadPendingCategoryCostApprovals(),
+        _loadPendingStockAdjustmentApprovals(),
+        _loadPendingStockOpnameApprovals(),
+        _loadPendingWarehouseStockOpnameApprovals(),
+        _loadPendingCctvAccessRequestApprovals(),
+        _loadPendingOutletTransferApprovals(),
+        _loadPendingContraBonApprovals(),
+        _loadPendingMovementApprovals(),
+      ], eagerError: false);
 
-    // Batch 4: Food-related approvals
-    await Future.wait([
-      _loadPendingPrFoodApprovals(),
-      _loadPendingPoFoodApprovals(),
-      _loadPendingROKhususApprovals(),
-      _loadPendingEmployeeResignationApprovals(),
-    ], eagerError: false);
+      // Batch 3: Remaining approvals
+      await Future.wait([
+        _loadPendingCoachingApprovals(),
+        _loadPendingCorrectionApprovals(),
+        _loadPendingFoodPaymentApprovals(),
+        _loadPendingNonFoodPaymentApprovals(),
+      ], eagerError: false);
 
-    // Save to cache after loading
-    await _saveApprovalsToCache();
+      // Batch 4: Food-related approvals
+      await Future.wait([
+        _loadPendingPrFoodApprovals(),
+        _loadPendingPoFoodApprovals(),
+        _loadPendingROKhususApprovals(),
+        _loadPendingEmployeeResignationApprovals(),
+      ], eagerError: false);
 
-    if (mounted) {
-      setState(() {
-        _isLoadingApprovals = false;
-      });
+      // Save to cache after loading
+      await _saveApprovalsToCache();
+
       print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}');
+    } catch (e) {
+      print('Error loading approvals: $e');
+    } finally {
+      _isApprovalsRefreshInProgress = false;
+      if (mounted && _isLoadingApprovals) {
+        setState(() {
+          _isLoadingApprovals = false;
+        });
+      }
     }
   }
 

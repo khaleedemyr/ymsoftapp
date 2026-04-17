@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../services/menu_service.dart';
 import '../models/menu_models.dart';
 import '../screens/video_tutorial_gallery_screen.dart';
+import '../screens/video_tutorial_group_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/sales_outlet_dashboard_screen.dart';
 import '../screens/web_only_feature_screen.dart';
@@ -40,6 +41,9 @@ import '../screens/inventory/warehouse_stock_card_screen.dart';
 import '../screens/outlet_inventory/outlet_stock_card_screen.dart';
 import '../screens/outlet_inventory/category_cost_outlet_index_screen.dart';
 import '../screens/warehouse_internal_use_waste/warehouse_internal_use_waste_index_screen.dart';
+import '../screens/manual_point/manual_point_index_screen.dart';
+import '../screens/members/member_index_screen.dart';
+import '../screens/google_review/google_review_scrapper_screen.dart';
 import '../screens/member_history_search_screen.dart';
 import '../screens/warehouse_transfer/warehouse_transfer_index_screen.dart';
 import '../screens/outlet_transfer/outlet_transfer_index_screen.dart';
@@ -55,10 +59,32 @@ import '../screens/floor_order/floor_order_index_screen.dart';
 import '../screens/categories/category_index_screen.dart';
 import '../screens/sub_categories/sub_category_index_screen.dart';
 import '../screens/units/unit_index_screen.dart';
+import '../screens/menu_types/menu_type_index_screen.dart';
+import '../screens/modifiers/modifier_index_screen.dart';
+import '../screens/modifier_options/modifier_option_index_screen.dart';
+import '../screens/warehouses/warehouse_index_screen.dart';
+import '../screens/warehouse_outlets/warehouse_outlet_index_screen.dart';
+import '../screens/warehouse_divisions/warehouse_division_index_screen.dart';
+import '../screens/outlets/outlet_index_screen.dart';
+import '../screens/customers/customer_index_screen.dart';
+import '../screens/suppliers/supplier_index_screen.dart';
+import '../screens/regions/region_index_screen.dart';
+import '../screens/item_schedules/item_schedule_index_screen.dart';
+import '../screens/ro_schedules/ro_schedule_index_screen.dart';
+import '../screens/investors/investor_index_screen.dart';
+import '../screens/officer_checks/officer_check_index_screen.dart';
+import '../screens/payment_types/payment_type_index_screen.dart';
+import '../screens/items/item_index_screen.dart';
 import '../screens/data_level/data_level_index_screen.dart';
 import '../screens/jabatan/jabatan_index_screen.dart';
 import '../screens/stock_cut/stock_cut_index_screen.dart';
 import '../screens/mk_production/mk_production_index_screen.dart';
+import '../screens/announcement/announcement_index_screen.dart';
+import '../screens/promos/promo_index_screen.dart';
+import '../screens/locked_budget_food_categories/locked_budget_food_category_index_screen.dart';
+import '../screens/budget_management/budget_management_index_screen.dart';
+import '../screens/chart_of_accounts/chart_of_account_index_screen.dart';
+import '../screens/bank_accounts/bank_account_index_screen.dart';
 import 'app_loading_indicator.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -140,12 +166,14 @@ class _AppSidebarState extends State<AppSidebar> {
             builder: (context) {
               // Get drawer width (typically 80% of screen width on mobile)
               final screenWidth = MediaQuery.of(context).size.width;
-              final drawerWidth = screenWidth * 0.8; // Drawer is typically 80% of screen width
-              
+              final drawerWidth =
+                  screenWidth * 0.8; // Drawer is typically 80% of screen width
+
               // Logo size: batasi agar header tidak overflow (content = padding + logo + version)
               final logoSize = (drawerWidth * 0.6).clamp(140.0, 200.0);
-              final headerHeight = 56 + logoSize + 8 + 20; // padding + logo + gap + version text
-              
+              final headerHeight =
+                  56 + logoSize + 8 + 20; // padding + logo + gap + version text
+
               return Container(
                 height: headerHeight.clamp(200.0, 284.0),
                 decoration: BoxDecoration(
@@ -163,7 +191,8 @@ class _AppSidebarState extends State<AppSidebar> {
                   bottom: false,
                   child: Center(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -215,7 +244,7 @@ class _AppSidebarState extends State<AppSidebar> {
               );
             },
           ),
-          
+
           // Menu List
           Expanded(
             child: _isLoading
@@ -251,8 +280,9 @@ class _AppSidebarState extends State<AppSidebar> {
                         itemCount: _menuGroups.length,
                         itemBuilder: (context, index) {
                           final group = _menuGroups[index];
-                          final isExpanded = _expandedGroups[group.title] ?? false;
-                          
+                          final isExpanded =
+                              _expandedGroups[group.title] ?? false;
+
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: Column(
@@ -266,17 +296,20 @@ class _AppSidebarState extends State<AppSidebar> {
                                       onTap: () => _toggleGroup(group.title),
                                       borderRadius: BorderRadius.circular(12),
                                       child: Container(
-                                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                                        margin: const EdgeInsets.symmetric(
+                                            horizontal: 12),
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 16,
                                           vertical: 14,
                                         ),
                                         decoration: BoxDecoration(
                                           color: Colors.white,
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(0.03),
+                                              color: Colors.black
+                                                  .withOpacity(0.03),
                                               blurRadius: 8,
                                               offset: const Offset(0, 2),
                                             ),
@@ -296,7 +329,8 @@ class _AppSidebarState extends State<AppSidebar> {
                                                   begin: Alignment.topLeft,
                                                   end: Alignment.bottomRight,
                                                 ),
-                                                borderRadius: BorderRadius.circular(10),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
                                               ),
                                               child: Icon(
                                                 _getIconData(group.icon),
@@ -318,7 +352,8 @@ class _AppSidebarState extends State<AppSidebar> {
                                             ),
                                             AnimatedRotation(
                                               turns: isExpanded ? 0.25 : 0,
-                                              duration: const Duration(milliseconds: 200),
+                                              duration: const Duration(
+                                                  milliseconds: 200),
                                               child: Icon(
                                                 Icons.chevron_right,
                                                 size: 20,
@@ -332,7 +367,8 @@ class _AppSidebarState extends State<AppSidebar> {
                                   )
                                 else
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
                                     child: Text(
                                       group.title,
                                       style: TextStyle(
@@ -343,13 +379,15 @@ class _AppSidebarState extends State<AppSidebar> {
                                       ),
                                     ),
                                   ),
-                                
+
                                 // Menu Items
                                 if (!group.collapsible || isExpanded)
                                   ...group.menus.map((menu) {
-                                    final isActive = widget.currentRoute != null &&
-                                        menu.route.startsWith(widget.currentRoute!);
-                                    
+                                    final isActive = widget.currentRoute !=
+                                            null &&
+                                        menu.route
+                                            .startsWith(widget.currentRoute!);
+
                                     return _buildMenuItem(menu, isActive);
                                   }),
                               ],
@@ -358,7 +396,7 @@ class _AppSidebarState extends State<AppSidebar> {
                         },
                       ),
           ),
-          
+
           // Bottom padding separator
           Container(
             height: 1,
@@ -425,9 +463,8 @@ class _AppSidebarState extends State<AppSidebar> {
                 child: Icon(
                   _getIconData(menu.icon),
                   size: 22,
-                  color: isActive
-                      ? const Color(0xFF6366F1)
-                      : Colors.grey.shade700,
+                  color:
+                      isActive ? const Color(0xFF6366F1) : Colors.grey.shade700,
                 ),
               ),
               const SizedBox(width: 14),
@@ -464,126 +501,167 @@ class _AppSidebarState extends State<AppSidebar> {
     // Map FontAwesome classes to Material Icons
     // This is a simplified mapping - you might want to use a package like font_awesome_flutter
     final lowerClass = iconClass.toLowerCase();
-    
+
     // Main menu icons
     if (lowerClass.contains('home')) return Icons.home;
     if (lowerClass.contains('bars')) return Icons.menu;
     if (lowerClass.contains('play-circle')) return Icons.play_circle;
-    
+
     // Chart icons
-    if (lowerClass.contains('chart-line') || lowerClass.contains('timeline')) return Icons.trending_up;
+    if (lowerClass.contains('chart-line') || lowerClass.contains('timeline'))
+      return Icons.trending_up;
     if (lowerClass.contains('chart-pie')) return Icons.pie_chart;
     if (lowerClass.contains('chart-bar')) return Icons.bar_chart;
-    
+
     // User/People icons
     if (lowerClass.contains('user-clock')) return Icons.access_time;
-    if (lowerClass.contains('users-gear') || lowerClass.contains('users')) return Icons.people;
-    if (lowerClass.contains('user-tie') || lowerClass.contains('user-minus') || lowerClass.contains('user-graduate')) return Icons.person;
+    if (lowerClass.contains('users-gear') || lowerClass.contains('users'))
+      return Icons.people;
+    if (lowerClass.contains('user-tie') ||
+        lowerClass.contains('user-minus') ||
+        lowerClass.contains('user-graduate')) return Icons.person;
     if (lowerClass.contains('user-shield')) return Icons.admin_panel_settings;
     if (lowerClass.contains('users-cog')) return Icons.people_outline;
     if (lowerClass.contains('users-line')) return Icons.people_alt;
-    
+
     // Shopping/Cart icons
     if (lowerClass.contains('shopping-cart')) return Icons.shopping_cart;
     if (lowerClass.contains('shopping-bag')) return Icons.shopping_bag;
-    
+
     // Data/Storage icons
     if (lowerClass.contains('database')) return Icons.storage;
     if (lowerClass.contains('warehouse')) return Icons.warehouse;
     if (lowerClass.contains('store')) return Icons.store;
-    
+
     // Finance icons
     if (lowerClass.contains('building-columns')) return Icons.account_balance;
-    if (lowerClass.contains('money-bill') || lowerClass.contains('money-check') || lowerClass.contains('coins')) return Icons.monetization_on;
-    if (lowerClass.contains('credit-card') || lowerClass.contains('file-invoice')) return Icons.credit_card;
-    
+    if (lowerClass.contains('money-bill') ||
+        lowerClass.contains('money-check') ||
+        lowerClass.contains('coins')) return Icons.monetization_on;
+    if (lowerClass.contains('credit-card') ||
+        lowerClass.contains('file-invoice')) return Icons.credit_card;
+
     // Settings/Management icons
-    if (lowerClass.contains('cogs') || lowerClass.contains('gear')) return Icons.settings;
-    if (lowerClass.contains('shield-halved') || lowerClass.contains('shield')) return Icons.shield;
+    if (lowerClass.contains('cogs') || lowerClass.contains('gear'))
+      return Icons.settings;
+    if (lowerClass.contains('shield-halved') || lowerClass.contains('shield'))
+      return Icons.shield;
     if (lowerClass.contains('bars-progress')) return Icons.menu;
-    
+
     // Calendar/Time icons
-    if (lowerClass.contains('calendar') || lowerClass.contains('calendar-days') || lowerClass.contains('calendar-week') || lowerClass.contains('calendar-day') || lowerClass.contains('calendar-check') || lowerClass.contains('calendar-alt')) return Icons.calendar_today;
+    if (lowerClass.contains('calendar') ||
+        lowerClass.contains('calendar-days') ||
+        lowerClass.contains('calendar-week') ||
+        lowerClass.contains('calendar-day') ||
+        lowerClass.contains('calendar-check') ||
+        lowerClass.contains('calendar-alt')) return Icons.calendar_today;
     if (lowerClass.contains('clock')) return Icons.access_time;
-    
+
     // File/Document icons
-    if (lowerClass.contains('file-lines') || lowerClass.contains('file-invoice') || lowerClass.contains('clipboard-list') || lowerClass.contains('clipboard-check') || lowerClass.contains('clipboard-question') || lowerClass.contains('list-alt')) return Icons.description;
+    if (lowerClass.contains('file-lines') ||
+        lowerClass.contains('file-invoice') ||
+        lowerClass.contains('clipboard-list') ||
+        lowerClass.contains('clipboard-check') ||
+        lowerClass.contains('clipboard-question') ||
+        lowerClass.contains('list-alt')) return Icons.description;
     if (lowerClass.contains('receipt')) return Icons.receipt;
-    
+
     // Transport icons
-    if (lowerClass.contains('truck') || lowerClass.contains('truck-loading') || lowerClass.contains('truck-arrow-right') || lowerClass.contains('truck-ramp-box')) return Icons.local_shipping;
+    if (lowerClass.contains('truck') ||
+        lowerClass.contains('truck-loading') ||
+        lowerClass.contains('truck-arrow-right') ||
+        lowerClass.contains('truck-ramp-box')) return Icons.local_shipping;
     if (lowerClass.contains('plane')) return Icons.flight;
-    
+
     // Box/Inventory icons
-    if (lowerClass.contains('boxes-stacked') || lowerClass.contains('box') || lowerClass.contains('box-open') || lowerClass.contains('fa-box')) return Icons.inventory_2;
-    if (lowerClass.contains('right-left') || lowerClass.contains('exchange-alt')) return Icons.swap_horiz;
-    
+    if (lowerClass.contains('boxes-stacked') ||
+        lowerClass.contains('box') ||
+        lowerClass.contains('box-open') ||
+        lowerClass.contains('fa-box')) return Icons.inventory_2;
+    if (lowerClass.contains('right-left') ||
+        lowerClass.contains('exchange-alt')) return Icons.swap_horiz;
+
     // Industry/Production icons
     if (lowerClass.contains('industry')) return Icons.factory;
     if (lowerClass.contains('utensils')) return Icons.restaurant;
-    if (lowerClass.contains('cut') || lowerClass.contains('scissors')) return Icons.content_cut;
-    
+    if (lowerClass.contains('cut') || lowerClass.contains('scissors'))
+      return Icons.content_cut;
+
     // Communication icons
     if (lowerClass.contains('bullhorn')) return Icons.campaign;
     if (lowerClass.contains('headset')) return Icons.headset_mic;
     if (lowerClass.contains('comments')) return Icons.comment;
     if (lowerClass.contains('bell')) return Icons.notifications;
-    
+
     // Business icons
     if (lowerClass.contains('handshake')) return Icons.handshake;
     if (lowerClass.contains('briefcase')) return Icons.business_center;
     if (lowerClass.contains('building')) return Icons.business;
-    
+
     // Education icons
-    if (lowerClass.contains('graduation-cap') || lowerClass.contains('school')) return Icons.school;
+    if (lowerClass.contains('graduation-cap') || lowerClass.contains('school'))
+      return Icons.school;
     if (lowerClass.contains('book')) return Icons.book;
     if (lowerClass.contains('question-circle')) return Icons.help;
     if (lowerClass.contains('certificate')) return Icons.verified;
-    
+
     // Other icons
-    if (lowerClass.contains('tags') || lowerClass.contains('tag')) return Icons.label;
+    if (lowerClass.contains('tags') || lowerClass.contains('tag'))
+      return Icons.label;
     if (lowerClass.contains('ruler')) return Icons.straighten;
     if (lowerClass.contains('sliders')) return Icons.tune;
     if (lowerClass.contains('sitemap')) return Icons.account_tree;
     if (lowerClass.contains('truck')) return Icons.local_shipping;
-    if (lowerClass.contains('globe') || lowerClass.contains('globe-asia')) return Icons.public;
+    if (lowerClass.contains('globe') || lowerClass.contains('globe-asia'))
+      return Icons.public;
     if (lowerClass.contains('link')) return Icons.link;
-    if (lowerClass.contains('check') || lowerClass.contains('user-check')) return Icons.check_circle;
+    if (lowerClass.contains('check') || lowerClass.contains('user-check'))
+      return Icons.check_circle;
     if (lowerClass.contains('lock')) return Icons.lock;
     if (lowerClass.contains('folder')) return Icons.folder;
     if (lowerClass.contains('video')) return Icons.video_library;
     if (lowerClass.contains('camera')) return Icons.camera_alt;
     if (lowerClass.contains('ticket-alt')) return Icons.confirmation_number;
-    if (lowerClass.contains('edit') || lowerClass.contains('pen-nib')) return Icons.edit;
+    if (lowerClass.contains('edit') || lowerClass.contains('pen-nib'))
+      return Icons.edit;
     if (lowerClass.contains('fingerprint')) return Icons.fingerprint;
     if (lowerClass.contains('people-arrows')) return Icons.swap_horiz;
     if (lowerClass.contains('clipboard-check')) return Icons.checklist;
-    if (lowerClass.contains('recycle') || lowerClass.contains('trash') || lowerClass.contains('undo')) return Icons.delete;
-    if (lowerClass.contains('history') || lowerClass.contains('arrow-trend-up')) return Icons.trending_up;
-    if (lowerClass.contains('arrow-down-short-wide') || lowerClass.contains('hourglass-half')) return Icons.hourglass_empty;
+    if (lowerClass.contains('recycle') ||
+        lowerClass.contains('trash') ||
+        lowerClass.contains('undo')) return Icons.delete;
+    if (lowerClass.contains('history') || lowerClass.contains('arrow-trend-up'))
+      return Icons.trending_up;
+    if (lowerClass.contains('arrow-down-short-wide') ||
+        lowerClass.contains('hourglass-half')) return Icons.hourglass_empty;
     if (lowerClass.contains('layer-group')) return Icons.layers;
-    if (lowerClass.contains('table-columns') || lowerClass.contains('table-list') || lowerClass.contains('table-cells-large')) return Icons.table_chart;
+    if (lowerClass.contains('table-columns') ||
+        lowerClass.contains('table-list') ||
+        lowerClass.contains('table-cells-large')) return Icons.table_chart;
     if (lowerClass.contains('list-check')) return Icons.checklist;
     if (lowerClass.contains('dice')) return Icons.casino;
     if (lowerClass.contains('mobile-screen-button')) return Icons.smartphone;
     if (lowerClass.contains('google')) return Icons.search;
-    
+
     return Icons.circle;
   }
 
-  void _navigateToRoute(BuildContext context, String route, {String? menuTitle}) {
+  void _navigateToRoute(BuildContext context, String route,
+      {String? menuTitle}) {
     Navigator.pop(context); // Close drawer first
-    
+
     // Normalize route - handle role management routes
     if (route == '/roles' || route.startsWith('/roles/')) {
       route = '/role-management';
     }
-    
+
     // Normalize route - handle activity log report routes
-    if (route == '/report/activity-log' || route.startsWith('/report/activity-log')) {
+    if (route == '/report/activity-log' ||
+        route.startsWith('/report/activity-log')) {
       route = '/report/activity-log';
     }
-    if (route == '/report-invoice-outlet' || route.startsWith('/report-invoice-outlet')) {
+    if (route == '/report-invoice-outlet' ||
+        route.startsWith('/report-invoice-outlet')) {
       route = '/report-invoice-outlet';
     }
     if (route == '/stock-cut' || route.startsWith('/stock-cut')) {
@@ -604,7 +682,7 @@ class _AppSidebarState extends State<AppSidebar> {
 
     // List of allowed routes that can be accessed in mobile app
     // Only: Beranda, Sales Outlet Dashboard, My Attendance, Payment, Support Admin
-      final allowedRoutes = [
+    final allowedRoutes = [
       '/home',
       '/',
       '/video-tutorials/gallery',
@@ -838,10 +916,10 @@ class _AppSidebarState extends State<AppSidebar> {
       '/lms/training-report-page',
       '/lms/quiz-report-page',
     ];
-    
+
     // Check if route is allowed
     final isAllowedRoute = allowedRoutes.contains(route);
-    
+
     if (route == '/home' || route == '/') {
       // Navigate to home screen, but pop all routes first to go to root
       Navigator.of(context).pushAndRemoveUntil(
@@ -855,6 +933,50 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const VideoTutorialGalleryScreen(),
+        ),
+      );
+    } else if (route == '/video-tutorials') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const VideoTutorialGalleryScreen(
+            initialTitle: 'Video Tutorial',
+          ),
+        ),
+      );
+    } else if (route == '/video-tutorial-groups') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const VideoTutorialGroupScreen(),
+        ),
+      );
+    } else if (route == '/locked-budget-food-categories') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LockedBudgetFoodCategoryIndexScreen(),
+        ),
+      );
+    } else if (route == '/budget-management') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const BudgetManagementIndexScreen(),
+        ),
+      );
+    } else if (route == '/chart-of-accounts') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ChartOfAccountIndexScreen(),
+        ),
+      );
+    } else if (route == '/bank-accounts') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const BankAccountIndexScreen(),
         ),
       );
     } else if (route == '/sales-outlet-dashboard') {
@@ -1185,6 +1307,27 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const OutletWIPReportScreen(),
         ),
       );
+    } else if (route == '/manual-point') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ManualPointIndexScreen(),
+        ),
+      );
+    } else if (route == '/scrapper-google-review') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const GoogleReviewScrapperScreen(),
+        ),
+      );
+    } else if (route == '/members') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MemberIndexScreen(),
+        ),
+      );
     } else if (route == '/member-history') {
       Navigator.push(
         context,
@@ -1197,6 +1340,20 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const MKProductionIndexScreen(),
+        ),
+      );
+    } else if (route == '/announcement') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AnnouncementIndexScreen(),
+        ),
+      );
+    } else if (route == '/promos') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const PromoIndexScreen(),
         ),
       );
     } else if (route == '/categories') {
@@ -1234,14 +1391,116 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const UnitIndexScreen(),
         ),
       );
+    } else if (route == '/menu-types') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MenuTypeIndexScreen(),
+        ),
+      );
+    } else if (route == '/modifiers') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ModifierIndexScreen(),
+        ),
+      );
+    } else if (route == '/modifier-options') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ModifierOptionIndexScreen(),
+        ),
+      );
+    } else if (route == '/warehouses') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const WarehouseIndexScreen(),
+        ),
+      );
+    } else if (route == '/warehouse-outlets') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const WarehouseOutletIndexScreen(),
+        ),
+      );
+    } else if (route == '/warehouse-divisions') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const WarehouseDivisionIndexScreen(),
+        ),
+      );
+    } else if (route == '/outlets') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const OutletIndexScreen(),
+        ),
+      );
+    } else if (route == '/customers') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CustomerIndexScreen(),
+        ),
+      );
+    } else if (route == '/suppliers') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const SupplierIndexScreen(),
+        ),
+      );
+    } else if (route == '/regions') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const RegionIndexScreen(),
+        ),
+      );
+    } else if (route == '/item-schedules') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ItemScheduleIndexScreen(),
+        ),
+      );
+    } else if (route == '/fo-schedules') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ROScheduleIndexScreen(),
+        ),
+      );
+    } else if (route == '/investors') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const InvestorIndexScreen(),
+        ),
+      );
+    } else if (route == '/officer-check') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const OfficerCheckIndexScreen(),
+        ),
+      );
+    } else if (route == '/payment-types') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const PaymentTypeIndexScreen(),
+        ),
+      );
     } else if (route == '/items') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => const WebOnlyFeatureScreen(
-            featureName: 'Items',
-            webPath: '/items',
-          ),
+          builder: (context) => const ItemIndexScreen(),
         ),
       );
     } else if (route == '/reservations') {
@@ -1276,4 +1535,3 @@ class _AppSidebarState extends State<AppSidebar> {
     }
   }
 }
-

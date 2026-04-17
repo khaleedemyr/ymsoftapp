@@ -60,11 +60,11 @@ class ApprovalService {
       );
 
       print('PR Approvals: Status code = ${response.statusCode}');
-      print('PR Approvals: Response body = ${response.body}');
+      print('PR Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('PR Approvals: Parsed data = $data');
+        print('PR Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['purchase_requisitions'] != null) {
           final List<dynamic> approvalsJson = data['purchase_requisitions'];
           // Store raw JSON for caching
@@ -108,11 +108,11 @@ class ApprovalService {
       );
 
       print('PO Ops Approvals: Status code = ${response.statusCode}');
-      print('PO Ops Approvals: Response body = ${response.body}');
+      print('PO Ops Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('PO Ops Approvals: Parsed data = $data');
+        print('PO Ops Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['data'] != null) {
           final List<dynamic> approvalsJson = data['data'];
           // Store raw JSON for caching
@@ -156,11 +156,11 @@ class ApprovalService {
       );
 
       print('Leave Approvals: Status code = ${response.statusCode}');
-      print('Leave Approvals: Response body = ${response.body}');
+      print('Leave Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Leave Approvals: Parsed data = $data');
+        print('Leave Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['approvals'] != null) {
           final List<dynamic> approvalsJson = data['approvals'];
           final isSuperadmin = await _isSuperadmin();
@@ -647,11 +647,11 @@ class ApprovalService {
       );
 
       print('Category Cost Approvals: Status code = ${response.statusCode}');
-      print('Category Cost Approvals: Response body = ${response.body}');
+      print('Category Cost Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Category Cost Approvals: Parsed data = $data');
+        print('Category Cost Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['headers'] != null) {
           final List<dynamic> approvalsJson = data['headers'];
           print('Category Cost Approvals: Found ${approvalsJson.length} approvals');
@@ -693,11 +693,11 @@ class ApprovalService {
       );
 
       print('Stock Adjustment Approvals: Status code = ${response.statusCode}');
-      print('Stock Adjustment Approvals: Response body = ${response.body}');
+      print('Stock Adjustment Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Stock Adjustment Approvals: Parsed data = $data');
+        print('Stock Adjustment Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['adjustments'] != null) {
           final List<dynamic> approvalsJson = data['adjustments'];
           print('Stock Adjustment Approvals: Found ${approvalsJson.length} approvals');
@@ -1096,11 +1096,11 @@ class ApprovalService {
       );
 
       print('Contra Bon Approvals: Status code = ${response.statusCode}');
-      print('Contra Bon Approvals: Response body = ${response.body}');
+      print('Contra Bon Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Contra Bon Approvals: Parsed data = $data');
+        print('Contra Bon Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['contra_bons'] != null) {
           final List<dynamic> approvalsJson = data['contra_bons'];
           print('Contra Bon Approvals: Found ${approvalsJson.length} approvals');
@@ -1142,11 +1142,11 @@ class ApprovalService {
       );
 
       print('Movement Approvals: Status code = ${response.statusCode}');
-      print('Movement Approvals: Response body = ${response.body}');
+      print('Movement Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Movement Approvals: Parsed data = $data');
+        print('Movement Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['data'] != null) {
           final List<dynamic> approvalsJson = data['data'];
           print('Movement Approvals: Found ${approvalsJson.length} approvals');
@@ -1188,11 +1188,11 @@ class ApprovalService {
       );
 
       print('Coaching Approvals: Status code = ${response.statusCode}');
-      print('Coaching Approvals: Response body = ${response.body}');
+      print('Coaching Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Coaching Approvals: Parsed data = $data');
+        print('Coaching Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['pending_approvals'] != null) {
           final List<dynamic> approvalsJson = data['pending_approvals'];
           print('Coaching Approvals: Found ${approvalsJson.length} approvals');
@@ -1234,11 +1234,11 @@ class ApprovalService {
       );
 
       print('Correction Approvals: Status code = ${response.statusCode}');
-      print('Correction Approvals: Response body = ${response.body}');
+      print('Correction Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Correction Approvals: Parsed data = $data');
+        print('Correction Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['approvals'] != null) {
           final List<dynamic> approvalsJson = data['approvals'];
           print('Correction Approvals: Found ${approvalsJson.length} approvals');
@@ -1287,11 +1287,11 @@ class ApprovalService {
       );
 
       print('HRD Approvals: Status code = ${response.statusCode}');
-      print('HRD Approvals: Response body = ${response.body}');
+      print('HRD Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('HRD Approvals: Parsed data = $data');
+        print('HRD Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['approvals'] != null) {
           final List<dynamic> approvalsJson = data['approvals'];
           final isSuperadmin = await _isSuperadmin();
@@ -1818,11 +1818,11 @@ class ApprovalService {
       );
 
       print('Food Payment Approvals: Status code = ${response.statusCode}');
-      print('Food Payment Approvals: Response body = ${response.body}');
+      print('Food Payment Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Food Payment Approvals: Parsed data = $data');
+        print('Food Payment Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['food_payments'] != null) {
           final List<dynamic> approvalsJson = data['food_payments'];
           print('Food Payment Approvals: Found ${approvalsJson.length} approvals');
@@ -1864,11 +1864,11 @@ class ApprovalService {
       );
 
       print('Non Food Payment Approvals: Status code = ${response.statusCode}');
-      print('Non Food Payment Approvals: Response body = ${response.body}');
+      print('Non Food Payment Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Non Food Payment Approvals: Parsed data = $data');
+        print('Non Food Payment Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['non_food_payments'] != null) {
           final List<dynamic> approvalsJson = data['non_food_payments'];
           print('Non Food Payment Approvals: Found ${approvalsJson.length} approvals');
@@ -1910,11 +1910,11 @@ class ApprovalService {
       );
 
       print('PR Food Approvals: Status code = ${response.statusCode}');
-      print('PR Food Approvals: Response body = ${response.body}');
+      print('PR Food Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('PR Food Approvals: Parsed data = $data');
+        print('PR Food Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['pr_foods'] != null) {
           final List<dynamic> approvalsJson = data['pr_foods'];
           print('PR Food Approvals: Found ${approvalsJson.length} approvals');
@@ -1956,11 +1956,11 @@ class ApprovalService {
       );
 
       print('PO Food Approvals: Status code = ${response.statusCode}');
-      print('PO Food Approvals: Response body = ${response.body}');
+      print('PO Food Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('PO Food Approvals: Parsed data = $data');
+        print('PO Food Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['po_foods'] != null) {
           final List<dynamic> approvalsJson = data['po_foods'];
           print('PO Food Approvals: Found ${approvalsJson.length} approvals');
@@ -2002,11 +2002,11 @@ class ApprovalService {
       );
 
       print('RO Khusus Approvals: Status code = ${response.statusCode}');
-      print('RO Khusus Approvals: Response body = ${response.body}');
+      print('RO Khusus Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('RO Khusus Approvals: Parsed data = $data');
+        print('RO Khusus Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['ro_khusus'] != null) {
           final List<dynamic> approvalsJson = data['ro_khusus'];
           print('RO Khusus Approvals: Found ${approvalsJson.length} approvals');
@@ -2048,11 +2048,11 @@ class ApprovalService {
       );
 
       print('Employee Resignation Approvals: Status code = ${response.statusCode}');
-      print('Employee Resignation Approvals: Response body = ${response.body}');
+      print('Employee Resignation Approvals: Response body length = ${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Employee Resignation Approvals: Parsed data = $data');
+        print('Employee Resignation Approvals: Parsed keys = ${(data is Map) ? data.keys.join(',') : data.runtimeType}');
         if (data['success'] == true && data['resignations'] != null) {
           final List<dynamic> approvalsJson = data['resignations'];
           print('Employee Resignation Approvals: Found ${approvalsJson.length} approvals');

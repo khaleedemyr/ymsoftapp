@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../services/stock_cut_service.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import 'stock_cut_form_screen.dart';
 
 class StockCutMenuCostScreen extends StatefulWidget {
   const StockCutMenuCostScreen({super.key});
@@ -20,11 +21,23 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
   bool _loadingOutlets = true;
   bool _loading = false;
   Map<String, dynamic>? _data;
+  bool _hasSearched = false;
+  final TextEditingController _searchMenuController = TextEditingController();
+  final TextEditingController _searchModifierController = TextEditingController();
+  final Set<int> _expandedMenuIds = <int>{};
+  final Set<String> _expandedModifierNames = <String>{};
 
   @override
   void initState() {
     super.initState();
     _loadOutlets();
+  }
+
+  @override
+  void dispose() {
+    _searchMenuController.dispose();
+    _searchModifierController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadOutlets() async {
@@ -59,6 +72,9 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
     setState(() {
       _loading = true;
       _data = null;
+      _hasSearched = true;
+      _expandedMenuIds.clear();
+      _expandedModifierNames.clear();
     });
     try {
       final result = await _service.getMenuCost(
@@ -77,11 +93,63 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
   }
 
   String _fmt(dynamic v) {
-    if (v == null) return '0';
-    if (v is num) return NumberFormat('#,##0', 'id_ID').format(v);
+    if (v == null) return '0,00';
+    if (v is num) return NumberFormat('#,##0.00', 'id_ID').format(v);
     final s = v.toString().replaceAll(',', '');
     final n = num.tryParse(s);
-    return n != null ? NumberFormat('#,##0', 'id_ID').format(n) : v.toString();
+    return n != null ? NumberFormat('#,##0.00', 'id_ID').format(n) : '0,00';
+  }
+
+  int _toInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  Map<String, List<Map<String, dynamic>>> _filteredMenuGrouped() {
+    final groupedRaw = _data?['menu_costs_grouped'];
+    if (groupedRaw is! Map) return {};
+    final q = _searchMenuController.text.trim().toLowerCase();
+    final result = <String, List<Map<String, dynamic>>>{};
+    for (final entry in Map<String, dynamic>.from(groupedRaw).entries) {
+      final rows = (entry.value as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .where((row) {
+        if (q.isEmpty) return true;
+        final itemName = row['item_name']?.toString().toLowerCase() ?? '';
+        final category = row['category_name']?.toString().toLowerCase() ?? '';
+        final subCategory = row['sub_category_name']?.toString().toLowerCase() ?? '';
+        return itemName.contains(q) || category.contains(q) || subCategory.contains(q);
+      }).toList();
+      if (rows.isNotEmpty) result[entry.key] = rows;
+    }
+    return result;
+  }
+
+  Map<String, List<Map<String, dynamic>>> _filteredModifierGrouped() {
+    final groupedRaw = _data?['modifier_costs_grouped'];
+    if (groupedRaw is! Map) return {};
+    final q = _searchModifierController.text.trim().toLowerCase();
+    final result = <String, List<Map<String, dynamic>>>{};
+    for (final entry in Map<String, dynamic>.from(groupedRaw).entries) {
+      final rows = (entry.value as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .where((row) {
+        if (q.isEmpty) return true;
+        final modifier = row['modifier_name']?.toString().toLowerCase() ?? '';
+        final category = row['category_name']?.toString().toLowerCase() ?? '';
+        return modifier.contains(q) || category.contains(q);
+      }).toList();
+      if (rows.isNotEmpty) result[entry.key] = rows;
+    }
+    return result;
+  }
+
+  String _formatPeriode(dynamic value) {
+    final raw = value?.toString() ?? '';
+    final date = DateTime.tryParse(raw);
+    if (date == null) return '-';
+    return DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(date);
   }
 
   @override
@@ -104,6 +172,33 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.list_alt_rounded),
+                    label: const Text('Log Stock Cut'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const StockCutFormScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Stock Cut'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -215,13 +310,46 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
                 ),
               ),
             ),
-            if (_data != null) ...[
+            if (_loading) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(child: AppLoadingIndicator()),
+              ),
+            ] else if (_data != null &&
+                (_filteredMenuGrouped().isNotEmpty || _filteredModifierGrouped().isNotEmpty)) ...[
               const SizedBox(height: 16),
               _buildSummary(),
               const SizedBox(height: 16),
               _buildMenuCostList(),
               const SizedBox(height: 12),
               _buildModifierCostList(),
+            ] else ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.calculate_outlined, size: 44, color: Colors.grey.shade500),
+                    const SizedBox(height: 10),
+                    Text(
+                      _hasSearched
+                          ? 'Tidak ada data cost menu untuk filter yang dipilih.'
+                          : 'Pilih outlet dan tanggal, lalu klik Cari.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),
@@ -253,6 +381,39 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
         _summaryCard('Total Profit', 'Rp ${_fmt(d['total_profit'])}', Colors.teal),
         const SizedBox(height: 8),
         _summaryCard('Profit Margin', '${_fmt(d['total_profit_margin'])}%', Colors.indigo),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _summaryCard('Menu Cost', 'Rp ${_fmt(d['total_menu_cost'])}', Colors.green),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _summaryCard('Modifier Cost', 'Rp ${_fmt(d['total_modifier_cost'])}', Colors.purple),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.calendar_month_outlined, color: Colors.purple.shade600),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Periode: ${_formatPeriode(d['periode'])}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade800, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -278,20 +439,48 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
   }
 
   Widget _buildMenuCostList() {
-    final grouped = _data!['menu_costs_grouped'];
-    if (grouped is! Map || grouped.isEmpty) return const SizedBox.shrink();
-    final map = Map<String, dynamic>.from(grouped as Map);
+    final map = _filteredMenuGrouped();
+    if (map.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Text('Detail Cost Per Menu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.grey.shade800)),
+        Row(
+          children: [
+            Expanded(
+              child: Text('Detail Cost Per Menu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.grey.shade800)),
+            ),
+            SizedBox(
+              width: 180,
+              child: TextField(
+                controller: _searchMenuController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Cari menu...',
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Fitur export Excel akan segera tersedia'),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.file_download_outlined, size: 18),
+              label: const Text('Export'),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
         ...(map.entries.map((e) {
           final catName = e.key;
-          final menus = e.value is List ? e.value as List : [];
+          final menus = e.value;
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
@@ -308,24 +497,108 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('${menus.length} menu', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
               ),
-              children: menus.map<Widget>((m) {
-                final menu = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              children: menus.map<Widget>((menu) {
+                final itemId = _toInt(menu['item_id']);
+                final isExpanded = _expandedMenuIds.contains(itemId);
+                final bomDetails = (menu['bom_details'] as List? ?? const [])
+                    .map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList();
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
                     children: [
-                      Expanded(
+                      Padding(
+                        padding: const EdgeInsets.all(10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(menu['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                            const SizedBox(height: 2),
-                            Text('Qty: ${menu['qty_ordered']} • Rp ${_fmt(menu['total_cost'])}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                            Text(
+                              menu['item_name']?.toString() ?? '-',
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Sub Kategori: ${menu['sub_category_name'] ?? '-'}',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Qty: ${menu['qty_ordered'] ?? 0} • Cost/Unit: Rp ${_fmt(menu['cost_per_unit'])}',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Total Cost: Rp ${_fmt(menu['total_cost'])} • Revenue: Rp ${_fmt(menu['total_revenue'])}',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Text(
+                                  'Profit: Rp ${_fmt(menu['profit'])}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _profitColor(menu['profit']),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '(${menu['profit_margin'] ?? 0}%)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _profitColor(menu['profit']),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (bomDetails.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              TextButton(
+                                onPressed: () => setState(() {
+                                  if (isExpanded) {
+                                    _expandedMenuIds.remove(itemId);
+                                  } else {
+                                    _expandedMenuIds.add(itemId);
+                                  }
+                                }),
+                                child: Text(isExpanded ? 'Sembunyikan Detail BOM' : 'Tampilkan Detail BOM'),
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                      Text('${menu['profit_margin'] ?? '-'}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _profitColor(menu['profit']))),
+                      if (isExpanded)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
+                            border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: bomDetails.map((bom) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  '${bom['material_name'] ?? '-'} • '
+                                  '${bom['qty_needed'] ?? 0} ${bom['unit_name'] ?? ''} • '
+                                  'Rp ${_fmt(bom['cost_per_unit'])} • '
+                                  'Total Rp ${_fmt(bom['total_cost'])}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
                     ],
                   ),
                 );
@@ -344,20 +617,36 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
   }
 
   Widget _buildModifierCostList() {
-    final grouped = _data!['modifier_costs_grouped'];
-    if (grouped is! Map || grouped.isEmpty) return const SizedBox.shrink();
-    final map = Map<String, dynamic>.from(grouped as Map);
+    final map = _filteredModifierGrouped();
+    if (map.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Text('Detail Cost Per Modifier', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.grey.shade800)),
+        Row(
+          children: [
+            Expanded(
+              child: Text('Detail Cost Per Modifier', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.grey.shade800)),
+            ),
+            SizedBox(
+              width: 180,
+              child: TextField(
+                controller: _searchModifierController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Cari modifier...',
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
         ...(map.entries.map((e) {
           final catName = e.key;
-          final mods = e.value is List ? e.value as List : [];
+          final mods = e.value;
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
@@ -374,22 +663,53 @@ class _StockCutMenuCostScreenState extends State<StockCutMenuCostScreen> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('${mods.length} modifier', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
               ),
-              children: mods.map<Widget>((m) {
-                final mod = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
+              children: mods.map<Widget>((mod) {
+                final name = mod['modifier_name']?.toString() ?? '-';
+                final isExpanded = _expandedModifierNames.contains(name);
+                final bomDetails = (mod['bom_details'] as List? ?? const [])
+                    .map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList();
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(mod['modifier_name']?.toString() ?? '-', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                            const SizedBox(height: 2),
-                            Text('Qty: ${mod['total_qty']} • Rp ${_fmt(mod['total_cost'])}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                          ],
-                        ),
+                      Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Qty: ${mod['total_qty'] ?? 0} • Cost/Unit: Rp ${_fmt(mod['cost_per_unit'])} • Total: Rp ${_fmt(mod['total_cost'])}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                       ),
+                      if (bomDetails.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            if (isExpanded) {
+                              _expandedModifierNames.remove(name);
+                            } else {
+                              _expandedModifierNames.add(name);
+                            }
+                          }),
+                          child: Text(isExpanded ? 'Sembunyikan Detail BOM' : 'Tampilkan Detail BOM'),
+                        ),
+                      ],
+                      if (isExpanded)
+                        ...bomDetails.map((bom) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '${bom['material_name'] ?? '-'} • '
+                                '${bom['qty_needed'] ?? 0} ${bom['unit_name'] ?? ''} • '
+                                'Rp ${_fmt(bom['cost_per_unit'])} • '
+                                'Total Rp ${_fmt(bom['total_cost'])}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            )),
                     ],
                   ),
                 );

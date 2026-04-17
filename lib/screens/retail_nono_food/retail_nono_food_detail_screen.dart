@@ -19,6 +19,8 @@ class _RetailNonoFoodDetailScreenState extends State<RetailNonoFoodDetailScreen>
   final RetailNonFoodService _service = RetailNonFoodService();
   Map<String, dynamic>? _data;
   bool _isLoading = true;
+  bool _isDeleting = false;
+  bool _canDelete = false;
 
   @override
   void initState() {
@@ -32,8 +34,55 @@ class _RetailNonoFoodDetailScreenState extends State<RetailNonoFoodDetailScreen>
     if (mounted) {
       setState(() {
         _data = result?['retail_non_food'] ?? result;
+        _canDelete = result?['canDelete'] == true || result?['can_delete'] == true;
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _deleteRetailNonFood() async {
+    if (_isDeleting || !_canDelete || _data == null) return;
+    final retailNumber = (_data?['retail_number'] ?? '-').toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Konfirmasi Hapus'),
+        content: Text('Yakin ingin menghapus transaksi $retailNumber?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    final result = await _service.deleteRetailNonFood(widget.retailNonFoodId);
+    if (!mounted) return;
+    setState(() => _isDeleting = false);
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Transaksi retail non food berhasil dihapus'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pop(context, true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Gagal menghapus transaksi'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -57,6 +106,29 @@ class _RetailNonoFoodDetailScreenState extends State<RetailNonoFoodDetailScreen>
     return AppScaffold(
       title: 'Detail Retail Non Food',
       showDrawer: false,
+      actions: _isLoading
+          ? null
+          : _canDelete
+              ? [
+                  IconButton(
+                    onPressed: _isDeleting ? null : _deleteRetailNonFood,
+                    icon: _isDeleting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.delete_outline),
+                    tooltip: 'Hapus transaksi',
+                  ),
+                ]
+              : [
+                  IconButton(
+                    onPressed: null,
+                    icon: const Icon(Icons.lock_outline),
+                    tooltip: 'Hanya admin yang dapat menghapus transaksi',
+                  ),
+                ],
       body: _isLoading
           ? const Center(child: AppLoadingIndicator(size: 26, color: Color(0xFF16A34A)))
           : _data == null

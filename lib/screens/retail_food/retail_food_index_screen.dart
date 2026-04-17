@@ -27,6 +27,8 @@ class _RetailFoodIndexScreenState extends State<RetailFoodIndexScreen> {
   bool _isLoading = false;
   bool _hasMore = true;
   int _currentPage = 1;
+  bool _canDelete = false;
+  int? _deletingId;
 
   String _searchQuery = '';
   String? _dateFrom;
@@ -113,6 +115,7 @@ class _RetailFoodIndexScreenState extends State<RetailFoodIndexScreen> {
           if (isRefresh) _list = newList;
           else _list.addAll(newList);
           _hasMore = newList.length >= 20;
+          _canDelete = result?['canDelete'] == true || result?['can_delete'] == true;
           _isLoading = false;
         });
       }
@@ -199,6 +202,54 @@ class _RetailFoodIndexScreenState extends State<RetailFoodIndexScreen> {
       ),
     );
     if (result == true) _loadList(isRefresh: true);
+  }
+
+  Future<void> _deleteRetailFood(Map<String, dynamic> item) async {
+    final id = item['id'] is int ? item['id'] as int : int.tryParse(item['id']?.toString() ?? '0') ?? 0;
+    if (id <= 0 || _deletingId != null || !_canDelete) return;
+    final retailNumber = (item['retail_number'] ?? '-').toString();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Konfirmasi Hapus'),
+        content: Text('Yakin ingin menghapus transaksi $retailNumber?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deletingId = id);
+    final result = await _service.deleteRetailFood(id);
+    if (!mounted) return;
+    setState(() => _deletingId = null);
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Transaksi retail food berhasil dihapus'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _loadList(isRefresh: true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Gagal menghapus transaksi'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -510,6 +561,23 @@ class _RetailFoodIndexScreenState extends State<RetailFoodIndexScreen> {
                           ),
                         ),
                       ),
+                      if (_canDelete)
+                        IconButton(
+                          onPressed: _deletingId == id ? null : () => _deleteRetailFood(item),
+                          tooltip: 'Hapus transaksi',
+                          icon: _deletingId == id
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.delete_outline, color: Color(0xFFDC2626)),
+                        )
+                      else
+                        const Tooltip(
+                          message: 'Hanya admin yang dapat menghapus transaksi',
+                          child: Icon(Icons.lock_outline, color: Color(0xFF9CA3AF)),
+                        ),
                       const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
                     ],
                   ),

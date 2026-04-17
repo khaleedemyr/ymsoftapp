@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'auth_service.dart';
 
 class ItemService {
@@ -120,6 +121,18 @@ class ItemService {
     }
   }
 
+  Future<Map<String, dynamic>?> createWithImages(
+    Map<String, dynamic> body, {
+    List<XFile> images = const [],
+  }) async {
+    return _submitMultipart(
+      method: 'POST',
+      path: '/api/approval-app/items',
+      body: body,
+      images: images,
+    );
+  }
+
   Future<Map<String, dynamic>?> update(int id, Map<String, dynamic> body) async {
     try {
       final token = await _getToken();
@@ -142,6 +155,132 @@ class ItemService {
       return decoded;
     } catch (e) {
       print('ItemService.update error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>?> updateWithImages(
+    int id,
+    Map<String, dynamic> body, {
+    List<XFile> images = const [],
+    List<String> deletedImages = const [],
+  }) async {
+    return _submitMultipart(
+      method: 'PUT',
+      path: '/api/approval-app/items/$id',
+      body: body,
+      images: images,
+      deletedImages: deletedImages,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _submitMultipart({
+    required String method,
+    required String path,
+    required Map<String, dynamic> body,
+    List<XFile> images = const [],
+    List<String> deletedImages = const [],
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final uri = Uri.parse('$baseUrl$path');
+      final request = http.MultipartRequest(
+        method == 'PUT' ? 'POST' : method,
+        uri,
+      );
+      request.headers.addAll({
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+      if (method == 'PUT') {
+        request.fields['_method'] = 'PUT';
+      }
+
+      void putField(String key, dynamic value) {
+        if (value == null) return;
+        request.fields[key] = value.toString();
+      }
+
+      putField('category_id', body['category_id']);
+      putField('sub_category_id', body['sub_category_id']);
+      putField('warehouse_division_id', body['warehouse_division_id']);
+      putField('sku', body['sku']);
+      putField('type', body['type']);
+      putField('name', body['name']);
+      putField('description', body['description']);
+      putField('specification', body['specification']);
+      putField('small_unit_id', body['small_unit_id']);
+      putField('medium_unit_id', body['medium_unit_id']);
+      putField('large_unit_id', body['large_unit_id']);
+      putField('medium_conversion_qty', body['medium_conversion_qty']);
+      putField('small_conversion_qty', body['small_conversion_qty']);
+      putField('min_stock', body['min_stock']);
+      putField('status', body['status']);
+      putField('composition_type', body['composition_type']);
+      putField('modifier_enabled', body['modifier_enabled'] == true ? 1 : 0);
+      putField('exp', body['exp']);
+
+      final modifierOptionIds = body['modifier_option_ids'];
+      if (modifierOptionIds is List) {
+        for (var i = 0; i < modifierOptionIds.length; i++) {
+          putField('modifier_option_ids[$i]', modifierOptionIds[i]);
+        }
+      }
+
+      final prices = body['prices'];
+      if (prices is List) {
+        for (var i = 0; i < prices.length; i++) {
+          final p = prices[i];
+          if (p is! Map) continue;
+          putField('prices[$i][price_type]', p['price_type']);
+          putField('prices[$i][region_id]', p['region_id']);
+          putField('prices[$i][outlet_id]', p['outlet_id']);
+          putField('prices[$i][price]', p['price']);
+        }
+      }
+
+      final availabilities = body['availabilities'];
+      if (availabilities is List) {
+        for (var i = 0; i < availabilities.length; i++) {
+          final a = availabilities[i];
+          if (a is! Map) continue;
+          putField('availabilities[$i][region_id]', a['region_id']);
+          putField('availabilities[$i][outlet_id]', a['outlet_id']);
+          putField('availabilities[$i][status]', a['status'] ?? 'available');
+        }
+      }
+
+      final bom = body['bom'];
+      if (bom is List) {
+        for (var i = 0; i < bom.length; i++) {
+          final b = bom[i];
+          if (b is! Map) continue;
+          putField('bom[$i][item_id]', b['item_id']);
+          putField('bom[$i][qty]', b['qty']);
+          putField('bom[$i][unit_id]', b['unit_id']);
+          putField('bom[$i][stock_cut]', b['stock_cut'] == true ? 1 : 0);
+        }
+      }
+
+      for (var i = 0; i < deletedImages.length; i++) {
+        putField('deleted_images[$i]', deletedImages[i]);
+      }
+
+      for (final image in images) {
+        request.files.add(
+          await http.MultipartFile.fromPath('images[]', image.path),
+        );
+      }
+
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      final decoded = response.body.isNotEmpty
+          ? jsonDecode(response.body) as Map<String, dynamic>?
+          : null;
+      return decoded;
+    } catch (e) {
+      print('ItemService._submitMultipart error: $e');
       return {'success': false, 'message': e.toString()};
     }
   }
