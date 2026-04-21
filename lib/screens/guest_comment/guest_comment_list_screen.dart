@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../services/auth_service.dart';
 import '../../services/guest_comment_service.dart';
 import 'guest_comment_form_screen.dart';
+import 'guest_comment_gsi_dashboard_screen.dart';
 import 'guest_comment_upload_screen.dart';
 
 void _openGuestCommentFormImagePreview(BuildContext context, String url) {
@@ -121,7 +122,7 @@ class _GuestCommentListScreenState extends State<GuestCommentListScreen> {
     _canChooseOutlet = res['can_choose_outlet'] == true;
     _outlets = res['outlets'] as List<dynamic>? ?? [];
     final lo = res['locked_outlet'];
-    _lockedOutlet = lo is Map ? Map<String, dynamic>.from(lo as Map) : null;
+    _lockedOutlet = lo is Map ? Map<String, dynamic>.from(lo) : null;
     _metaFromApi = true;
     final forms = res['forms'];
     if (forms is! Map) return;
@@ -250,6 +251,19 @@ class _GuestCommentListScreenState extends State<GuestCommentListScreen> {
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
         title: const Text('Guest Comment (OCR)'),
+        actions: [
+          IconButton(
+            tooltip: 'Dashboard GSI',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const GuestCommentGsiDashboardScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.insights_rounded),
+          ),
+        ],
         elevation: 0,
         flexibleSpace: Container(
           decoration: const BoxDecoration(

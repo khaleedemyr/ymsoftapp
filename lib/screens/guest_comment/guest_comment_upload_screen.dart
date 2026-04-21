@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../services/guest_comment_service.dart';
 import 'guest_comment_form_screen.dart';
 
-/// Unggah foto formulir guest comment → OCR di server → lanjut verifikasi.
+/// Unggah foto formulir guest comment → OCR + klasifikasi issue AI di server.
 class GuestCommentUploadScreen extends StatefulWidget {
   const GuestCommentUploadScreen({super.key});
 
@@ -54,7 +54,7 @@ class _GuestCommentUploadScreenState extends State<GuestCommentUploadScreen> {
                 const SizedBox(width: 20),
                 Flexible(
                   child: Text(
-                    'Mengunggah & mengolah OCR…',
+                    'Mengunggah & mengolah OCR + AI…',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -223,7 +223,7 @@ class _GuestCommentUploadScreenState extends State<GuestCommentUploadScreen> {
                       ),
                     )
                   : const Icon(Icons.cloud_upload_rounded),
-              label: Text(_uploading ? 'Mengunggah & OCR…' : 'Unggah & lanjut'),
+              label: Text(_uploading ? 'Mengunggah OCR + AI…' : 'Unggah & lanjut'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
                 backgroundColor: const Color(0xFF2563EB),

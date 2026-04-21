@@ -77,6 +77,20 @@ class GuestCommentService {
     return _decodeMap(res.body, res.statusCode);
   }
 
+  Future<Map<String, dynamic>> getGsiDashboard({
+    String? month,
+    String? idOutlet,
+  }) async {
+    final h = await _bearer();
+    if (h.isEmpty) return {'success': false, 'message': 'Sesi habis'};
+    final q = <String, String>{};
+    if (month != null && month.isNotEmpty) q['month'] = month;
+    if (idOutlet != null && idOutlet.isNotEmpty) q['id_outlet'] = idOutlet;
+    final uri = Uri.parse('$_root/gsi-dashboard').replace(queryParameters: q);
+    final res = await http.get(uri, headers: h);
+    return _decodeMap(res.body, res.statusCode);
+  }
+
   Future<Map<String, dynamic>> uploadImage(File imageFile) async {
     final t = await _token();
     if (t == null) return {'success': false, 'message': 'Sesi habis'};
