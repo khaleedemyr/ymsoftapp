@@ -286,6 +286,46 @@ class FloorOrderService {
     }
   }
 
+  Future<Map<String, dynamic>?> getForecastBudget({
+    required String arrivalDate,
+    required int warehouseOutletId,
+    required double currentInputTotal,
+    int? excludeFloorOrderId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+
+      final queryParams = <String, String>{
+        'arrival_date': arrivalDate,
+        'warehouse_outlet_id': warehouseOutletId.toString(),
+        'current_input_total': currentInputTotal.toString(),
+      };
+      if (excludeFloorOrderId != null) {
+        queryParams['exclude_floor_order_id'] = excludeFloorOrderId.toString();
+      }
+
+      final uri = Uri.parse('$baseUrl/api/approval-app/floor-orders/forecast-budget')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print('Error getting floor order forecast budget: $e');
+      return null;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getWarehouseOutletsByOutlet(int outletId) async {
     try {
       final uri = Uri.parse('$baseUrl/api/warehouse-outlets/by-outlet')

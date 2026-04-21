@@ -101,6 +101,7 @@ class MenuService {
         {'name': 'Daily Report', 'icon': 'fa-solid fa-clipboard-list', 'route': '/daily-report', 'code': 'daily_report'},
         {'name': 'Ticketing System', 'icon': 'fa-solid fa-ticket-alt', 'route': '/tickets', 'code': 'tickets'},
         {'name': 'PR Tracking Report', 'icon': 'fa-solid fa-timeline', 'route': '/purchase-requisitions/tracking-report', 'code': 'pr_tracking_report'},
+        {'name': 'RO vs Forecast Harian', 'icon': 'fa-solid fa-scale-balanced', 'route': '/reports/floor-order-vs-forecast', 'code': 'floor_order_vs_forecast'},
       ],
     },
     {
@@ -314,6 +315,7 @@ class MenuService {
         {'name': 'Data Roulette', 'icon': 'fa-solid fa-dice', 'route': '/roulette', 'code': 'data_roulette'},
         {'name': 'Menu Book', 'icon': 'fa-solid fa-book-open', 'route': '/menu-book', 'code': 'menu_book'},
         {'name': 'Web Profile', 'icon': 'fa-solid fa-globe', 'route': '/web-profile', 'code': 'web_profile'},
+        {'name': 'Revenue Targets', 'icon': 'fa-solid fa-bullseye', 'route': '/outlet-revenue-targets', 'code': 'outlet_revenue_targets'},
       ],
     },
     {

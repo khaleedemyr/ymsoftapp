@@ -47,6 +47,8 @@ import '../screens/google_review/google_review_scrapper_screen.dart';
 import '../screens/member_history_search_screen.dart';
 import '../screens/warehouse_transfer/warehouse_transfer_index_screen.dart';
 import '../screens/outlet_transfer/outlet_transfer_index_screen.dart';
+import '../screens/revenue_targets/revenue_targets_screen.dart';
+import '../screens/reports/floor_order_vs_forecast_screen.dart';
 import '../screens/internal_warehouse_transfer/internal_warehouse_transfer_index_screen.dart';
 import '../screens/retail_food/retail_food_index_screen.dart';
 import '../screens/retail_nono_food/retail_nono_food_index_screen.dart';
@@ -597,6 +599,8 @@ class _AppSidebarState extends State<AppSidebar> {
     if (lowerClass.contains('handshake')) return Icons.handshake;
     if (lowerClass.contains('briefcase')) return Icons.business_center;
     if (lowerClass.contains('building')) return Icons.business;
+    if (lowerClass.contains('bullseye')) return Icons.track_changes;
+    if (lowerClass.contains('scale-balanced')) return Icons.balance;
 
     // Education icons
     if (lowerClass.contains('graduation-cap') || lowerClass.contains('school'))
@@ -717,6 +721,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/internal-use-waste', // Warehouse Internal Use & Waste
       '/outlet-internal-use-waste', // Category Cost Outlet
       '/outlet-transfer', // Pindah Outlet (Outlet Transfer)
+      '/outlet-revenue-targets', // Revenue Targets
       '/internal-warehouse-transfer', // Internal Warehouse Transfer
       '/retail-food', // Retail Food (Outlet Retail Food)
       '/retail-non-food', // Retail Non Food
@@ -787,6 +792,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/daily-report',
       '/tickets',
       '/purchase-requisitions/tracking-report',
+      '/reports/floor-order-vs-forecast',
       // Human Resource (tambah)
       '/divisis',
       '/users',
@@ -1035,6 +1041,13 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const TicketListScreen(),
         ),
       );
+    } else if (route == '/reports/floor-order-vs-forecast') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const FloorOrderVsForecastScreen(),
+        ),
+      );
     } else if (route == '/guest-comment-forms') {
       Navigator.push(
         context,
@@ -1235,6 +1248,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const OutletTransferIndexScreen(),
+        ),
+      );
+    } else if (route == '/outlet-revenue-targets') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const RevenueTargetsScreen(),
         ),
       );
     } else if (route == '/internal-warehouse-transfer') {

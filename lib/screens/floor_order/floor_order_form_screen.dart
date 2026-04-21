@@ -55,8 +55,12 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
   bool _isLoadingItems = false;
   String? _scheduleError;
   Timer? _autoSaveTimer;
+  Timer? _forecastBudgetDebounce;
   bool _isAutoSaving = false;
   DateTime? _lastAutoSaveAt;
+  bool _isForecastBudgetLoading = false;
+  Map<String, dynamic>? _forecastBudget;
+  String? _forecastBudgetError;
 
   int? _orderId;
   String? _currentStatus;
@@ -78,6 +82,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     _descriptionController.dispose();
     _itemSearchController.dispose();
     _autoSaveTimer?.cancel();
+    _forecastBudgetDebounce?.cancel();
     for (final cat in _categories) {
       for (final item in cat.items) {
         item.qtyController.dispose();
@@ -378,6 +383,8 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       _isScheduleReady = false;
       _itemsBySchedule = [];
       _categories = [];
+      _forecastBudget = null;
+      _forecastBudgetError = null;
     });
 
     if (_foMode == 'RO Khusus') {
@@ -480,6 +487,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       _isLoadingItems = false;
       _isCheckingSchedule = false;
     });
+    _scheduleForecastBudgetFetch();
     await _loadTodaySchedules();
     await _createDraftIfNeeded();
   }
@@ -501,6 +509,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       _isLoadingItems = false;
       _isCheckingSchedule = false;
     });
+    _scheduleForecastBudgetFetch();
     await _loadTodaySchedules();
     await _createDraftIfNeeded();
   }
@@ -539,6 +548,9 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       setState(() {
         controller.text = DateFormat('yyyy-MM-dd').format(picked);
       });
+      if (identical(controller, _arrivalDateController)) {
+        _scheduleForecastBudgetFetch();
+      }
       _triggerAutoSave();
     }
   }
@@ -571,6 +583,59 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     return total;
   }
 
+  void _scheduleForecastBudgetFetch() {
+    _forecastBudgetDebounce?.cancel();
+    _forecastBudgetDebounce = Timer(const Duration(milliseconds: 400), () {
+      _fetchForecastBudget();
+    });
+  }
+
+  double _num(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '0') ?? 0;
+  }
+
+  Future<void> _fetchForecastBudget() async {
+    if (!_isScheduleReady || _warehouseOutletId == null || _arrivalDateController.text.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _forecastBudget = null;
+        _forecastBudgetError = null;
+        _isForecastBudgetLoading = false;
+      });
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isForecastBudgetLoading = true;
+        _forecastBudgetError = null;
+      });
+    }
+
+    final result = await _service.getForecastBudget(
+      arrivalDate: _arrivalDateController.text,
+      warehouseOutletId: _warehouseOutletId!,
+      currentInputTotal: _totalAmount(),
+      excludeFloorOrderId: _orderId,
+    );
+
+    if (!mounted) return;
+    if (result != null && result['success'] == true) {
+      setState(() {
+        _forecastBudget = result;
+        _forecastBudgetError = null;
+        _isForecastBudgetLoading = false;
+      });
+    } else {
+      setState(() {
+        _forecastBudget = null;
+        _forecastBudgetError = 'Gagal memuat forecast/plafon';
+        _isForecastBudgetLoading = false;
+      });
+    }
+  }
+
   int _selectedItemCount() {
     int count = 0;
     for (final cat in _categories) {
@@ -595,6 +660,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     setState(() {
       item.qty = qty;
     });
+    _scheduleForecastBudgetFetch();
     _triggerAutoSave();
   }
 
@@ -907,6 +973,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         final data = result['data'] as Map<String, dynamic>;
         if (data['floor_order_id'] != null) {
           _orderId = data['floor_order_id'] as int?;
+          _scheduleForecastBudgetFetch();
         }
       }
     } catch (e) {
@@ -1213,6 +1280,110 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     );
   }
 
+  Widget _buildForecastBudgetCard() {
+    if (!_isScheduleReady || _warehouseOutletId == null || _arrivalDateController.text.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final currency = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final data = _forecastBudget;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC7D2FE)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF5F7FF), Color(0xFFF8FAFC)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Forecast & Plafon',
+            style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF3730A3)),
+          ),
+          const SizedBox(height: 8),
+          if (_isForecastBudgetLoading)
+            Row(
+              children: const [
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 8),
+                Text('Menghitung...'),
+              ],
+            )
+          else if (_forecastBudgetError != null)
+            Text(_forecastBudgetError!, style: TextStyle(color: Colors.red.shade700))
+          else if (data != null) ...[
+            if (data['has_revenue_target_header'] != true)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: const Text(
+                  'Revenue target bulan ini belum tersedia, forecast harian belum bisa dihitung.',
+                ),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Forecast harian: ${currency.format(_num(data['forecast_revenue']))}'),
+                  const SizedBox(height: 4),
+                  Text(data['bucket_label']?.toString() ?? '-'),
+                ],
+              ),
+            const SizedBox(height: 8),
+            if (data['plafon'] != null)
+              Text('Plafon bucket: ${currency.format(_num(data['plafon']))}')
+            else
+              Text(
+                'Cap referensi K+B: ${currency.format(_num(data['cap_kitchen_bar']))} • '
+                'Service: ${currency.format(_num(data['cap_service']))}',
+              ),
+            const SizedBox(height: 6),
+            Text('RO lain (tanggal+warehouse sama): ${currency.format(_num(data['committed_other_fo']))}'),
+            Text('Input Anda sekarang: ${currency.format(_num(data['current_input_total']))}'),
+            if (data['sisa_plafon'] != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: data['over_cap'] == true ? Colors.red.shade50 : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: data['over_cap'] == true ? Colors.red.shade200 : Colors.green.shade200,
+                  ),
+                ),
+                child: Text(
+                  'Sisa plafon: ${currency.format(_num(data['sisa_plafon']))}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: data['over_cap'] == true ? Colors.red.shade700 : Colors.green.shade700,
+                  ),
+                ),
+              ),
+            ],
+            if ((data['bucket']?.toString() ?? '') == 'other') ...[
+              const SizedBox(height: 6),
+              Text(
+                'Warehouse ini masuk bucket "other", jadi plafon K+B/Service tidak dipakai.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeaderSection() {
     final autoSaveText = _isAutoSaving
         ? 'Autosaving...'
@@ -1263,6 +1434,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
               setState(() {
                 _warehouseOutletId = value;
               });
+              _scheduleForecastBudgetFetch();
               _triggerAutoSave();
             },
           ),
@@ -1288,6 +1460,8 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                 _scheduleData = null;
                 _itemsBySchedule = [];
                 _categories = [];
+                _forecastBudget = null;
+                _forecastBudgetError = null;
               });
             },
           ),
@@ -1422,6 +1596,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                 child: Text('Info Jadwal RO Supplier: ${_itemsBySchedule.length} item tersedia sesuai jadwal hari ini.'),
               ),
             ],
+            _buildForecastBudgetCard(),
             const SizedBox(height: 12),
             if (_categories.isNotEmpty) ...[
               Row(

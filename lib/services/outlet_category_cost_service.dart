@@ -243,6 +243,39 @@ class OutletCategoryCostService {
     return null;
   }
 
+  /// Items from item_bom where stock_cut=1, with stock > 0 for outlet/warehouse; unit = smallest.
+  Future<List<Map<String, dynamic>>> getStockCutItems({
+    required int outletId,
+    required int warehouseOutletId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final uri = Uri.parse('$baseUrl/api/approval-app/outlet-internal-use-waste/stock-cut-items').replace(
+        queryParameters: {
+          'outlet_id': outletId.toString(),
+          'warehouse_outlet_id': warehouseOutletId.toString(),
+        },
+      );
+
+      final resp = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map<String, dynamic> && decoded['items'] is List) {
+          return (decoded['items'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+      }
+    } catch (e) {
+      print('Error getStockCutItems: $e');
+    }
+    return [];
+  }
+
   Future<Map<String, dynamic>?> getStock({
     required int itemId,
     required int outletId,
@@ -297,6 +330,33 @@ class OutletCategoryCostService {
       }
     } catch (e) {
       print('Error submitting category cost: $e');
+    }
+    return null;
+  }
+
+  /// Hapus header Category Cost (sama dengan web axios.delete).
+  Future<Map<String, dynamic>?> deleteHeader(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+
+      final uri = Uri.parse('$baseUrl/api/approval-app/outlet-internal-use-waste/$id');
+      final resp = await http.delete(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+
+      try {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+      } catch (_) {
+        return {
+          'success': false,
+          'message': 'Gagal menghapus (${resp.statusCode})',
+        };
+      }
+    } catch (e) {
+      print('Error delete category cost: $e');
     }
     return null;
   }

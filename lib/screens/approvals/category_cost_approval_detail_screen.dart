@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../services/approval_service.dart';
 import '../../widgets/app_footer.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../utils/category_cost_type_label.dart';
 
 class CategoryCostApprovalDetailScreen extends StatefulWidget {
   final int headerId;
@@ -576,7 +577,11 @@ class _CategoryCostApprovalDetailScreenState extends State<CategoryCostApprovalD
               'Informasi Dasar',
               [
                 _buildInfoRow('Number', header['number'] ?? header['id']?.toString() ?? '-', icon: Icons.tag),
-                _buildInfoRow('Type', header['type']?.toString().toUpperCase().replaceAll('_', ' ') ?? '-', icon: Icons.category),
+                _buildInfoRow(
+                  'Type',
+                  categoryCostTypeLabel(header['type']?.toString()),
+                  icon: Icons.category,
+                ),
                 if (header['outlet_name'] != null)
                   _buildInfoRow('Outlet', header['outlet_name'] ?? '-', icon: Icons.store),
                 if (header['warehouse_outlet_name'] != null)

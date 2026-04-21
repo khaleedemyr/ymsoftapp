@@ -7,6 +7,7 @@ import '../../services/outlet_category_cost_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../utils/category_cost_type_label.dart';
 
 
 class CategoryCostOutletDetailScreen extends StatefulWidget {
@@ -201,6 +202,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
 
   bool _isLoading = false;
   bool _isLoadingOutlets = true;
+  bool _loadingUsageBom = false;
 
   // form fields
   String? _type;
@@ -211,9 +213,11 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   int? _outletId;
   int? _warehouseOutletId;
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _usageSearchController = TextEditingController();
 
   List<Map<String, dynamic>> _outlets = [];
   List<Map<String, dynamic>> _warehouseOutlets = [];
+  final Map<String, bool> _usageExpandedByCategory = {};
 
   final List<Map<String, dynamic>> _items = [];
   final List<Map<String, dynamic>> _approvers = [];
@@ -232,6 +236,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
     {'value': 'internal_use', 'label': 'Internal Use'},
     {'value': 'spoil', 'label': 'Spoil'},
     {'value': 'waste', 'label': 'Waste'},
+    {'value': 'usage', 'label': 'Usage'},
     {'value': 'r_and_d', 'label': 'R & D'},
     {'value': 'marketing', 'label': 'Marketing'},
     {'value': 'non_commodity', 'label': 'Non Commodity'},
@@ -247,6 +252,31 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
     'training',
   };
 
+  /// Usage: auto-fill dari item_bom.stock_cut=1 + stok outlet (sama endpoint Stock Cut web).
+  bool get _isUsageAutoBom => (_type ?? '') == 'usage';
+
+  String _usageCategory(Map<String, dynamic> item) {
+    final cat = item['category_name']?.toString().trim();
+    return (cat == null || cat.isEmpty) ? 'Tanpa Kategori' : cat;
+  }
+
+  Map<String, List<int>> _groupedUsageIndices() {
+    final q = _usageSearchController.text.trim().toLowerCase();
+    final groups = <String, List<int>>{};
+    for (var i = 0; i < _items.length; i++) {
+      final itemName = (_items[i]['item_name'] ?? '').toString();
+      if (q.isNotEmpty && !itemName.toLowerCase().contains(q)) continue;
+      final cat = _usageCategory(_items[i]);
+      groups.putIfAbsent(cat, () => <int>[]).add(i);
+    }
+    final sortedKeys = groups.keys.toList()..sort();
+    final sorted = <String, List<int>>{};
+    for (final key in sortedKeys) {
+      sorted[key] = groups[key]!;
+    }
+    return sorted;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -257,6 +287,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   @override
   void dispose() {
     _notesController.dispose();
+    _usageSearchController.dispose();
     for (final it in _items) {
       (it['qtyController'] as TextEditingController?)?.dispose();
       (it['noteController'] as TextEditingController?)?.dispose();
@@ -296,6 +327,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
           final data = resp['data'] ?? resp;
           _headerId = data['id'] is int ? data['id'] : int.tryParse('${data['id'] ?? ''}');
           _type = data['type']?.toString();
+          if (_type == 'stock_cut') _type = 'usage'; // legacy → Usage
           _status = data['status']?.toString();
           _number = data['number']?.toString();
           _notesController.text = data['notes']?.toString() ?? '';
@@ -320,6 +352,18 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
               'unitOptions': <Map<String, dynamic>>[],
             });
           }
+          if ((_type ?? '') == 'usage') {
+            for (final it in _items) {
+              final uid = it['unit_id'];
+              final un = (it['unit_name'] ?? '').toString();
+              if (uid != null && '$uid'.isNotEmpty) {
+                final idNum = uid is int ? uid : int.tryParse('$uid');
+                it['unitOptions'] = [
+                  {'id': idNum, 'name': un},
+                ];
+              }
+            }
+          }
         }
       } else {
         // default: one empty item
@@ -329,6 +373,15 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
       if (_outletId != null) {
         _warehouseOutlets = await _service.getWarehouseOutlets(outletId: _outletId);
       }
+      if (widget.id != 0 &&
+          (_type ?? '') == 'usage' &&
+          _outletId != null &&
+          _warehouseOutletId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+          await _refreshStockForAllItems();
+        });
+      }
     } catch (e) {
       print('Error loading form: $e');
     } finally {
@@ -336,6 +389,58 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
         _isLoadingOutlets = false;
         _isLoading = false;
       });
+    }
+  }
+
+  void _disposeAllItemRows() {
+    for (final it in _items) {
+      (it['qtyController'] as TextEditingController?)?.dispose();
+      (it['noteController'] as TextEditingController?)?.dispose();
+    }
+    _items.clear();
+  }
+
+  Future<void> _loadUsageBomItems() async {
+    if (!_isUsageAutoBom) return;
+    if (_outletId == null || _warehouseOutletId == null) return;
+
+    setState(() => _loadingUsageBom = true);
+    try {
+      final rows = await _service.getStockCutItems(
+        outletId: _outletId!,
+        warehouseOutletId: _warehouseOutletId!,
+      );
+      _disposeAllItemRows();
+      _usageExpandedByCategory.clear();
+      for (final row in rows) {
+        final itemId = row['item_id'];
+        final uid = row['unit_id'];
+        final uname = row['unit_name']?.toString() ?? '';
+        final stock = row['stock'];
+        final categoryName = row['category_name']?.toString() ?? 'Tanpa Kategori';
+        final qtyCtrl = TextEditingController();
+        final noteCtrl = TextEditingController();
+        final idNum = uid is int ? uid : int.tryParse('$uid');
+        _items.add({
+          'item_id': itemId,
+          'item_name': row['item_name']?.toString() ?? '',
+          'category_name': categoryName,
+          'unit_id': idNum ?? uid,
+          'unit_name': uname,
+          'qtyController': qtyCtrl,
+          'noteController': noteCtrl,
+          'stock': stock,
+          'unitOptions': idNum != null || uid != null
+              ? <Map<String, dynamic>>[
+                  {'id': idNum ?? uid, 'name': uname},
+                ]
+              : <Map<String, dynamic>>[],
+        });
+        _usageExpandedByCategory[categoryName] = true;
+      }
+      if (mounted) setState(() {});
+    } finally {
+      if (mounted) setState(() => _loadingUsageBom = false);
     }
   }
 
@@ -360,6 +465,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   }
 
   Future<void> _openItemSearch(int idx) async {
+    if (_isUsageAutoBom) return;
     final selected = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -1004,7 +1110,20 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                       items: _typeOptions
                           .map((t) => DropdownMenuItem(value: t['value'], child: Text(t['label']!)))
                           .toList(),
-                      onChanged: (v) => setState(() => _type = v),
+                      onChanged: (v) async {
+                        final prev = _type;
+                        setState(() => _type = v);
+                        if (v == 'usage') {
+                          _usageSearchController.clear();
+                          await _loadUsageBomItems();
+                        } else if (prev == 'usage' && v != 'usage' && widget.id == 0) {
+                          _disposeAllItemRows();
+                          _addEmptyItem();
+                          _usageSearchController.clear();
+                          _usageExpandedByCategory.clear();
+                          setState(() {});
+                        }
+                      },
                       decoration: const InputDecoration(labelText: 'Type'),
                       validator: (v) => v == null || v.isEmpty ? 'Wajib dipilih' : null,
                     ),
@@ -1050,6 +1169,11 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                           for (final it in _items) {
                             it['stock'] = null;
                           }
+                          if (_isUsageAutoBom) {
+                            _disposeAllItemRows();
+                            _usageSearchController.clear();
+                            _usageExpandedByCategory.clear();
+                          }
                         });
                         if (v != null) {
                           final w = await _service.getWarehouseOutlets(outletId: v);
@@ -1071,7 +1195,11 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                       }).toList(),
                       onChanged: (v) async {
                         setState(() => _warehouseOutletId = v);
-                        await _refreshStockForAllItems();
+                        if (_isUsageAutoBom && v != null) {
+                          await _loadUsageBomItems();
+                        } else {
+                          await _refreshStockForAllItems();
+                        }
                       },
                       decoration: const InputDecoration(labelText: 'Warehouse Outlet'),
                       validator: (v) => v == null ? 'Wajib dipilih' : null,
@@ -1136,6 +1264,9 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   }
 
   Widget _buildItemsSection() {
+    final usageGroups = _isUsageAutoBom ? _groupedUsageIndices() : const <String, List<int>>{};
+    final usageVisibleCount = usageGroups.values.fold<int>(0, (sum, idxs) => sum + idxs.length);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1144,15 +1275,126 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
           children: [
             const Text('Items', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             TextButton.icon(
-              onPressed: () => setState(() => _addEmptyItem()),
+              onPressed: _isUsageAutoBom ? null : () => setState(() => _addEmptyItem()),
               icon: const Icon(Icons.add),
               label: const Text('Tambah Item'),
             ),
           ],
         ),
+        if (_isUsageAutoBom && _loadingUsageBom) ...[
+          const SizedBox(height: 8),
+          const LinearProgressIndicator(),
+          const SizedBox(height: 4),
+          Text(
+            'Memuat item BOM (stock cut)…',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ],
+        if (_isUsageAutoBom) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _usageSearchController,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Cari item usage',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Menampilkan $usageVisibleCount item', style: const TextStyle(fontSize: 12)),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              for (final key in usageGroups.keys) {
+                                _usageExpandedByCategory[key] = true;
+                              }
+                            });
+                          },
+                          child: const Text('Expand All'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              for (final key in usageGroups.keys) {
+                                _usageExpandedByCategory[key] = false;
+                              }
+                            });
+                          },
+                          child: const Text('Collapse All'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 6),
-        _items.isEmpty
-            ? const Center(child: Text('Belum ada item'))
+        _isUsageAutoBom
+            ? (usageGroups.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        _items.isEmpty
+                            ? 'Tidak ada material BOM (stock cut) dengan stok di outlet & warehouse ini.'
+                            : 'Tidak ada item yang cocok dengan pencarian.',
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: usageGroups.entries.map((entry) {
+                      final category = entry.key;
+                      final isOpen = _usageExpandedByCategory[category] ?? true;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: ExpansionTile(
+                          key: ValueKey('usage-cat-$category'),
+                          initiallyExpanded: isOpen,
+                          onExpansionChanged: (expanded) {
+                            _usageExpandedByCategory[category] = expanded;
+                          },
+                          title: Text('$category (${entry.value.length})'),
+                          children: entry.value.map((idx) => _buildItemCard(idx)).toList(),
+                        ),
+                      );
+                    }).toList(),
+                  ))
+            : _items.isEmpty
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Belum ada item',
+                  ),
+                ),
+              )
             : Column(
                 children: List.generate(_items.length, (index) => _buildItemCard(index)),
               ),
@@ -1160,7 +1402,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
         Align(
           alignment: Alignment.center,
           child: TextButton.icon(
-            onPressed: () => setState(() => _addEmptyItem()),
+            onPressed: _isUsageAutoBom ? null : () => setState(() => _addEmptyItem()),
             icon: const Icon(Icons.add),
             label: const Text('Tambah Item'),
           ),
@@ -1209,39 +1451,48 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
               Text('Item #${index + 1}', style: const TextStyle(fontWeight: FontWeight.w600)),
               const Spacer(),
               TextButton.icon(
-                onPressed: _items.length <= 1 ? null : () => _removeItem(index),
+                onPressed: (_items.length <= 1 || _isUsageAutoBom) ? null : () => _removeItem(index),
                 icon: const Icon(Icons.delete, size: 18),
                 label: const Text('Hapus'),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () => _openItemSearch(index),
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: 'Item'),
-                    child: Text(
-                      (it['item_name'] ?? '').toString().isEmpty ? 'Pilih item' : it['item_name'],
-                      style: TextStyle(
-                        color: (it['item_name'] ?? '').toString().isEmpty
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF0F172A),
+          if (_isUsageAutoBom)
+            InputDecorator(
+              decoration: const InputDecoration(labelText: 'Item'),
+              child: Text(
+                (it['item_name'] ?? '').toString().isEmpty ? '-' : '${it['item_name']}',
+                style: const TextStyle(color: Color(0xFF0F172A)),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _openItemSearch(index),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(labelText: 'Item'),
+                      child: Text(
+                        (it['item_name'] ?? '').toString().isEmpty ? 'Pilih item' : it['item_name'],
+                        style: TextStyle(
+                          color: (it['item_name'] ?? '').toString().isEmpty
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF0F172A),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _openItemSearch(index),
-                icon: const Icon(Icons.search),
-                tooltip: 'Cari Item',
-              ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => _openItemSearch(index),
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Cari Item',
+                ),
+              ],
+            ),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -1273,31 +1524,45 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                   },
                 ),
               ),
-              SizedBox(
-                width: 200,
-                child: DropdownButtonFormField<int>(
-                  value: unitValue,
-                  items: unitOptions
-                      .map<DropdownMenuItem<int>>((u) => DropdownMenuItem(
-                            value: int.tryParse('${u['id']}'),
-                            child: Text(u['name'] ?? ''),
-                          ))
-                      .toList(),
-                  onChanged: unitOptions.isEmpty
-                      ? null
-                      : (v) {
-                          setState(() {
-                            it['unit_id'] = v;
-                            final match = unitOptions.firstWhere(
-                              (u) => '${u['id']}' == '${v ?? ''}',
-                              orElse: () => {},
-                            );
-                            it['unit_name'] = match['name'] ?? it['unit_name'];
-                          });
-                        },
-                  decoration: const InputDecoration(labelText: 'Unit'),
+              if (_isUsageAutoBom)
+                SizedBox(
+                  width: 220,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Unit (terkecil)'),
+                    child: Text(
+                      unitOptions.isNotEmpty
+                          ? '${unitOptions.first['name'] ?? ''}'
+                          : (it['unit_name'] ?? '').toString(),
+                      style: const TextStyle(color: Color(0xFF0F172A)),
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  width: 200,
+                  child: DropdownButtonFormField<int>(
+                    value: unitValue,
+                    items: unitOptions
+                        .map<DropdownMenuItem<int>>((u) => DropdownMenuItem(
+                              value: int.tryParse('${u['id']}'),
+                              child: Text(u['name'] ?? ''),
+                            ))
+                        .toList(),
+                    onChanged: unitOptions.isEmpty
+                        ? null
+                        : (v) {
+                            setState(() {
+                              it['unit_id'] = v;
+                              final match = unitOptions.firstWhere(
+                                (u) => '${u['id']}' == '${v ?? ''}',
+                                orElse: () => {},
+                              );
+                              it['unit_name'] = match['name'] ?? it['unit_name'];
+                            });
+                          },
+                    decoration: const InputDecoration(labelText: 'Unit'),
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1456,11 +1721,12 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   }
 
   String _typeLabel(String? value) {
-    final match = _typeOptions.firstWhere(
-      (t) => t['value'] == value,
-      orElse: () => {'label': '-'},
-    );
-    return match['label'] ?? '-';
+    for (final t in _typeOptions) {
+      if (t['value'] == value) {
+        return t['label'] ?? categoryCostTypeLabel(value);
+      }
+    }
+    return categoryCostTypeLabel(value);
   }
 
   String _findOutletName(int? id) {
