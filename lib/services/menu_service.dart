@@ -20,6 +20,7 @@ class MenuService {
         {'name': 'Dashboard CRM', 'icon': 'fa-solid fa-chart-line', 'route': '/crm/dashboard', 'code': 'crm_dashboard'},
         {'name': 'Cashflow Outlet Dashboard', 'icon': 'fa-solid fa-chart-pie', 'route': '/cashflow-outlet-dashboard', 'code': 'cashflow_outlet_dashboard'},
         {'name': 'My Attendance', 'icon': 'fa-solid fa-user-clock', 'route': '/attendance', 'code': 'my_attendance'},
+        {'name': 'Dokumen Bersama', 'icon': 'fa-solid fa-folder-open', 'route': '/shared-documents'},
         {'name': 'Payment', 'icon': 'fa-solid fa-shopping-cart', 'route': '/purchase-requisitions', 'code': 'purchase_requisition_ops'},
         {'name': 'Payment Report', 'icon': 'fa-solid fa-chart-bar', 'route': '/pr-ops/report', 'code': 'pr_ops_report'},
         {'name': 'Payment Approval Tracker', 'icon': 'fa-solid fa-chart-line', 'route': '/purchase-requisitions/payment-tracker', 'code': 'payment_tracker'},
@@ -358,6 +359,7 @@ class MenuService {
       'open': false,
       'menus': [
         {'name': 'Data Member', 'icon': 'fa-solid fa-users', 'route': '/members', 'code': 'crm_members'},
+        {'name': 'Customer Voice Command Center', 'icon': 'fa-solid fa-headset', 'route': '/customer-voice-command-center', 'code': 'customer_voice_command_center'},
         {'name': 'Kirim Notifikasi Member', 'icon': 'fa-solid fa-paper-plane', 'route': '/member-notification', 'code': 'member_notification'},
         {'name': 'Inject Point Manual', 'icon': 'fa-solid fa-syringe', 'route': '/manual-point', 'code': 'manual_point'},
         {'name': 'Member Apps Settings', 'icon': 'fa-solid fa-mobile-screen-button', 'route': '/admin/member-apps-settings', 'code': 'member_apps_settings'},

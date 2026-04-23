@@ -13,7 +13,8 @@ class AppUpdateService {
 
   // TODO: Ubah jika app id production berubah.
   static const String _androidId = 'com.ymsoft.erp';
-  static const String _iosId = 'com.ymsoft.erp';
+  static const String _iosId = '6761749215';
+  static const String _iosCountryCode = 'id';
 
   bool _isChecking = false;
   bool _dialogShown = false;
@@ -23,7 +24,11 @@ class AppUpdateService {
     if (_isChecking || _dialogShown) return false;
     _isChecking = true;
     try {
-      final checker = NewVersionPlus(androidId: _androidId, iOSId: _iosId);
+      final checker = NewVersionPlus(
+        androidId: _androidId,
+        iOSId: _iosId,
+        iOSAppStoreCountry: _iosCountryCode,
+      );
       final status = await checker.getVersionStatus();
       if (status == null || !status.canUpdate) {
         return false;
@@ -105,7 +110,7 @@ class AppUpdateService {
     }
 
     final fallback = Platform.isIOS
-        ? 'https://apps.apple.com/us/search?term=YMSoft%20ERP'
+        ? 'https://apps.apple.com/id/app/ymsoft-erp/id$_iosId'
         : 'https://play.google.com/store/apps/details?id=$_androidId';
     final uri = Uri.tryParse(fallback);
     if (uri != null) {

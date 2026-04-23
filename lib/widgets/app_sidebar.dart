@@ -87,6 +87,8 @@ import '../screens/locked_budget_food_categories/locked_budget_food_category_ind
 import '../screens/budget_management/budget_management_index_screen.dart';
 import '../screens/chart_of_accounts/chart_of_account_index_screen.dart';
 import '../screens/bank_accounts/bank_account_index_screen.dart';
+import '../screens/shared_documents/shared_document_index_screen.dart';
+import '../screens/customer_voice_command_center/customer_voice_command_center_screen.dart';
 import 'app_loading_indicator.dart';
 
 class AppSidebar extends StatefulWidget {
@@ -907,8 +909,10 @@ class _AppSidebarState extends State<AppSidebar> {
       '/announcement',
       // CRM
       '/members',
+      '/customer-voice-command-center',
       '/member-notification',
       '/manual-point',
+      '/shared-documents',
       '/admin/member-apps-settings',
       // LMS
       '/lms/categories',
@@ -1348,11 +1352,25 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const MemberIndexScreen(),
         ),
       );
+    } else if (route == '/customer-voice-command-center') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CustomerVoiceCommandCenterScreen(),
+        ),
+      );
     } else if (route == '/member-history') {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => const MemberHistorySearchScreen(),
+        ),
+      );
+    } else if (route == '/shared-documents') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const SharedDocumentIndexScreen(),
         ),
       );
     } else if (route == '/mk-production') {
