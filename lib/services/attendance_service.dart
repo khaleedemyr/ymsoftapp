@@ -468,6 +468,12 @@ class AttendanceService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['success'] == true) {
+          final list = data['extra_off_days'];
+          if (list is List) {
+            return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          }
+        }
         if (data is List) {
           return List<Map<String, dynamic>>.from(data);
         }

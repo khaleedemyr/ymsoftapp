@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../screens/login_screen.dart';
 import '../screens/packing_list/packing_list_index_screen.dart';
 import '../screens/member_history_search_screen.dart';
+import '../screens/web_only_feature_screen.dart';
 import '../screens/categories/category_index_screen.dart';
 import '../screens/sub_categories/sub_category_index_screen.dart';
 import '../screens/units/unit_index_screen.dart';
@@ -251,8 +252,20 @@ class AppDrawer extends StatelessWidget {
                       context,
                       icon: Icons.account_balance_wallet,
                       title: 'Contra Bon',
-                      subtitle: 'Contra bon approvals',
+                      subtitle: 'Daftar dan approval contra bon',
                       color: Colors.indigo,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const WebOnlyFeatureScreen(
+                              featureName: 'Contra Bon',
+                              webPath: '/contra-bons',
+                            ),
+                          ),
+                        );
+                      },
                     ),
                     _buildMenuItem(
                       context,

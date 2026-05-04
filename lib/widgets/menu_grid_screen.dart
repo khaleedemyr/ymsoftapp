@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/packing_list/packing_list_index_screen.dart';
+import '../screens/web_only_feature_screen.dart';
 
 /// Alternative menu screen using grid layout
 /// Useful when you have many menu items that need to be displayed
@@ -90,6 +91,17 @@ class MenuGridScreen extends StatelessWidget {
                   icon: Icons.account_balance_wallet,
                   title: 'Contra Bon',
                   color: Colors.indigo,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const WebOnlyFeatureScreen(
+                          featureName: 'Contra Bon',
+                          webPath: '/contra-bons',
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 _MenuGridItem(
                   icon: Icons.swap_horiz,

@@ -83,6 +83,7 @@ import '../screens/stock_cut/stock_cut_index_screen.dart';
 import '../screens/mk_production/mk_production_index_screen.dart';
 import '../screens/announcement/announcement_index_screen.dart';
 import '../screens/promos/promo_index_screen.dart';
+import '../screens/marketing_visit_checklist/marketing_visit_checklist_index_screen.dart';
 import '../screens/locked_budget_food_categories/locked_budget_food_category_index_screen.dart';
 import '../screens/budget_management/budget_management_index_screen.dart';
 import '../screens/chart_of_accounts/chart_of_account_index_screen.dart';
@@ -1303,6 +1304,16 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const HeadOfficeReturnIndexScreen(),
         ),
       );
+    } else if (route == '/contra-bons') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const WebOnlyFeatureScreen(
+            featureName: 'Contra Bon',
+            webPath: '/contra-bons',
+          ),
+        ),
+      );
     } else if (route == '/stock-opnames') {
       Navigator.push(
         context,
@@ -1392,6 +1403,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const PromoIndexScreen(),
+        ),
+      );
+    } else if (route == '/marketing-visit-checklist') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MarketingVisitChecklistIndexScreen(),
         ),
       );
     } else if (route == '/categories') {

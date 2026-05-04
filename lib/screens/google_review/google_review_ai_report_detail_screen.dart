@@ -19,6 +19,7 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
 
   bool _isLoading = false;
   bool _isRefreshingStatus = false;
+  bool _exporting = false;
   String? _error;
 
   Map<String, dynamic>? _report;
@@ -200,6 +201,21 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
 
     if (mounted) {
       setState(() => _isRefreshingStatus = false);
+    }
+  }
+
+  Future<void> _exportExcel() async {
+    final status = _report?['status']?.toString() ?? '';
+    if (status != 'completed') return;
+    setState(() => _exporting = true);
+    final result = await _service.exportAiReportExcel(widget.reportId);
+    if (!mounted) return;
+    setState(() => _exporting = false);
+    final messenger = ScaffoldMessenger.of(context);
+    if (result['success'] == true) {
+      messenger.showSnackBar(const SnackBar(content: Text('File Excel dibuka')));
+    } else {
+      messenger.showSnackBar(SnackBar(content: Text(result['error']?.toString() ?? 'Export gagal')));
     }
   }
 
@@ -385,6 +401,14 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
       title: 'Detail Report AI',
       showDrawer: false,
       actions: [
+        if ((_report?['status']?.toString() ?? '') == 'completed')
+          IconButton(
+            tooltip: 'Export Excel',
+            onPressed: _exporting ? null : _exportExcel,
+            icon: _exporting
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.download_rounded),
+          ),
         IconButton(
           tooltip: 'Refresh status',
           onPressed: _refreshStatus,

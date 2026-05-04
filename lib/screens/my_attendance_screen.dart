@@ -70,6 +70,24 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
     return 0;
   }
 
+  /// Sama logic dengan web: `available_leave_days` (sisa cuti PH global), fallback lama: `total_days` (hanya periode).
+  int _phBalanceForLeaveFromPhData(Map<String, dynamic>? ph) {
+    if (ph == null) return 0;
+    if (ph['available_leave_days'] != null) {
+      return _toInt(ph['available_leave_days']);
+    }
+    return _toInt(ph['total_days']);
+  }
+
+  String _formatPhAmount(dynamic v) {
+    if (v == null) return '0';
+    final n = v is num ? v : num.tryParse(v.toString());
+    if (n == null) return '0';
+    if (n is int) return n.toString();
+    if (n == n.roundToDouble()) return n.toInt().toString();
+    return n.toStringAsFixed(2);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -281,7 +299,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
             leaveTypes: _leaveTypes,
             leaveBalance: _toInt(_userData?['cuti']),
             extraOffBalance: _toInt(_extraOffData?['current_balance']),
-            phBalance: _toInt(_phData?['total_days']),
+            phBalance: _phBalanceForLeaveFromPhData(_phData),
             onSubmitted: () {
               print('✅ onSubmitted callback called');
               _loadAttendanceData();
@@ -1957,14 +1975,22 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildStatItem(
-                            'Total Hari',
+                            'Saldo tersedia (cuti PH)',
+                            _formatPhAmount(
+                              _phData?['available_leave_days'] ?? _phData?['total_days'],
+                            ),
+                            Colors.blue.shade700,
+                          ),
+                          const SizedBox(height: 8),
+                          _buildStatItem(
+                            'Hari di periode ini',
                             '${_phData?['total_days'] ?? 0}',
                             Colors.blue,
                           ),
                           const SizedBox(height: 8),
                           _buildStatItem(
-                            'Total Bonus',
-                            'Rp ${NumberFormat('#,###').format(_phData?['total_bonus'] ?? 0)}',
+                            'Kredit Saldo PH / bonus (periode)',
+                            _formatPhAmount(_phData?['total_bonus']),
                             Colors.green,
                           ),
                         ],
