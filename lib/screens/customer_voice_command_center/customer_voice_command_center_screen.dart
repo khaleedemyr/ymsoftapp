@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/customer_voice_command_center_models.dart';
 import '../../services/customer_voice_command_center_service.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/customer_voice/customer_voice_case_index_card.dart';
+import 'customer_voice_archive_sheet.dart';
+import 'customer_voice_case_detail_sheet.dart';
 
 class CustomerVoiceCommandCenterScreen extends StatefulWidget {
   const CustomerVoiceCommandCenterScreen({super.key});
@@ -29,31 +33,37 @@ class _CustomerVoiceCommandCenterScreenState
   String _sourceFilter = 'all';
   int? _outletFilter;
   bool _overdueOnly = false;
+  bool _showAll = false;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   int _currentPage = 1;
 
+  /// Opsi filter status sama dengan web (`voiceCaseStatusFilterValues` di backend).
   static const List<_FilterOption> _statusOptions = [
-    _FilterOption('all', 'Semua Status'),
+    _FilterOption('all', 'Semua status'),
     _FilterOption('new', 'New'),
-    _FilterOption('in_progress', 'In Progress'),
-    _FilterOption('resolved', 'Resolved'),
-    _FilterOption('ignored', 'Ignored'),
+    _FilterOption('courtesy_by_cs', 'Courtesy by CS'),
+    _FilterOption('follow_up_by_ops', 'Follow Up by Ops'),
+    _FilterOption('done', 'Done'),
   ];
 
   static const List<_FilterOption> _severityOptions = [
-    _FilterOption('all', 'Semua Severity'),
+    _FilterOption('all', 'Semua severity'),
+    _FilterOption('critical', 'Critical'),
+    _FilterOption('major', 'Major'),
+    _FilterOption('minor', 'Minor'),
+    _FilterOption('severe', 'Critical (arsip)'),
+    _FilterOption('negative', 'Major (arsip)'),
+    _FilterOption('mild_negative', 'Minor (arsip)'),
     _FilterOption('neutral', 'Neutral'),
-    _FilterOption('mild_negative', 'Mild Negative'),
-    _FilterOption('negative', 'Negative'),
-    _FilterOption('severe', 'Severe'),
     _FilterOption('positive', 'Positive'),
   ];
 
   static const List<_FilterOption> _sourceOptions = [
-    _FilterOption('all', 'Semua Source'),
+    _FilterOption('all', 'Semua source'),
     _FilterOption('google_review', 'Google Review'),
     _FilterOption('instagram_comment', 'Instagram Comment'),
     _FilterOption('guest_comment', 'Guest Comment'),
-    _FilterOption('other', 'Other'),
   ];
 
   @override
@@ -90,6 +100,9 @@ class _CustomerVoiceCommandCenterScreenState
         outletId: _outletFilter,
         search: _searchController.text,
         overdueOnly: _overdueOnly,
+        showAll: _showAll,
+        dateFrom: _formatApiDate(_dateFrom),
+        dateTo: _formatApiDate(_dateTo),
         page: targetPage,
       );
 
@@ -102,6 +115,14 @@ class _CustomerVoiceCommandCenterScreenState
         _currentPage = dashboard.pagination.currentPage;
         _isLoading = false;
         _errorMessage = null;
+        _showAll = dashboard.filters.showAll;
+        final echoFrom = dashboard.filters.dateFrom;
+        final echoTo = dashboard.filters.dateTo;
+        _dateFrom = echoFrom != null && echoFrom.isNotEmpty
+            ? DateTime.tryParse(echoFrom)
+            : null;
+        _dateTo =
+            echoTo != null && echoTo.isNotEmpty ? DateTime.tryParse(echoTo) : null;
       });
     } catch (error) {
       if (!mounted) {
@@ -112,6 +133,77 @@ class _CustomerVoiceCommandCenterScreenState
         _isLoading = false;
         _errorMessage = error.toString().replaceFirst('Exception: ', '');
       });
+    }
+  }
+
+  void _openArchiveSheet() {
+    final d = _dashboard;
+    if (d == null) {
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => CustomerVoiceArchiveSheet(
+        service: _service,
+        outlets: d.outlets,
+        assignees: d.assignees,
+        mainFilters: CustomerVoiceListFiltersSync(
+          search: _searchController.text,
+          status: _statusFilter,
+          severity: _severityFilter,
+          sourceType: _sourceFilter,
+          outletId: _outletFilter,
+          dateFrom: _formatApiDate(_dateFrom),
+          dateTo: _formatApiDate(_dateTo),
+          overdueOnly: _overdueOnly,
+        ),
+        onOpenDetail: (item) {
+          Navigator.pop(ctx);
+          _openCaseSheet(item);
+        },
+      ),
+    );
+  }
+
+  Future<void> _openExportPdf() async {
+    final from = _formatApiDate(_dateFrom);
+    final to = _formatApiDate(_dateTo);
+    if (from == null || to == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pilih rentang tanggal event (dari & sampai) — sama seperti di web ERP.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final uri = _service.buildExportPdfWebUri(
+      status: _statusFilter,
+      severity: _severityFilter,
+      sourceType: _sourceFilter,
+      outletId: _outletFilter,
+      search: _searchController.text,
+      overdueOnly: _overdueOnly,
+      showAll: _showAll,
+      dateFrom: from,
+      dateTo: to,
+    );
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted) {
+      return;
+    }
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak bisa membuka browser.')),
+      );
     }
   }
 
@@ -175,6 +267,9 @@ class _CustomerVoiceCommandCenterScreenState
     String localSource = _sourceFilter;
     int? localOutlet = _outletFilter;
     bool localOverdue = _overdueOnly;
+    bool localShowAll = _showAll;
+    DateTime? localDateFrom = _dateFrom;
+    DateTime? localDateTo = _dateTo;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -296,6 +391,86 @@ class _CustomerVoiceCommandCenterScreenState
                         setModalState(() => localOverdue = value);
                       },
                     ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Tampilkan semua kasus'),
+                      subtitle: const Text(
+                        'Matikan mode antrian kerja (open + severity selain positif/netral).',
+                      ),
+                      value: localShowAll,
+                      onChanged: (value) {
+                        setModalState(() => localShowAll = value);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Event date range',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: localDateFrom ?? DateTime.now(),
+                                firstDate: DateTime(2020),
+                                lastDate:
+                                    DateTime.now().add(const Duration(days: 730)),
+                              );
+                              if (picked != null) {
+                                setModalState(() => localDateFrom = picked);
+                              }
+                            },
+                            child: Text(
+                              localDateFrom == null
+                                  ? 'Dari tanggal'
+                                  : _formatApiDate(localDateFrom)!,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: localDateTo ?? DateTime.now(),
+                                firstDate: DateTime(2020),
+                                lastDate:
+                                    DateTime.now().add(const Duration(days: 730)),
+                              );
+                              if (picked != null) {
+                                setModalState(() => localDateTo = picked);
+                              }
+                            },
+                            child: Text(
+                              localDateTo == null
+                                  ? 'Sampai tanggal'
+                                  : _formatApiDate(localDateTo)!,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            localDateFrom = null;
+                            localDateTo = null;
+                          });
+                        },
+                        child: const Text('Hapus tanggal'),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -308,6 +483,9 @@ class _CustomerVoiceCommandCenterScreenState
                                 _sourceFilter = 'all';
                                 _outletFilter = null;
                                 _overdueOnly = false;
+                                _showAll = false;
+                                _dateFrom = null;
+                                _dateTo = null;
                                 _currentPage = 1;
                               });
                               Navigator.pop(context);
@@ -332,6 +510,9 @@ class _CustomerVoiceCommandCenterScreenState
                                 _sourceFilter = localSource;
                                 _outletFilter = localOutlet;
                                 _overdueOnly = localOverdue;
+                                _showAll = localShowAll;
+                                _dateFrom = localDateFrom;
+                                _dateTo = localDateTo;
                                 _currentPage = 1;
                               });
                               Navigator.pop(context);
@@ -366,367 +547,19 @@ class _CustomerVoiceCommandCenterScreenState
       return;
     }
 
-    String localStatus = item.status;
-    int? localAssignee = item.assignedTo;
-    bool isSaving = false;
-    final activities = dashboard.activities[item.id] ?? const <CustomerVoiceActivity>[];
-
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.92,
-              ),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFCBD5E1),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.headline,
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.w800,
-                                          color: Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          _buildBadge(
-                                            label: _statusLabel(item.status),
-                                            backgroundColor: _statusColor(item.status),
-                                          ),
-                                          _buildBadge(
-                                            label: _severityLabel(item.severity),
-                                            backgroundColor: _severityColor(item.severity),
-                                          ),
-                                          _buildBadge(
-                                            label: _sourceLabel(item.sourceType),
-                                            backgroundColor: const Color(0xFF475569),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 18),
-                            _buildInfoPanel(item),
-                            const SizedBox(height: 18),
-                            Container(
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(22),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Update Case',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  _buildDropdownField<String>(
-                                    label: 'Status',
-                                    value: localStatus,
-                                    items: _statusOptions
-                                        .where((option) => option.value != 'all')
-                                        .map(
-                                          (option) => DropdownMenuItem<String>(
-                                            value: option.value,
-                                            child: Text(option.label),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (value) {
-                                      setModalState(
-                                        () => localStatus = value ?? localStatus,
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: 14),
-                                  _buildDropdownField<int?>(
-                                    label: 'PIC',
-                                    value: localAssignee,
-                                    items: [
-                                      const DropdownMenuItem<int?>(
-                                        value: null,
-                                        child: Text('Belum di-assign'),
-                                      ),
-                                      ...dashboard.assignees.map(
-                                        (option) => DropdownMenuItem<int?>(
-                                          value: option.id,
-                                          child: Text(option.label),
-                                        ),
-                                      ),
-                                    ],
-                                    onChanged: (value) {
-                                      setModalState(() => localAssignee = value);
-                                    },
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          onPressed: isSaving
-                                              ? null
-                                              : () async {
-                                                  final modalNavigator = Navigator.of(context);
-                                                  final added = await _openAddNoteDialog(item.id);
-                                                  if (added == true) {
-                                                    if (!mounted) {
-                                                      return;
-                                                    }
-                                                    modalNavigator.pop();
-                                                    await _loadDashboard(refresh: true);
-                                                  }
-                                                },
-                                          icon: const Icon(Icons.note_add_outlined),
-                                          label: const Text('Catatan'),
-                                          style: OutlinedButton.styleFrom(
-                                            minimumSize: const Size.fromHeight(52),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: ElevatedButton(
-                                          onPressed: isSaving
-                                              ? null
-                                              : () async {
-                                                  final modalNavigator = Navigator.of(context);
-                                                  final messenger = ScaffoldMessenger.of(this.context);
-                                                  setModalState(() => isSaving = true);
-                                                  try {
-                                                    final message = await _service.updateCase(
-                                                      caseId: item.id,
-                                                      status: localStatus,
-                                                      assignedTo: localAssignee,
-                                                    );
-                                                    if (!mounted) {
-                                                      return;
-                                                    }
-                                                    modalNavigator.pop();
-                                                    messenger.showSnackBar(
-                                                      SnackBar(content: Text(message)),
-                                                    );
-                                                    await _loadDashboard(refresh: true);
-                                                  } catch (error) {
-                                                    if (!mounted) {
-                                                      return;
-                                                    }
-                                                    messenger.showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          error
-                                                              .toString()
-                                                              .replaceFirst('Exception: ', ''),
-                                                        ),
-                                                        backgroundColor: const Color(0xFFB91C1C),
-                                                      ),
-                                                    );
-                                                  } finally {
-                                                    if (mounted) {
-                                                      setModalState(() => isSaving = false);
-                                                    }
-                                                  }
-                                                },
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF0F766E),
-                                            foregroundColor: Colors.white,
-                                            minimumSize: const Size.fromHeight(52),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: isSaving
-                                              ? const SizedBox(
-                                                  width: 20,
-                                                  height: 20,
-                                                  child: AppLoadingIndicator(
-                                                    size: 20,
-                                                    color: Colors.white,
-                                                    strokeWidth: 2,
-                                                  ),
-                                                )
-                                              : const Text('Simpan'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Container(
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(22),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Timeline',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  if (activities.isEmpty)
-                                    const Text(
-                                      'Belum ada aktivitas untuk case ini.',
-                                      style: TextStyle(color: Color(0xFF64748B)),
-                                    )
-                                  else
-                                    ...activities.map(_buildActivityTile),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (context) => CustomerVoiceCaseDetailSheet(
+        item: item,
+        dashboard: dashboard,
+        service: _service,
+        onCaseUpdated: () async {
+          await _loadDashboard(refresh: true);
+        },
+      ),
     );
-  }
-
-  Future<bool?> _openAddNoteDialog(int caseId) {
-    final controller = TextEditingController();
-    bool isSaving = false;
-    final messenger = ScaffoldMessenger.of(context);
-
-    return showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Tambah Catatan'),
-              content: TextField(
-                controller: controller,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  hintText: 'Tulis catatan tindak lanjut atau konteks tambahan',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSaving ? null : () => Navigator.pop(context, false),
-                  child: const Text('Batal'),
-                ),
-                ElevatedButton(
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          final dialogNavigator = Navigator.of(context);
-                          final note = controller.text.trim();
-                          if (note.isEmpty) {
-                            return;
-                          }
-
-                          setDialogState(() => isSaving = true);
-                          try {
-                            final message = await _service.addNote(
-                              caseId: caseId,
-                              note: note,
-                            );
-                            if (!mounted) {
-                              return;
-                            }
-                            dialogNavigator.pop(true);
-                            messenger.showSnackBar(
-                              SnackBar(content: Text(message)),
-                            );
-                          } catch (error) {
-                            if (!mounted) {
-                              return;
-                            }
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  error.toString().replaceFirst('Exception: ', ''),
-                                ),
-                                backgroundColor: const Color(0xFFB91C1C),
-                              ),
-                            );
-                          } finally {
-                            if (mounted) {
-                              setDialogState(() => isSaving = false);
-                            }
-                          }
-                        },
-                  child: isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: AppLoadingIndicator(size: 18, strokeWidth: 2),
-                        )
-                      : const Text('Simpan'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(controller.dispose);
   }
 
   @override
@@ -752,18 +585,11 @@ class _CustomerVoiceCommandCenterScreenState
                               _buildSearchRow(),
                               const SizedBox(height: 16),
                               _buildQuickActions(),
+                              _buildArchiveShortcutRow(),
+                              _buildExportPdfRow(),
                               const SizedBox(height: 18),
-                              if (_dashboard != null) ...[
-                                _buildSummarySection(_dashboard!),
-                                const SizedBox(height: 18),
-                                _buildKpiSection(_dashboard!),
-                                const SizedBox(height: 18),
-                                _buildTrendSection(_dashboard!),
-                                const SizedBox(height: 18),
-                                _buildPerformanceSection(_dashboard!),
-                                const SizedBox(height: 18),
+                              if (_dashboard != null)
                                 _buildCaseSection(_dashboard!),
-                              ],
                             ],
                           ),
                         ),
@@ -846,7 +672,8 @@ class _CustomerVoiceCommandCenterScreenState
               _loadDashboard(page: 1);
             },
             decoration: InputDecoration(
-              hintText: 'Cari author, outlet, summary, atau isi case',
+              hintText:
+                  'Cari author / ringkasan / komentar / outlet',
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: Colors.white,
@@ -903,14 +730,14 @@ class _CustomerVoiceCommandCenterScreenState
       runSpacing: 10,
       children: [
         _buildQuickChip(
-          label: 'Open',
-          isActive: _statusFilter == 'in_progress' || _statusFilter == 'new',
-          onTap: () => _applyQuickFilter(status: 'in_progress'),
+          label: 'Follow Up',
+          isActive: _statusFilter == 'follow_up_by_ops',
+          onTap: () => _applyQuickFilter(status: 'follow_up_by_ops'),
         ),
         _buildQuickChip(
-          label: 'Severe',
-          isActive: _severityFilter == 'severe',
-          onTap: () => _applyQuickFilter(severity: 'severe'),
+          label: 'Critical',
+          isActive: _severityFilter == 'critical',
+          onTap: () => _applyQuickFilter(severity: 'critical'),
         ),
         _buildQuickChip(
           label: 'Overdue',
@@ -927,6 +754,9 @@ class _CustomerVoiceCommandCenterScreenState
               _sourceFilter = 'all';
               _outletFilter = null;
               _overdueOnly = false;
+              _showAll = false;
+              _dateFrom = null;
+              _dateTo = null;
               _currentPage = 1;
               _searchController.clear();
             });
@@ -937,285 +767,48 @@ class _CustomerVoiceCommandCenterScreenState
     );
   }
 
-  Widget _buildSummarySection(CustomerVoiceDashboard dashboard) {
-    final items = [
-      _SummaryCardData(
-        'Total Case',
-        '${dashboard.summary.totalCases}',
-        const Color(0xFF0F766E),
-        Icons.all_inbox_rounded,
-      ),
-      _SummaryCardData(
-        'Open',
-        '${dashboard.summary.openCases}',
-        const Color(0xFFF59E0B),
-        Icons.pending_actions_rounded,
-      ),
-      _SummaryCardData(
-        'Severe Open',
-        '${dashboard.summary.severeOpen}',
-        const Color(0xFFDC2626),
-        Icons.warning_amber_rounded,
-      ),
-      _SummaryCardData(
-        'Overdue',
-        '${dashboard.summary.overdueOpen}',
-        const Color(0xFF7C3AED),
-        Icons.timelapse_rounded,
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Ringkasan Hari Ini',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+  Widget _buildArchiveShortcutRow() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          onPressed: _dashboard == null ? null : _openArchiveSheet,
+          icon: const Icon(Icons.inventory_2_outlined, size: 20),
+          label: const Text('Arsip: Done & positif'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF334155),
           ),
         ),
-        const SizedBox(height: 12),
-        GridView.builder(
-          itemCount: items.length,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.35,
-          ),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: item.color.withValues(alpha: 0.12),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: item.color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(item.icon, color: item.color),
-                  ),
-                  const Spacer(),
-                  Text(
-                    item.value,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.label,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF64748B),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildKpiSection(CustomerVoiceDashboard dashboard) {
-    final items = [
-      _KpiCardData('Median First Response', _formatMinutes(dashboard.kpis.firstResponseMedianMinutes)),
-      _KpiCardData('Avg First Response', _formatMinutes(dashboard.kpis.firstResponseAvgMinutes)),
-      _KpiCardData('Avg Resolution', _formatMinutes(dashboard.kpis.resolutionAvgMinutes)),
-      _KpiCardData('SLA Compliance', _formatPercent(dashboard.kpis.slaCompliancePct)),
-      _KpiCardData(
-        'Repeat Issue ${dashboard.kpis.repeatIssueWindowDays}D',
-        _formatPercent(dashboard.kpis.repeatIssueRatePct),
-      ),
-      _KpiCardData(
-        'Top Negative Outlet',
-        dashboard.kpis.negativeTopOutlet30d == null
-            ? '-'
-            : '${dashboard.kpis.negativeTopOutlet30d!.namaOutlet} (${dashboard.kpis.negativeTopOutlet30d!.total})',
-      ),
-    ];
-
-    return _buildSectionCard(
-      title: 'KPI Operasional',
-      subtitle: 'Ambil sinyal utama sebelum masuk ke detail case.',
-      child: Column(
-        children: items
-            .map(
-              (item) => Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.label,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF475569),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        item.value,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF0F172A),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-            .toList(),
       ),
     );
   }
 
-  Widget _buildTrendSection(CustomerVoiceDashboard dashboard) {
-    final maxValue = dashboard.trend.fold<int>(1, (current, item) {
-      final localMax = item.totalCases > item.negativeCases
-          ? item.totalCases
-          : item.negativeCases;
-      return localMax > current ? localMax : current;
-    });
-
-    return _buildSectionCard(
-      title: 'Trend 14 Hari',
-      subtitle: 'Perbandingan total case dan case negatif per hari.',
-      child: Column(
-        children: dashboard.trend.map((item) {
-          final totalFactor = item.totalCases / maxValue;
-          final negativeFactor = item.negativeCases / maxValue;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      _formatShortDate(item.date),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF475569),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${item.totalCases} total / ${item.negativeCases} negative',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: SizedBox(
-                    height: 10,
-                    child: Stack(
-                      children: [
-                        Container(color: const Color(0xFFE2E8F0)),
-                        FractionallySizedBox(
-                          widthFactor: totalFactor.clamp(0.0, 1.0),
-                          child: Container(color: const Color(0xFF14B8A6)),
-                        ),
-                        FractionallySizedBox(
-                          widthFactor: negativeFactor.clamp(0.0, 1.0),
-                          child: Container(color: const Color(0xFFF97316)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+  Widget _buildExportPdfRow() {
+    final hasRange = _dateFrom != null && _dateTo != null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _openExportPdf,
+          icon: Icon(
+            Icons.picture_as_pdf_outlined,
+            size: 20,
+            color: hasRange ? const Color(0xFF0F766E) : Colors.grey,
+          ),
+          label: Text(
+            hasRange
+                ? 'Export PDF (buka di browser — sesi web)'
+                : 'Export PDF — set tanggal di filter',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: hasRange ? const Color(0xFF0F766E) : const Color(0xFF94A3B8),
             ),
-          );
-        }).toList(),
+          ),
+        ),
       ),
-    );
-  }
-
-  Widget _buildPerformanceSection(CustomerVoiceDashboard dashboard) {
-    return Column(
-      children: [
-        _buildSectionCard(
-          title: 'PIC Performance',
-          subtitle: 'Top PIC dalam ${dashboard.perfWindowDays} hari terakhir.',
-          child: Column(
-            children: dashboard.picPerformance
-                .map(
-                  (item) => _buildPerformanceTile(
-                    title: item.assigneeName,
-                    subtitle:
-                        '${item.resolvedCases} resolved • ${item.openCases} open • ${item.totalCases} total',
-                    trailing: 'SLA ${_formatPercent(item.slaCompliancePct)}',
-                    caption:
-                        'Avg response ${_formatMinutes(item.avgFirstResponseMinutes)}',
-                    accent: const Color(0xFF0F766E),
-                  ),
-                )
-                .toList(),
-          ),
-        ),
-        const SizedBox(height: 18),
-        _buildSectionCard(
-          title: 'Outlet Performance',
-          subtitle: 'Outlet dengan tekanan tertinggi dalam ${dashboard.perfWindowDays} hari terakhir.',
-          child: Column(
-            children: dashboard.outletPerformance
-                .map(
-                  (item) => _buildPerformanceTile(
-                    title: item.outletName,
-                    subtitle:
-                        '${item.negativeCases} negative • ${item.openCases} open • ${item.resolvedCases} resolved',
-                    trailing: 'Neg ${_formatPercent(item.negativeRatePct)}',
-                    caption: 'SLA ${_formatPercent(item.slaCompliancePct)}',
-                    accent: const Color(0xFFF97316),
-                  ),
-                )
-                .toList(),
-          ),
-        ),
-      ],
     );
   }
 
@@ -1239,7 +832,15 @@ class _CustomerVoiceCommandCenterScreenState
               ),
             )
           else
-            ...dashboard.cases.map(_buildCaseCard),
+            ...dashboard.cases.map(
+              (c) => CustomerVoiceCaseIndexCard(
+                dashboard: dashboard,
+                item: c,
+                service: _service,
+                onRefresh: () => _loadDashboard(refresh: true),
+                onOpenDetail: _openCaseSheet,
+              ),
+            ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1268,331 +869,6 @@ class _CustomerVoiceCommandCenterScreenState
                 ),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCaseCard(CustomerVoiceCaseItem item) {
-    final isOverdue = item.dueAt != null &&
-        item.dueAt!.isBefore(DateTime.now()) &&
-        (item.status == 'new' || item.status == 'in_progress');
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.headline,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _buildBadge(
-                          label: _statusLabel(item.status),
-                          backgroundColor: _statusColor(item.status),
-                        ),
-                        _buildBadge(
-                          label: _severityLabel(item.severity),
-                          backgroundColor: _severityColor(item.severity),
-                        ),
-                        if (isOverdue)
-                          _buildBadge(
-                            label: 'Overdue',
-                            backgroundColor: const Color(0xFFB91C1C),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFEFF),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  item.riskScore == null
-                      ? '-'
-                      : item.riskScore!.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F766E),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _buildMetaRow(Icons.storefront_outlined, item.outletName),
-          _buildMetaRow(Icons.person_outline_rounded, item.authorName),
-          _buildMetaRow(
-            Icons.assignment_ind_outlined,
-            item.assignedToName?.isNotEmpty == true
-                ? item.assignedToName!
-                : 'Belum di-assign',
-          ),
-          _buildMetaRow(
-            Icons.access_time_rounded,
-            item.eventAt != null ? _formatDateTime(item.eventAt!) : '-',
-          ),
-          if (item.dueAt != null)
-            _buildMetaRow(
-              Icons.event_busy_outlined,
-              'Due ${_formatDateTime(item.dueAt!)}',
-            ),
-          const SizedBox(height: 14),
-          Text(
-            item.rawText.trim().isEmpty ? '-' : item.rawText.trim(),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.5,
-              color: Color(0xFF475569),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _openCaseSheet(item),
-                  icon: const Icon(Icons.visibility_outlined),
-                  label: const Text('Detail'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _openCaseSheet(item),
-                  icon: const Icon(Icons.edit_note_rounded),
-                  label: const Text('Tindak Lanjut'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F766E),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoPanel(CustomerVoiceCaseItem item) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Informasi Case',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _buildInfoRow('Outlet', item.outletName),
-          _buildInfoRow('Author', item.authorName),
-          _buildInfoRow('Kontak', item.customerContact?.trim().isNotEmpty == true ? item.customerContact! : '-'),
-          _buildInfoRow('Source', _sourceLabel(item.sourceType)),
-          _buildInfoRow('Event', item.eventAt != null ? _formatDateTime(item.eventAt!) : '-'),
-          _buildInfoRow('Due', item.dueAt != null ? _formatDateTime(item.dueAt!) : '-'),
-          _buildInfoRow('Resolved', item.resolvedAt != null ? _formatDateTime(item.resolvedAt!) : '-'),
-          _buildInfoRow('Summary ID', item.summaryId?.trim().isNotEmpty == true ? item.summaryId! : '-'),
-          const SizedBox(height: 12),
-          const Text(
-            'Voice of Customer',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF334155),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            item.rawText.trim().isEmpty ? '-' : item.rawText.trim(),
-            style: const TextStyle(
-              fontSize: 14,
-              height: 1.55,
-              color: Color(0xFF475569),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivityTile(CustomerVoiceActivity activity) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: _activityColor(activity.activityType),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _activityLabel(activity),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${activity.actorName?.trim().isNotEmpty == true ? activity.actorName! : 'System'} • ${activity.createdAt != null ? _formatDateTime(activity.createdAt!) : '-'}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                if (activity.note?.trim().isNotEmpty == true) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    activity.note!.trim(),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.45,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPerformanceTile({
-    required String title,
-    required String subtitle,
-    required String trailing,
-    required String caption,
-    required Color accent,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 54,
-            decoration: BoxDecoration(
-              color: accent,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF475569),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  caption,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            trailing,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 12,
-              color: accent,
-              fontWeight: FontWeight.w800,
-            ),
           ),
         ],
       ),
@@ -1681,82 +957,6 @@ class _CustomerVoiceCommandCenterScreenState
     );
   }
 
-  Widget _buildMetaRow(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFF64748B)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF475569),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 86,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF64748B),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF0F172A),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBadge({
-    required String label,
-    required Color backgroundColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.2,
-        ),
-      ),
-    );
-  }
-
   Widget _buildQuickChip({
     required String label,
     required bool isActive,
@@ -1813,159 +1013,20 @@ class _CustomerVoiceCommandCenterScreenState
         _severityFilter != 'all' ||
         _sourceFilter != 'all' ||
         _outletFilter != null ||
-        _overdueOnly;
+        _overdueOnly ||
+        _showAll ||
+        _dateFrom != null ||
+        _dateTo != null;
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    return DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(dateTime);
+  /// Format `yyyy-MM-dd` untuk query API (sama dengan input date web).
+  String? _formatApiDate(DateTime? dateTime) {
+    if (dateTime == null) {
+      return null;
+    }
+    return DateFormat('yyyy-MM-dd').format(dateTime);
   }
 
-  String _formatShortDate(String isoDate) {
-    final parsed = DateTime.tryParse(isoDate);
-    if (parsed == null) {
-      return isoDate;
-    }
-    return DateFormat('dd MMM', 'id_ID').format(parsed);
-  }
-
-  String _formatMinutes(double? minutes) {
-    if (minutes == null) {
-      return '-';
-    }
-    if (minutes >= 1440) {
-      return '${(minutes / 1440).toStringAsFixed(1)} hari';
-    }
-    if (minutes >= 60) {
-      return '${(minutes / 60).toStringAsFixed(1)} jam';
-    }
-    return '${minutes.toStringAsFixed(0)} menit';
-  }
-
-  String _formatPercent(double? value) {
-    if (value == null) {
-      return '-';
-    }
-    return '${value.toStringAsFixed(1)}%';
-  }
-
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'new':
-        return 'New';
-      case 'in_progress':
-        return 'In Progress';
-      case 'resolved':
-        return 'Resolved';
-      case 'ignored':
-        return 'Ignored';
-      default:
-        return status;
-    }
-  }
-
-  String _severityLabel(String severity) {
-    switch (severity) {
-      case 'mild_negative':
-        return 'Mild Negative';
-      case 'negative':
-        return 'Negative';
-      case 'severe':
-        return 'Severe';
-      case 'positive':
-        return 'Positive';
-      case 'neutral':
-        return 'Neutral';
-      default:
-        return severity;
-    }
-  }
-
-  String _sourceLabel(String source) {
-    switch (source) {
-      case 'google_review':
-        return 'Google Review';
-      case 'instagram_comment':
-        return 'Instagram Comment';
-      case 'guest_comment':
-        return 'Guest Comment';
-      default:
-        return source.replaceAll('_', ' ');
-    }
-  }
-
-  String _activityLabel(CustomerVoiceActivity activity) {
-    switch (activity.activityType) {
-      case 'status_changed':
-        return 'Status ${_statusLabel(activity.fromStatus ?? '-')} -> ${_statusLabel(activity.toStatus ?? '-')}';
-      case 'assigned':
-        return 'Perubahan PIC';
-      case 'note':
-        return 'Catatan baru';
-      default:
-        return activity.activityType.replaceAll('_', ' ');
-    }
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'new':
-        return const Color(0xFF2563EB);
-      case 'in_progress':
-        return const Color(0xFFF59E0B);
-      case 'resolved':
-        return const Color(0xFF16A34A);
-      case 'ignored':
-        return const Color(0xFF64748B);
-      default:
-        return const Color(0xFF475569);
-    }
-  }
-
-  Color _severityColor(String severity) {
-    switch (severity) {
-      case 'severe':
-        return const Color(0xFFB91C1C);
-      case 'negative':
-        return const Color(0xFFEA580C);
-      case 'mild_negative':
-        return const Color(0xFFF59E0B);
-      case 'positive':
-        return const Color(0xFF15803D);
-      case 'neutral':
-        return const Color(0xFF475569);
-      default:
-        return const Color(0xFF64748B);
-    }
-  }
-
-  Color _activityColor(String type) {
-    switch (type) {
-      case 'status_changed':
-        return const Color(0xFF2563EB);
-      case 'assigned':
-        return const Color(0xFF0F766E);
-      case 'note':
-        return const Color(0xFFF97316);
-      default:
-        return const Color(0xFF64748B);
-    }
-  }
-}
-
-class _SummaryCardData {
-  final String label;
-  final String value;
-  final Color color;
-  final IconData icon;
-
-  _SummaryCardData(this.label, this.value, this.color, this.icon);
-}
-
-class _KpiCardData {
-  final String label;
-  final String value;
-
-  _KpiCardData(this.label, this.value);
 }
 
 class _FilterOption {

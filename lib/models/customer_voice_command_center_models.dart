@@ -9,6 +9,8 @@ class CustomerVoiceDashboard {
   final List<CustomerVoiceOption> outlets;
   final List<CustomerVoiceOption> assignees;
   final Map<int, List<CustomerVoiceActivity>> activities;
+  /// Jumlah aktivitas bertipe `note` per case id (badge seperti web).
+  final Map<int, int> noteCounts;
   final CustomerVoiceFilters filters;
   final int perfWindowDays;
 
@@ -23,6 +25,7 @@ class CustomerVoiceDashboard {
     required this.outlets,
     required this.assignees,
     required this.activities,
+    required this.noteCounts,
     required this.filters,
     required this.perfWindowDays,
   });
@@ -33,10 +36,10 @@ class CustomerVoiceDashboard {
 
     return CustomerVoiceDashboard(
       summary: CustomerVoiceSummary.fromJson(
-        json['summary'] as Map<String, dynamic>? ?? <String, dynamic>{},
+        _jsonObjectMap(json['summary']),
       ),
       kpis: CustomerVoiceKpis.fromJson(
-        json['kpis'] as Map<String, dynamic>? ?? <String, dynamic>{},
+        _jsonObjectMap(json['kpis']),
       ),
       trend: (json['trend'] as List<dynamic>? ?? <dynamic>[])
           .map((item) => CustomerVoiceTrendPoint.fromJson(item as Map<String, dynamic>))
@@ -59,8 +62,9 @@ class CustomerVoiceDashboard {
           .map((item) => CustomerVoiceOption.fromAssigneeJson(item as Map<String, dynamic>))
           .toList(),
       activities: _parseActivities(activitiesRaw),
+      noteCounts: _parseNoteCounts(json['note_counts']),
       filters: CustomerVoiceFilters.fromJson(
-        json['filters'] as Map<String, dynamic>? ?? <String, dynamic>{},
+        _jsonObjectMap(json['filters']),
       ),
       perfWindowDays: _asInt(json['perfWindowDays'], fallback: 30),
     );
@@ -253,6 +257,9 @@ class CustomerVoiceCaseItem {
   final DateTime? resolvedAt;
   final DateTime? createdAt;
 
+  /// Full `presentVoiceCaseRow` JSON from the API (CAPA, FU target, impact, labels, …).
+  final Map<String, dynamic> rawRow;
+
   CustomerVoiceCaseItem({
     required this.id,
     required this.sourceType,
@@ -272,6 +279,7 @@ class CustomerVoiceCaseItem {
     required this.dueAt,
     required this.resolvedAt,
     required this.createdAt,
+    required this.rawRow,
   });
 
   factory CustomerVoiceCaseItem.fromJson(Map<String, dynamic> json) {
@@ -294,7 +302,13 @@ class CustomerVoiceCaseItem {
       dueAt: _parseDateTime(json['due_at']),
       resolvedAt: _parseDateTime(json['resolved_at']),
       createdAt: _parseDateTime(json['created_at']),
+      rawRow: Map<String, dynamic>.from(json),
     );
+  }
+
+  CustomerVoiceCaseItem copyWithRaw(Map<String, dynamic> nextRaw) {
+    final j = Map<String, dynamic>.from(nextRaw);
+    return CustomerVoiceCaseItem.fromJson(j);
   }
 
   String get headline {
@@ -350,10 +364,13 @@ class CustomerVoiceActivity {
 class CustomerVoiceOption {
   final int? id;
   final String label;
+  /// Jabatan / subtitle untuk pencarian & tampilan (assignees dari API).
+  final String? subtitle;
 
   CustomerVoiceOption({
     required this.id,
     required this.label,
+    this.subtitle,
   });
 
   factory CustomerVoiceOption.fromOutletJson(Map<String, dynamic> json) {
@@ -367,6 +384,7 @@ class CustomerVoiceOption {
     return CustomerVoiceOption(
       id: json['id'] == null ? null : _asInt(json['id']),
       label: json['nama_lengkap']?.toString() ?? '-',
+      subtitle: json['nama_jabatan']?.toString(),
     );
   }
 }
@@ -378,6 +396,9 @@ class CustomerVoiceFilters {
   final int? outletId;
   final String? query;
   final bool overdueOnly;
+  final bool showAll;
+  final String? dateFrom;
+  final String? dateTo;
 
   CustomerVoiceFilters({
     required this.status,
@@ -386,6 +407,9 @@ class CustomerVoiceFilters {
     required this.outletId,
     required this.query,
     required this.overdueOnly,
+    required this.showAll,
+    required this.dateFrom,
+    required this.dateTo,
   });
 
   factory CustomerVoiceFilters.fromJson(Map<String, dynamic> json) {
@@ -396,6 +420,68 @@ class CustomerVoiceFilters {
       outletId: json['id_outlet'] == null ? null : _asInt(json['id_outlet']),
       query: json['q']?.toString(),
       overdueOnly: json['overdue_only'] == true,
+      showAll: json['show_all'] == true,
+      dateFrom: json['date_from']?.toString(),
+      dateTo: json['date_to']?.toString(),
+    );
+  }
+}
+
+/// Respons GET `archive-cases` (modal arsip web / approval-app).
+class CustomerVoiceArchiveMeta {
+  final int currentPage;
+  final int lastPage;
+  final int perPage;
+  final int total;
+
+  CustomerVoiceArchiveMeta({
+    required this.currentPage,
+    required this.lastPage,
+    required this.perPage,
+    required this.total,
+  });
+
+  factory CustomerVoiceArchiveMeta.fromJson(Map<String, dynamic> json) {
+    return CustomerVoiceArchiveMeta(
+      currentPage: _asInt(json['current_page'], fallback: 1),
+      lastPage: _asInt(json['last_page'], fallback: 1),
+      perPage: _asInt(json['per_page'], fallback: 20),
+      total: _asInt(json['total']),
+    );
+  }
+}
+
+class CustomerVoiceArchiveResult {
+  final List<CustomerVoiceCaseItem> cases;
+  final CustomerVoiceArchiveMeta meta;
+
+  CustomerVoiceArchiveResult({
+    required this.cases,
+    required this.meta,
+  });
+
+  factory CustomerVoiceArchiveResult.fromJson(Map<String, dynamic> json) {
+    final raw = json['cases'] as List<dynamic>? ?? <dynamic>[];
+    final list = <CustomerVoiceCaseItem>[];
+    for (final e in raw) {
+      if (e is Map<String, dynamic>) {
+        list.add(CustomerVoiceCaseItem.fromJson(e));
+      } else if (e is Map) {
+        list.add(
+          CustomerVoiceCaseItem.fromJson(
+            e.map((k, v) => MapEntry(k.toString(), v)),
+          ),
+        );
+      }
+    }
+    final metaJson = json['meta'];
+    return CustomerVoiceArchiveResult(
+      cases: list,
+      meta: CustomerVoiceArchiveMeta.fromJson(
+        metaJson is Map<String, dynamic>
+            ? metaJson
+            : <String, dynamic>{},
+      ),
     );
   }
 }
@@ -431,6 +517,41 @@ class CustomerVoicePagination {
       to: _asInt(json['to']),
       nextPageUrl: json['next_page_url']?.toString(),
       prevPageUrl: json['prev_page_url']?.toString(),
+    );
+  }
+}
+
+class PendingCapaVerificationItem {
+  final int id;
+  final String? eventAt;
+  final String? summaryId;
+  final String status;
+  final String severity;
+  final String namaOutlet;
+  final List<String> pendingDivisions;
+
+  PendingCapaVerificationItem({
+    required this.id,
+    required this.eventAt,
+    required this.summaryId,
+    required this.status,
+    required this.severity,
+    required this.namaOutlet,
+    required this.pendingDivisions,
+  });
+
+  factory PendingCapaVerificationItem.fromJson(Map<String, dynamic> json) {
+    final divs = json['pending_divisions'];
+    return PendingCapaVerificationItem(
+      id: _asInt(json['id']),
+      eventAt: json['event_at']?.toString(),
+      summaryId: json['summary_id']?.toString(),
+      status: json['status']?.toString() ?? '',
+      severity: json['severity']?.toString() ?? '',
+      namaOutlet: json['nama_outlet']?.toString() ?? '',
+      pendingDivisions: divs is List<dynamic>
+          ? divs.map((e) => e.toString()).toList()
+          : const <String>[],
     );
   }
 }
@@ -487,6 +608,33 @@ Map<String, dynamic> _asMap(dynamic value) {
     return <String, dynamic>{'data': value};
   }
   return <String, dynamic>{};
+}
+
+/// Objek JSON (`{}`); jika API mengirim array atau tipe lain, pakai map kosong (hindari cast crash).
+Map<String, dynamic> _jsonObjectMap(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (key, item) => MapEntry(key.toString(), item),
+    );
+  }
+  return <String, dynamic>{};
+}
+
+Map<int, int> _parseNoteCounts(dynamic value) {
+  final result = <int, int>{};
+  if (value is! Map) {
+    return result;
+  }
+  value.forEach((key, dynamic v) {
+    final id = int.tryParse(key.toString());
+    if (id != null) {
+      result[id] = _asInt(v);
+    }
+  });
+  return result;
 }
 
 Map<int, List<CustomerVoiceActivity>> _parseActivities(dynamic value) {

@@ -1,7 +1,7 @@
 name: ymsoftapp
 description: YM Soft Approval Mobile App
 publish_to: 'none'
-version: 1.0.8+9
+version: 1.0.10+11
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -43,7 +43,7 @@ dependencies:
   lottie: ^2.7.0
   
   # Image Picker
-  image_picker: ^1.0.7
+  image_picker: ^1.1.2
   
   # File Picker
   file_picker: ^8.0.0+1

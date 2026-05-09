@@ -8,7 +8,17 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
-    
+
+    <!--
+      Google Play (Photo & Video permissions policy): broad READ_MEDIA_* are rejected if the app
+      only needs picking attachments occasionally. image_picker / file_picker merge these by default.
+      Removing them keeps Camera; gallery picks use the system Android Photo Picker on API 33+
+      without broad library access. See: https://developer.android.com/training/data-storage/shared/photopicker
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove" />
+
     <application
         android:label="YMSoft ERP"
         android:name="${applicationName}"

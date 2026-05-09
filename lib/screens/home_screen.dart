@@ -51,6 +51,7 @@ import 'approvals/ro_khusus_approval_detail_screen.dart';
 import 'approvals/employee_resignation_approval_detail_screen.dart';
 import '../widgets/approval_list_modal.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/customer_voice/capa_home_verification_card.dart';
 import 'login_screen.dart';
 import 'web_only_feature_screen.dart';
 
@@ -103,6 +104,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // Animation controller
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+
+  /// Remount CAPA home card so pull-to-refresh reloads pending list.
+  int _capaHomeRefreshKey = 0;
 
   @override
   void initState() {
@@ -1106,6 +1110,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       title: 'Home',
       body: RefreshIndicator(
         onRefresh: () async {
+          setState(() => _capaHomeRefreshKey++);
           await _loadAllApprovals(showLoading: false, backgroundRefresh: true);
           await _loadAnnouncements();
           await _loadBirthdays();
@@ -1126,6 +1131,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
                   // Highlights: Announcements & Birthdays
                   _buildHighlightsSection(),
+
+                  CapaHomeVerificationCard(key: ValueKey<int>(_capaHomeRefreshKey)),
+                  const SizedBox(height: 20),
                   
                   // Approvals Section
                   _buildApprovalsSection(),
