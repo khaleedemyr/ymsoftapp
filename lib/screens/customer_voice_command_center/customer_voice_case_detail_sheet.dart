@@ -265,7 +265,7 @@ class _CustomerVoiceCaseDetailSheetState
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  Icons.clipboard_outlined,
+                  Icons.assignment_outlined,
                   color: Colors.green.shade700,
                   size: 22,
                 ),
