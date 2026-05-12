@@ -34,6 +34,9 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
   final _praisedOutlet = TextEditingController();
   final _marketingSource = TextEditingController();
   final _comment = TextEditingController();
+  final _capaKronologi = TextEditingController();
+  final _capaCorrective = TextEditingController();
+  final _capaPreventive = TextEditingController();
 
   String? _rs;
   String? _rf;
@@ -45,6 +48,8 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
   DateTime? _guestDob;
   bool _markVerified = false;
   bool _saving = false;
+  bool _requiresCapa = false;
+  String _issueSeverity = '';
 
   bool get _readOnly => (_form?['status']?.toString() == 'verified');
 
@@ -65,6 +70,9 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
     _praisedOutlet.dispose();
     _marketingSource.dispose();
     _comment.dispose();
+    _capaKronologi.dispose();
+    _capaCorrective.dispose();
+    _capaPreventive.dispose();
     super.dispose();
   }
 
@@ -88,6 +96,14 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
       _canChooseOutlet = meta['can_choose_outlet'] == true;
       _outlets = meta['outlets'] as List<dynamic>? ?? [];
       _lockedOutlet = meta['locked_outlet'] as Map<String, dynamic>?;
+    }
+    _requiresCapa = data['requires_capa'] == true;
+    _issueSeverity = (data['issue_severity']?.toString() ?? '').toLowerCase().trim();
+    final existingCapa = data['existing_capa'];
+    if (existingCapa is Map) {
+      _capaKronologi.text = existingCapa['kronologi']?.toString() ?? '';
+      _capaCorrective.text = existingCapa['corrective_action']?.toString() ?? '';
+      _capaPreventive.text = existingCapa['preventive_action']?.toString() ?? '';
     }
     _applyForm(data['form'] as Map<String, dynamic>);
     setState(() => _loading = false);
@@ -141,8 +157,52 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
     if (d != null) setState(() => _guestDob = d);
   }
 
+  bool get _capaIncomplete =>
+      _requiresCapa &&
+      (_capaKronologi.text.trim().isEmpty ||
+          _capaCorrective.text.trim().isEmpty ||
+          _capaPreventive.text.trim().isEmpty);
+
+  String get _severityLabel {
+    const map = {
+      'critical': 'CRITICAL',
+      'severe': 'CRITICAL',
+      'major': 'MAJOR',
+      'negative': 'MAJOR',
+      'minor': 'MINOR',
+      'mild_negative': 'MINOR',
+    };
+    return map[_issueSeverity] ?? _issueSeverity.toUpperCase();
+  }
+
   Future<void> _save() async {
     if (_readOnly) return;
+    if (_markVerified && _capaIncomplete) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700),
+              const SizedBox(width: 10),
+              const Text('CAPA belum lengkap'),
+            ],
+          ),
+          content: Text(
+            'Severity $_severityLabel — Leader wajib mengisi Kronologi, Corrective Action, dan Preventive Action sebelum verifikasi.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     setState(() => _saving = true);
     showDialog<void>(
       context: context,
@@ -202,6 +262,11 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
           ? null
           : _marketingSource.text.trim(),
       'mark_verified': _markVerified,
+      if (_requiresCapa) ...{
+        'capa_kronologi': _capaKronologi.text.trim(),
+        'capa_corrective_action': _capaCorrective.text.trim(),
+        'capa_preventive_action': _capaPreventive.text.trim(),
+      },
     };
     if (_guestDob != null) {
       body['guest_dob'] = DateFormat('yyyy-MM-dd').format(_guestDob!);
@@ -530,6 +595,10 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
                                   ),
                                 ),
                               ),
+                            if (_requiresCapa) ...[
+                              const SizedBox(height: 16),
+                              _buildCapaSection(),
+                            ],
                             if (!_readOnly) ...[
                               const SizedBox(height: 8),
                               CheckboxListTile(
@@ -565,6 +634,172 @@ class _GuestCommentFormScreenState extends State<GuestCommentFormScreen> {
                       ),
                   ],
                 ),
+    );
+  }
+
+  Widget _buildCapaSection() {
+    const sevColors = {
+      'critical': (Color(0xFFFEF2F2), Color(0xFFFCA5A5), Color(0xFF991B1B), Color(0xFFDC2626)),
+      'severe': (Color(0xFFFEF2F2), Color(0xFFFCA5A5), Color(0xFF991B1B), Color(0xFFDC2626)),
+      'major': (Color(0xFFFFF7ED), Color(0xFFFDBA74), Color(0xFF9A3412), Color(0xFFEA580C)),
+      'negative': (Color(0xFFFFF7ED), Color(0xFFFDBA74), Color(0xFF9A3412), Color(0xFFEA580C)),
+      'minor': (Color(0xFFFEFCE8), Color(0xFFFDE047), Color(0xFF854D0E), Color(0xFFCA8A04)),
+      'mild_negative': (Color(0xFFFEFCE8), Color(0xFFFDE047), Color(0xFF854D0E), Color(0xFFCA8A04)),
+    };
+    final colors = sevColors[_issueSeverity];
+    final bg = colors?.$1 ?? const Color(0xFFFEF2F2);
+    final border = colors?.$2 ?? const Color(0xFFFCA5A5);
+    final textColor = colors?.$3 ?? const Color(0xFF991B1B);
+    final iconColor = colors?.$4 ?? const Color(0xFFDC2626);
+
+    if (_readOnly) {
+      final hasData = _capaKronologi.text.trim().isNotEmpty ||
+          _capaCorrective.text.trim().isNotEmpty ||
+          _capaPreventive.text.trim().isNotEmpty;
+      if (!hasData) return const SizedBox.shrink();
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.green.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'CAPA (Telah diisi)',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _capaReadOnlyField('Kronologi', _capaKronologi.text),
+            const SizedBox(height: 8),
+            _capaReadOnlyField('Corrective Action', _capaCorrective.text),
+            const SizedBox(height: 8),
+            _capaReadOnlyField('Preventive Action', _capaPreventive.text),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: border.withValues(alpha: 0.25),
+                ),
+                child: Icon(Icons.warning_amber_rounded, color: iconColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Severity: $_severityLabel',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: textColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Leader wajib mengisi CAPA (Corrective & Preventive Action) sebelum data ini bisa diverifikasi.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: textColor.withValues(alpha: 0.8),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _capaTextField(_capaKronologi, 'Kronologi kejadian *',
+              'Jelaskan kronologi kejadian yang menyebabkan keluhan tamu…', textColor),
+          const SizedBox(height: 12),
+          _capaTextField(_capaCorrective, 'Corrective Action *',
+              'Tindakan perbaikan segera yang dilakukan…', textColor),
+          const SizedBox(height: 12),
+          _capaTextField(_capaPreventive, 'Preventive Action *',
+              'Langkah pencegahan agar kejadian tidak terulang…', textColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _capaTextField(TextEditingController c, String label, String hint, Color labelColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: labelColor,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: c,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _capaReadOnlyField(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey.shade500,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value.trim().isNotEmpty ? value : '—',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B), height: 1.3),
+        ),
+      ],
     );
   }
 

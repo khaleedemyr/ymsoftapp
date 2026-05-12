@@ -1173,6 +1173,9 @@ class _GuestCard extends StatelessWidget {
                           ),
                         ),
                       ],
+
+                      const SizedBox(height: 10),
+                      _SeverityTopicRow(row: row),
                       const SizedBox(height: 10),
                       _RatingStrip(row: row),
                       const SizedBox(height: 12),
@@ -1222,6 +1225,135 @@ class _GuestCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SeverityTopicRow extends StatelessWidget {
+  final Map<String, dynamic> row;
+
+  const _SeverityTopicRow({required this.row});
+
+  static const _severityMeta = {
+    'critical': ('Critical', Color(0xFFFEF2F2), Color(0xFFFCA5A5), Color(0xFF991B1B)),
+    'severe': ('Critical', Color(0xFFFEF2F2), Color(0xFFFCA5A5), Color(0xFF991B1B)),
+    'major': ('Major', Color(0xFFFFF7ED), Color(0xFFFDBA74), Color(0xFF9A3412)),
+    'negative': ('Major', Color(0xFFFFF7ED), Color(0xFFFDBA74), Color(0xFF9A3412)),
+    'minor': ('Minor', Color(0xFFFEFCE8), Color(0xFFFDE047), Color(0xFF854D0E)),
+    'mild_negative': ('Minor', Color(0xFFFEFCE8), Color(0xFFFDE047), Color(0xFF854D0E)),
+    'neutral': ('Neutral', Color(0xFFF0FDF4), Color(0xFF86EFAC), Color(0xFF166534)),
+    'positive': ('Positive', Color(0xFFEFF6FF), Color(0xFF93C5FD), Color(0xFF1E40AF)),
+  };
+
+  static const _topicColors = {
+    'food_quality': Color(0xFFEF4444),
+    'service': Color(0xFF3B82F6),
+    'hygiene': Color(0xFF10B981),
+    'ambiance': Color(0xFF8B5CF6),
+    'price': Color(0xFFF59E0B),
+    'price_value': Color(0xFFF59E0B),
+    'wait_time': Color(0xFFEC4899),
+    'speed_wait_time': Color(0xFFEC4899),
+    'beverage': Color(0xFF06B6D4),
+    'cleanliness': Color(0xFF14B8A6),
+    'staff_attitude': Color(0xFF6366F1),
+    'parking': Color(0xFF78716C),
+    'portion': Color(0xFFEA580C),
+    'noise': Color(0xFFA855F7),
+    'reservation': Color(0xFF0284C7),
+    'other': Color(0xFF64748B),
+  };
+
+  static const _topicLabels = {
+    'food_quality': 'Food Quality',
+    'service': 'Service',
+    'hygiene': 'Hygiene',
+    'ambiance': 'Ambiance',
+    'price': 'Price / Value',
+    'price_value': 'Price / Value',
+    'wait_time': 'Speed / Wait Time',
+    'speed_wait_time': 'Speed / Wait Time',
+    'beverage': 'Beverage',
+    'cleanliness': 'Cleanliness',
+    'staff_attitude': 'Staff Attitude',
+    'parking': 'Parking',
+    'portion': 'Portion',
+    'noise': 'Noise',
+    'reservation': 'Reservation',
+    'other': 'Other',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final severity = (row['issue_severity']?.toString() ?? '').toLowerCase().trim();
+    final topics = row['issue_topics'];
+    final topicList = topics is List ? topics.cast<dynamic>() : <dynamic>[];
+
+    if (severity.isEmpty && topicList.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            if (severity.isNotEmpty) _buildSeverityChip(severity),
+            ...topicList.map((t) => _buildTopicChip(t.toString())),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSeverityChip(String severity) {
+    final meta = _severityMeta[severity];
+    final label = meta?.$1 ?? severity[0].toUpperCase() + severity.substring(1);
+    final bg = meta?.$2 ?? const Color(0xFFF8FAFC);
+    final border = meta?.$3 ?? const Color(0xFFE2E8F0);
+    final text = meta?.$4 ?? const Color(0xFF64748B);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: text,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopicChip(String slug) {
+    final color = _topicColors[slug] ?? const Color(0xFF64748B);
+    final label = _topicLabels[slug] ??
+        slug.replaceAll('_', ' ').replaceAllMapped(
+          RegExp(r'(^|\s)\w'),
+          (m) => m.group(0)!.toUpperCase(),
+        );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
         ),
       ),
     );
