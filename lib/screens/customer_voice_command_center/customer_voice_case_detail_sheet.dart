@@ -186,6 +186,14 @@ class _CustomerVoiceCaseDetailSheetState
                                   },
                                 ),
                                 const SizedBox(height: 18),
+                                if (_brief != null &&
+                                    _brief!['gcf_capa'] is Map &&
+                                    _hasGcfCapaContent(_brief!['gcf_capa']))
+                                  _buildGcfCapaCard(_brief!['gcf_capa'] as Map<String, dynamic>),
+                                if (_brief != null &&
+                                    _brief!['gcf_capa'] is Map &&
+                                    _hasGcfCapaContent(_brief!['gcf_capa']))
+                                  const SizedBox(height: 18),
                                 if (_brief != null)
                                   CapaFormPanelWidget(
                                     key: ValueKey(
@@ -205,6 +213,138 @@ class _CustomerVoiceCaseDetailSheetState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _hasGcfCapaContent(dynamic gcfCapa) {
+    if (gcfCapa is! Map) return false;
+    final k = (gcfCapa['kronologi']?.toString() ?? '').trim();
+    final c = (gcfCapa['corrective_action']?.toString() ?? '').trim();
+    final p = (gcfCapa['preventive_action']?.toString() ?? '').trim();
+    return k.isNotEmpty || c.isNotEmpty || p.isNotEmpty;
+  }
+
+  Widget _buildGcfCapaCard(Map<String, dynamic> gcfCapa) {
+    final filledByName = gcfCapa['filled_by_name']?.toString() ?? '';
+    final filledAt = gcfCapa['filled_at']?.toString() ?? '';
+    String filledAtFormatted = '';
+    if (filledAt.isNotEmpty) {
+      try {
+        filledAtFormatted = DateFormat('dd MMM yyyy · HH:mm', 'id_ID')
+            .format(DateTime.parse(filledAt).toLocal());
+      } catch (_) {
+        filledAtFormatted = filledAt;
+      }
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFA7F3D0), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD1FAE5),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.clipboard_outlined,
+                  color: Colors.green.shade700,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CAPA DARI OUTLET LEADER',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                        color: Colors.green.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      [
+                        'Diisi saat verifikasi Guest Comment',
+                        if (filledByName.isNotEmpty) 'oleh $filledByName',
+                        if (filledAtFormatted.isNotEmpty) '· $filledAtFormatted',
+                      ].join(' '),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green.shade700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _gcfCapaField('Kronologi', gcfCapa['kronologi']?.toString() ?? ''),
+          const SizedBox(height: 10),
+          _gcfCapaField('Corrective Action', gcfCapa['corrective_action']?.toString() ?? ''),
+          const SizedBox(height: 10),
+          _gcfCapaField('Preventive Action', gcfCapa['preventive_action']?.toString() ?? ''),
+        ],
+      ),
+    );
+  }
+
+  Widget _gcfCapaField(String label, String value) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFA7F3D0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: Colors.green.shade700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value.trim().isNotEmpty ? value.trim() : '—',
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.45,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+        ],
       ),
     );
   }
