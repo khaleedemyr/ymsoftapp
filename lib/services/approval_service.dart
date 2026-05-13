@@ -2612,6 +2612,134 @@ class ApprovalService {
     }
   }
 
+  // Get Pending Asset Inventory Transfer Approvals
+  Future<List<AssetInventoryTransferApproval>> getPendingAssetTransferApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/asset-inventory-transfers/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['transfers'] != null) {
+          final List<dynamic> approvalsJson = data['transfers'];
+          _rawJsonCache['asset_transfer'] = approvalsJson;
+          return approvalsJson
+              .map((json) => AssetInventoryTransferApproval.fromJson(json))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Asset Transfer approvals: $e');
+      return [];
+    }
+  }
+
+  // Get Pending Asset Inventory Adjustment Approvals
+  Future<List<AssetInventoryAdjustmentApproval>> getPendingAssetAdjustmentApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/asset-inventory-adjustments/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['adjustments'] != null) {
+          final List<dynamic> approvalsJson = data['adjustments'];
+          _rawJsonCache['asset_adjustment'] = approvalsJson;
+          return approvalsJson
+              .map((json) => AssetInventoryAdjustmentApproval.fromJson(json))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Asset Adjustment approvals: $e');
+      return [];
+    }
+  }
+
+  // Get Pending Asset Service Order Approvals
+  Future<List<AssetServiceOrderApproval>> getPendingAssetServiceOrderApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/asset-service-orders/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['service_orders'] != null) {
+          final List<dynamic> approvalsJson = data['service_orders'];
+          _rawJsonCache['asset_service_order'] = approvalsJson;
+          return approvalsJson
+              .map((json) => AssetServiceOrderApproval.fromJson(json))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Asset Service Order approvals: $e');
+      return [];
+    }
+  }
+
+  // Get Pending Asset Disposal Approvals
+  Future<List<AssetDisposalApproval>> getPendingAssetDisposalApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/asset-disposals/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['headers'] != null) {
+          final List<dynamic> approvalsJson = data['headers'];
+          _rawJsonCache['asset_disposal'] = approvalsJson;
+          return approvalsJson
+              .map((json) => AssetDisposalApproval.fromJson(json))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Asset Disposal approvals: $e');
+      return [];
+    }
+  }
+
   // Reject Employee Resignation
   Future<Map<String, dynamic>> rejectEmployeeResignation(int id, {String? comment, String? reason, String? note, int? approvalFlowId}) async {
     try {

@@ -217,6 +217,21 @@ class _MarketingVisitChecklistDetailScreenState extends State<MarketingVisitChec
                           ),
                         ],
                       ),
+                      if ((cl['status']?.toString() ?? 'submitted') == 'draft') ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            'Draft — belum final. Lanjutkan lewat Edit dari daftar.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF92400E), fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 18),
                       _summaryRow(Icons.calendar_month_rounded, 'Tanggal kunjungan', vd),
                       const SizedBox(height: 12),

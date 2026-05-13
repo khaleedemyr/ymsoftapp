@@ -40,14 +40,20 @@ class _CustomerVoiceCaseIndexCardState
 
   static const _statusFormOptions = <MapEntry<String, String>>[
     MapEntry('new', 'New'),
-    MapEntry('courtesy_by_cs', 'Courtesy by CS'),
-    MapEntry('follow_up_by_ops', 'Follow Up by Ops'),
+    MapEntry('internal_follow_up', 'Internal Follow Up'),
+    MapEntry('courtesy_done', 'Courtesy Done'),
+  ];
+
+  static const _followUpStatusFormOptions = <MapEntry<String, String>>[
+    MapEntry('new', 'New'),
+    MapEntry('on_progress', 'On Progress'),
     MapEntry('done', 'Done'),
   ];
 
   late List<int> _regionalIds;
   int? _assignedTo;
   late String _statusForm;
+  late String _followUpStatusForm;
   bool _saving = false;
   Map<String, dynamic>? _authUser;
   bool _expanded = false;
@@ -79,6 +85,7 @@ class _CustomerVoiceCaseIndexCardState
     _regionalIds = parseRegionalUserIds(_row['regional_user_ids']);
     _assignedTo = widget.item.assignedTo;
     _statusForm = canonicalVoiceCaseStatus(widget.item.status);
+    _followUpStatusForm = widget.item.rawRow['follow_up_status']?.toString() ?? 'new';
   }
 
   List<CustomerVoiceOption> _mergedAssigneesList() {
@@ -111,6 +118,7 @@ class _CustomerVoiceCaseIndexCardState
       await widget.service.updateCase(
         caseId: widget.item.id,
         status: _statusForm,
+        followUpStatus: _followUpStatusForm,
         assignedTo: _assignedTo,
         regionalUserIds: _regionalIds,
         notifyFollowerUserIds: const [],
@@ -489,6 +497,11 @@ class _CustomerVoiceCaseIndexCardState
                           fg: const Color(0xFF4338CA),
                         ),
                         _pill(
+                          followUpStatusLabel(item.rawRow['follow_up_status']?.toString()),
+                          bg: const Color(0xFFF0FDF4),
+                          fg: const Color(0xFF15803D),
+                        ),
+                        _pill(
                           item.severity.isEmpty ? 'neutral' : item.severity,
                           bg: const Color(0xFFFFF1F2),
                           fg: const Color(0xFFB91C1C),
@@ -780,7 +793,7 @@ class _CustomerVoiceCaseIndexCardState
         ),
         const SizedBox(height: 14),
         Text(
-          'Status case',
+          'Courtesy Status',
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
@@ -811,6 +824,44 @@ class _CustomerVoiceCaseIndexCardState
               onChanged: (v) {
                 if (v != null) {
                   setState(() => _statusForm = v);
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          'Follow Up Status',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: _followUpStatusForm,
+              items: _followUpStatusFormOptions
+                  .map(
+                    (e) => DropdownMenuItem(
+                      value: e.key,
+                      child: Text(e.value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  setState(() => _followUpStatusForm = v);
                 }
               },
             ),

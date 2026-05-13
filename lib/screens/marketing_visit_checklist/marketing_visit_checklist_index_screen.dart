@@ -374,6 +374,8 @@ class _MarketingVisitChecklistIndexScreenState extends State<MarketingVisitCheck
     final userName = row['user_name']?.toString() ?? '-';
     final dateRaw = row['visit_date']?.toString();
     final dateText = _formatDate(dateRaw);
+    final status = row['status']?.toString() ?? 'submitted';
+    final isDraft = status == 'draft';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -458,6 +460,13 @@ class _MarketingVisitChecklistIndexScreenState extends State<MarketingVisitCheck
                               fg: _slate600,
                               bg: const Color(0xFFF1F5F9),
                             ),
+                            if (isDraft)
+                              _chipPill(
+                                icon: Icons.edit_note_rounded,
+                                label: 'Draft',
+                                fg: const Color(0xFFB45309),
+                                bg: const Color(0xFFFEF3C7),
+                              ),
                           ],
                         ),
                         const SizedBox(height: 10),

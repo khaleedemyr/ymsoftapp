@@ -157,6 +157,42 @@ class OutletTransferService {
     return null;
   }
 
+  Future<Map<String, dynamic>> validateSerialForTransfer({
+    required String serialNumber,
+    required dynamic outletFromId,
+    required int warehouseOutletFromId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'valid': false, 'message': 'No authentication token'};
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/outlet-transfers/validate-serial'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'serial_number': serialNumber,
+          'outlet_from_id': outletFromId,
+          'warehouse_outlet_from_id': warehouseOutletFromId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'valid': false, 'message': 'Gagal validasi (Status: ${response.statusCode})'};
+      }
+    } catch (e) {
+      return {'valid': false, 'message': 'Error: $e'};
+    }
+  }
+
   Future<Map<String, dynamic>> createTransfer({
     required String transferDate,
     required int outletFromId,
@@ -164,7 +200,8 @@ class OutletTransferService {
     required int outletToId,
     required int warehouseOutletToId,
     String? notes,
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
     required List<int> approvers,
   }) async {
     try {
@@ -173,6 +210,18 @@ class OutletTransferService {
         return {'success': false, 'message': 'No authentication token'};
       }
 
+      final body = <String, dynamic>{
+        'transfer_date': transferDate,
+        'outlet_from_id': outletFromId,
+        'warehouse_outlet_from_id': warehouseOutletFromId,
+        'outlet_to_id': outletToId,
+        'warehouse_outlet_to_id': warehouseOutletToId,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
+        'approvers': approvers,
+      };
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/approval-app/outlet-transfers'),
         headers: {
@@ -180,16 +229,7 @@ class OutletTransferService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({
-          'transfer_date': transferDate,
-          'outlet_from_id': outletFromId,
-          'warehouse_outlet_from_id': warehouseOutletFromId,
-          'outlet_to_id': outletToId,
-          'warehouse_outlet_to_id': warehouseOutletToId,
-          if (notes != null && notes.isNotEmpty) 'notes': notes,
-          'items': items,
-          'approvers': approvers,
-        }),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

@@ -387,4 +387,9 @@ class GoogleReviewService {
   Future<Map<String, dynamic>> getAiReportStatus(int id) async {
     return _authorizedGet(Uri.parse('$_prefix/ai/reports/$id/status'));
   }
+
+  Future<Map<String, dynamic>> updateItemSeverity(int itemId, String severity) async {
+    final uri = Uri.parse('$_prefix/ai/items/$itemId/severity');
+    return _authorizedPutJson(uri, {'severity': severity});
+  }
 }

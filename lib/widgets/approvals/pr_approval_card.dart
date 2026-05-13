@@ -25,6 +25,8 @@ class PRApprovalCard extends StatelessWidget {
         return 'PR Ops';
       case 'purchase_payment':
         return 'Payment';
+      case 'pr_assets':
+        return 'PR Assets';
       case 'travel_application':
         return 'Travel';
       case 'kasbon':
@@ -44,6 +46,8 @@ class PRApprovalCard extends StatelessWidget {
         return Colors.blue.shade100;
       case 'pr_ops':
         return Colors.teal.shade100;
+      case 'pr_assets':
+        return Colors.indigo.shade100;
       default:
         return Colors.grey.shade200;
     }
@@ -59,6 +63,8 @@ class PRApprovalCard extends StatelessWidget {
         return Colors.blue.shade900;
       case 'pr_ops':
         return Colors.teal.shade900;
+      case 'pr_assets':
+        return Colors.indigo.shade900;
       default:
         return Colors.grey.shade800;
     }

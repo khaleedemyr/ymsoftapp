@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 String canonicalVoiceCaseStatus(String raw) {
   final s = raw.toLowerCase();
-  if (s == 'in_progress') return 'follow_up_by_ops';
-  if (s == 'resolved' || s == 'ignored') return 'done';
+  if (s == 'courtesy_by_cs' || s == 'follow_up_by_ops' || s == 'in_progress') return 'internal_follow_up';
+  if (s == 'done' || s == 'resolved' || s == 'ignored') return 'courtesy_done';
   return raw;
 }
 
@@ -13,14 +13,30 @@ String voiceCaseStatusFormLabel(String formStatus) {
   switch (formStatus.toLowerCase()) {
     case 'new':
       return 'New';
+    case 'internal_follow_up':
     case 'courtesy_by_cs':
-      return 'Courtesy by CS';
     case 'follow_up_by_ops':
-      return 'Follow Up by Ops';
+    case 'in_progress':
+      return 'Internal Follow Up';
+    case 'courtesy_done':
+    case 'done':
+    case 'resolved':
+    case 'ignored':
+      return 'Courtesy Done';
+    default:
+      return formStatus;
+  }
+}
+
+String followUpStatusLabel(String? raw) {
+  final s = (raw ?? 'new').toLowerCase();
+  switch (s) {
+    case 'on_progress':
+      return 'On Progress';
     case 'done':
       return 'Done';
     default:
-      return formStatus;
+      return 'New';
   }
 }
 
@@ -43,6 +59,7 @@ String? followUpTargetLabel(String? v) {
 bool _isOpenDbStatus(String statusValue) {
   final s = statusValue.toLowerCase();
   return s == 'new' ||
+      s == 'internal_follow_up' ||
       s == 'courtesy_by_cs' ||
       s == 'follow_up_by_ops' ||
       s == 'in_progress';

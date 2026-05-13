@@ -200,6 +200,8 @@ class _PurchaseRequisitionDetailScreenState extends State<PurchaseRequisitionDet
         return 'PR Ops';
       case 'purchase_payment':
         return 'Payment';
+      case 'pr_assets':
+        return 'PR Assets';
       case 'travel_application':
         return 'Travel';
       case 'kasbon':
@@ -564,7 +566,7 @@ class _PurchaseRequisitionDetailScreenState extends State<PurchaseRequisitionDet
     
     final mode = _prData!['mode'] ?? 'pr_ops';
     
-    if (mode == 'pr_ops' || mode == 'purchase_payment') {
+    if (mode == 'pr_ops' || mode == 'purchase_payment' || mode == 'pr_assets') {
       // Group by outlet and category
       return _buildMultiOutletItemsCard(items);
     } else if (mode == 'travel_application') {

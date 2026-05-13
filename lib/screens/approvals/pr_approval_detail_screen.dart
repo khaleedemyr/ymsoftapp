@@ -826,6 +826,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
         return 'Purchase Requisition';
       case 'purchase_payment':
         return 'Payment Application';
+      case 'pr_assets':
+        return 'PR Assets';
       case 'kasbon':
         return 'Kasbon';
       case 'travel_application':
@@ -1887,7 +1889,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
     // For payment_application, purchase_payment, and purchase_requisition modes, show grouped items
     bool isPaymentOrPurchase = mode == 'purchase_payment' || 
                                mode == 'payment_application' || 
-                               mode == 'purchase_requisition';
+                               mode == 'purchase_requisition' ||
+                               mode == 'pr_assets';
     
     // Check if items have outlet_id (for legacy/null mode or purchase_requisition)
     if (!isPaymentOrPurchase && items.isNotEmpty) {

@@ -69,9 +69,12 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   int _kasbonTermin = 1;
   final _kasbonReasonController = TextEditingController();
   
-  // Items (for pr_ops, purchase_payment, travel_application)
+  // Items (for pr_ops, purchase_payment, pr_assets, travel_application)
   // Structure: outlets -> categories -> items
   List<Map<String, dynamic>> _outlets = [];
+
+  // Asset items for PR Assets mode autocomplete
+  List<Map<String, dynamic>> _assetItems = [];
   
   // Travel items
   List<Map<String, dynamic>> _travelItems = [];
@@ -179,7 +182,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
 
   void _initializeForm() {
     // Initialize with default values based on mode
-    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
       _outlets = [
         {
           'outlet_id': null,
@@ -233,7 +236,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     _selectedCurrency = data['currency'] ?? 'IDR';
     
     // Load items based on mode
-    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
       // Group items by outlet and category
       // ... (complex grouping logic)
     } else if (_selectedMode == 'travel_application') {
@@ -288,11 +291,14 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
       final outlets = await _service.getOutlets();
       final approvers = await _service.getApprovers();
 
+      final assetItems = await _service.getAssetItems();
+
       setState(() {
         _divisions = divisions;
         _categories = categories;
         _outletOptions = outlets;
         _availableApprovers = approvers;
+        _assetItems = assetItems;
         _isLoadingOptions = false;
       });
       
@@ -371,8 +377,8 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
         return;
       }
 
-      // Validate budget before submitting (for pr_ops and purchase_payment mode)
-      if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+      // Validate budget before submitting (for pr_ops, purchase_payment, and pr_assets mode)
+      if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
         String? budgetValidationError = await _validateBudget();
         if (budgetValidationError != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -498,7 +504,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
       // Prepare items based on mode
       List<Map<String, dynamic>> items = [];
       
-      if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+      if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
         // Flatten outlets -> categories -> items
         for (var outlet in _outlets) {
           final outletMap = outlet as Map<String, dynamic>;
@@ -637,7 +643,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           kasbonAmount: _selectedMode == 'kasbon' ? _kasbonAmount?.toDouble() : null,
           kasbonTermin: _selectedMode == 'kasbon' ? _kasbonTermin : null,
           kasbonReason: _selectedMode == 'kasbon' ? _kasbonReasonController.text.trim() : null,
-          attachments: _selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' ? _attachments : null,
+          attachments: _selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' && _selectedMode != 'pr_assets' ? _attachments : null,
         );
       } else {
         result = await _service.createPurchaseRequisition(
@@ -658,7 +664,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
           kasbonAmount: _selectedMode == 'kasbon' ? _kasbonAmount?.toDouble() : null,
           kasbonTermin: _selectedMode == 'kasbon' ? _kasbonTermin : null,
           kasbonReason: _selectedMode == 'kasbon' ? _kasbonReasonController.text.trim() : null,
-          attachments: _selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' ? _attachments : null,
+          attachments: _selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' && _selectedMode != 'pr_assets' ? _attachments : null,
         );
       }
 
@@ -726,7 +732,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             for (var entry in _outletAttachments.entries) {
               print('🔍   Outlet ${entry.key}: ${entry.value.length} file(s)');
             }
-            if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+            if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
               print('🔍 Starting upload attachments for PR Ops mode...');
               await _uploadPROpsAttachments(prId!);
             } else {
@@ -888,8 +894,8 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   }
 
   List<Map<String, dynamic>> _getFilteredCategories() {
-    // For pr_ops and purchase_payment modes, filter out categories containing "transport" and "kasbon"
-    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+    // For pr_ops, purchase_payment, and pr_assets modes, filter out categories containing "transport" and "kasbon"
+    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
       return _categories.where((cat) {
         final name = (cat['name'] ?? cat['nama'] ?? '').toString().toLowerCase();
         return !name.contains('transport') &&
@@ -902,7 +908,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
   }
 
   String? _validateItems() {
-    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment') {
+    if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets') {
       // Validate pr_ops and purchase_payment mode
       if (_outlets.isEmpty) {
         return 'Please add at least one outlet';
@@ -1256,7 +1262,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             const SizedBox(height: 24),
             
             // Mode-specific forms
-            if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment')
+            if (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets')
               _buildPROpsForm()
             else if (_selectedMode == 'travel_application')
               _buildTravelApplicationForm()
@@ -1270,8 +1276,8 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             
             const SizedBox(height: 24),
             
-            // Attachments (for non-pr_ops/purchase_payment)
-            if (_selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment')
+            // Attachments (for non-pr_ops/purchase_payment/pr_assets)
+            if (_selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' && _selectedMode != 'pr_assets')
               _buildAttachmentsSection(),
             
             const SizedBox(height: 24),
@@ -1349,6 +1355,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             items: const [
               DropdownMenuItem(value: 'pr_ops', child: Text('Purchase Requisition Ops')),
               DropdownMenuItem(value: 'purchase_payment', child: Text('Payment Application')),
+              DropdownMenuItem(value: 'pr_assets', child: Text('PR Assets')),
               DropdownMenuItem(value: 'travel_application', child: Text('Travel Application')),
               DropdownMenuItem(value: 'kasbon', child: Text('Kasbon')),
             ],
@@ -1408,7 +1415,7 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             },
           ),
           if (_selectedTicketId != null &&
-              (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment')) ...[
+              (_selectedMode == 'pr_ops' || _selectedMode == 'purchase_payment' || _selectedMode == 'pr_assets')) ...[
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
@@ -1485,8 +1492,8 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             ),
           const SizedBox(height: 16),
           
-          // Category (only for non-pr_ops/purchase_payment modes)
-          if (_selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment')
+          // Category (only for non-pr_ops/purchase_payment/pr_assets modes)
+          if (_selectedMode != 'pr_ops' && _selectedMode != 'purchase_payment' && _selectedMode != 'pr_assets')
             _buildCategoryField(),
           
           // Outlet (only for kasbon)
@@ -1855,6 +1862,8 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
             outlets: _outlets,
             categories: _categories,
             outletOptions: _outletOptions,
+            mode: _selectedMode,
+            assetItems: _assetItems,
             onOutletsChanged: (outlets) {
               setState(() {
                 _outlets = outlets;

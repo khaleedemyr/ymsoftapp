@@ -499,6 +499,10 @@ class _CustomerVoiceCaseDetailSheetState
                             _statusColor(item.status),
                           ),
                           _pillBadge(
+                            followUpStatusLabel(item.rawRow['follow_up_status']?.toString()),
+                            const Color(0xFF15803D),
+                          ),
+                          _pillBadge(
                             _severityLabel(item.severity),
                             _severityColor(item.severity),
                           ),
@@ -970,27 +974,15 @@ class _CustomerVoiceCaseDetailSheetState
   }
 
   String _statusLabel(String status) {
-    switch (status) {
-      case 'new':
-        return 'New';
-      case 'in_progress':
-        return 'In Progress';
-      case 'resolved':
-        return 'Resolved';
-      case 'ignored':
-        return 'Ignored';
-      default:
-        return status;
-    }
+    return voiceCaseStatusFormLabel(canonicalVoiceCaseStatus(status));
   }
 
   Color _statusColor(String status) {
-    switch (status) {
-      case 'resolved':
+    final canonical = canonicalVoiceCaseStatus(status);
+    switch (canonical) {
+      case 'courtesy_done':
         return const Color(0xFF059669);
-      case 'ignored':
-        return const Color(0xFF64748B);
-      case 'in_progress':
+      case 'internal_follow_up':
         return const Color(0xFFF59E0B);
       default:
         return const Color(0xFF3B82F6);
@@ -1065,6 +1057,7 @@ class _CaseUpdateCard extends StatefulWidget {
 
 class _CaseUpdateCardState extends State<_CaseUpdateCard> {
   late String _status;
+  late String _followUpStatus;
   int? _assignee;
   late List<int> _regionalUserIds;
   bool _saving = false;
@@ -1072,19 +1065,22 @@ class _CaseUpdateCardState extends State<_CaseUpdateCard> {
   @override
   void initState() {
     super.initState();
-    _status = widget.item.status;
+    _status = canonicalVoiceCaseStatus(widget.item.status);
+    _followUpStatus = widget.item.rawRow['follow_up_status']?.toString() ?? 'new';
     _assignee = widget.item.assignedTo;
     _regionalUserIds = List<int>.from(widget.initialRegionalUserIds);
   }
 
   static const List<MapEntry<String, String>> _statusOptions = [
     MapEntry('new', 'New'),
-    MapEntry('courtesy_by_cs', 'Courtesy by CS'),
-    MapEntry('follow_up_by_ops', 'Follow up by Ops'),
+    MapEntry('internal_follow_up', 'Internal Follow Up'),
+    MapEntry('courtesy_done', 'Courtesy Done'),
+  ];
+
+  static const List<MapEntry<String, String>> _followUpStatusOptions = [
+    MapEntry('new', 'New'),
+    MapEntry('on_progress', 'On Progress'),
     MapEntry('done', 'Done'),
-    MapEntry('in_progress', 'In Progress'),
-    MapEntry('resolved', 'Resolved'),
-    MapEntry('ignored', 'Ignored'),
   ];
 
   List<CustomerVoiceOption> _mergedAssignees() {
@@ -1182,7 +1178,7 @@ class _CaseUpdateCardState extends State<_CaseUpdateCard> {
           DropdownButtonFormField<String>(
             initialValue: _status,
             decoration: InputDecoration(
-              labelText: 'Status',
+              labelText: 'Courtesy Status',
               filled: true,
               fillColor: const Color(0xFFF8FAFC),
               border: OutlineInputBorder(
@@ -1211,6 +1207,40 @@ class _CaseUpdateCardState extends State<_CaseUpdateCard> {
                 )
                 .toList(),
             onChanged: (v) => setState(() => _status = v ?? _status),
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            initialValue: _followUpStatus,
+            decoration: InputDecoration(
+              labelText: 'Follow Up Status',
+              filled: true,
+              fillColor: const Color(0xFFF8FAFC),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _CvDetailTokens.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _CvDetailTokens.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(
+                  color: _CvDetailTokens.accent,
+                  width: 2,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 14,
+              ),
+            ),
+            items: _followUpStatusOptions
+                .map(
+                  (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                )
+                .toList(),
+            onChanged: (v) => setState(() => _followUpStatus = v ?? _followUpStatus),
           ),
           const SizedBox(height: 14),
           CustomerVoiceUserPickerTrigger(
@@ -1341,6 +1371,7 @@ class _CaseUpdateCardState extends State<_CaseUpdateCard> {
                             await widget.service.updateCase(
                               caseId: widget.item.id,
                               status: _status,
+                              followUpStatus: _followUpStatus,
                               assignedTo: _assignee,
                               regionalUserIds: _regionalUserIds,
                               notifyFollowerUserIds: const [],

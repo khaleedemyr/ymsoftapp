@@ -23,7 +23,7 @@ class PurchaseRequisitionApproval {
   final String? outletName;
   final double? amount;
   final String? status;
-  final String? mode; // pr_ops, purchase_payment, travel_application, kasbon
+  final String? mode; // pr_ops, purchase_payment, pr_assets, travel_application, kasbon
   final String? approverName;
   final int? unreadCommentsCount;
   final Map<String, dynamic>? division;
@@ -953,6 +953,152 @@ class EmployeeResignationApproval {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : null,
+    );
+  }
+}
+
+class AssetInventoryTransferApproval {
+  final int id;
+  final String? transferNumber;
+  final String? fromWarehouse;
+  final String? toWarehouse;
+  final String? status;
+  final String? notes;
+  final String? createdByName;
+  final DateTime? createdAt;
+
+  AssetInventoryTransferApproval({
+    required this.id,
+    this.transferNumber,
+    this.fromWarehouse,
+    this.toWarehouse,
+    this.status,
+    this.notes,
+    this.createdByName,
+    this.createdAt,
+  });
+
+  factory AssetInventoryTransferApproval.fromJson(Map<String, dynamic> json) {
+    return AssetInventoryTransferApproval(
+      id: json['id'] ?? 0,
+      transferNumber: json['transfer_number'] ?? json['number'],
+      fromWarehouse: json['from_warehouse']?['name'] ?? json['from_warehouse_name'],
+      toWarehouse: json['to_warehouse']?['name'] ?? json['to_warehouse_name'],
+      status: json['status'],
+      notes: json['notes'],
+      createdByName: json['created_by']?['name'] ?? json['created_by_name'],
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+    );
+  }
+}
+
+class AssetInventoryAdjustmentApproval {
+  final int id;
+  final String? adjustmentNumber;
+  final String? warehouseName;
+  final String? status;
+  final String? notes;
+  final String? adjustmentType;
+  final String? createdByName;
+  final DateTime? createdAt;
+
+  AssetInventoryAdjustmentApproval({
+    required this.id,
+    this.adjustmentNumber,
+    this.warehouseName,
+    this.status,
+    this.notes,
+    this.adjustmentType,
+    this.createdByName,
+    this.createdAt,
+  });
+
+  factory AssetInventoryAdjustmentApproval.fromJson(Map<String, dynamic> json) {
+    return AssetInventoryAdjustmentApproval(
+      id: json['id'] ?? 0,
+      adjustmentNumber: json['adjustment_number'] ?? json['number'],
+      warehouseName: json['warehouse']?['name'] ?? json['warehouse_name'],
+      status: json['status'],
+      notes: json['notes'],
+      adjustmentType: json['adjustment_type'] ?? json['type'],
+      createdByName: json['created_by']?['name'] ?? json['created_by_name'],
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+    );
+  }
+}
+
+class AssetServiceOrderApproval {
+  final int id;
+  final String? orderNumber;
+  final String? assetName;
+  final String? status;
+  final String? serviceType;
+  final String? description;
+  final String? createdByName;
+  final DateTime? createdAt;
+
+  AssetServiceOrderApproval({
+    required this.id,
+    this.orderNumber,
+    this.assetName,
+    this.status,
+    this.serviceType,
+    this.description,
+    this.createdByName,
+    this.createdAt,
+  });
+
+  factory AssetServiceOrderApproval.fromJson(Map<String, dynamic> json) {
+    return AssetServiceOrderApproval(
+      id: json['id'] ?? 0,
+      orderNumber: json['order_number'] ?? json['number'],
+      assetName: json['asset']?['name'] ?? json['asset_name'],
+      status: json['status'],
+      serviceType: json['service_type'],
+      description: json['description'],
+      createdByName: json['created_by']?['name'] ?? json['created_by_name'],
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+    );
+  }
+}
+
+class AssetDisposalApproval {
+  final int id;
+  final String? number;
+  final String? type;
+  final String? status;
+  final String? description;
+  final String? outletName;
+  final String? creatorName;
+  final String? date;
+
+  AssetDisposalApproval({
+    required this.id,
+    this.number,
+    this.type,
+    this.status,
+    this.description,
+    this.outletName,
+    this.creatorName,
+    this.date,
+  });
+
+  factory AssetDisposalApproval.fromJson(Map<String, dynamic> json) {
+    return AssetDisposalApproval(
+      id: json['id'] ?? 0,
+      number: json['number'],
+      type: json['type'],
+      status: json['status'],
+      description: json['notes'] ?? json['description'],
+      outletName: json['outlet_name'],
+      creatorName: json['creator_name'],
+      date: json['date'],
     );
   }
 }

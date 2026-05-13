@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,7 +11,7 @@ import '../../widgets/app_loading_indicator.dart';
 import '../../widgets/app_scaffold.dart';
 
 class _MvcRowEdit {
-  final int? dbId;
+  int? dbId;
   final int no;
   final String category;
   final String checklistPoint;
@@ -97,6 +98,7 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
 
   final _service = MarketingVisitChecklistService();
   final _picker = ImagePicker();
+  Timer? _draftTimer;
 
   bool _loading = true;
   bool _saving = false;
@@ -109,7 +111,14 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
 
   List<_MvcRowEdit> _rows = [];
 
-  bool get _isEdit => widget.checklistId != null;
+  int? _checklistId;
+  String? _checklistStatus;
+  bool _creatingServerDraft = false;
+
+  bool get _hasServerId => _checklistId != null;
+  bool get _isServerDraft => _checklistStatus == 'draft';
+  /// Header outlet/tanggal dikunci di server setelah draft dibuat (tidak di-overwrite tiap autosave).
+  bool get _lockVisitHeader => _isServerDraft;
 
   List<List<dynamic>> _parseTemplate(dynamic raw) {
     if (raw is! List) return [];
@@ -123,11 +132,25 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
   @override
   void initState() {
     super.initState();
+    _checklistId = widget.checklistId;
     _bootstrap();
   }
 
   @override
+  void didUpdateWidget(covariant MarketingVisitChecklistFormScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.checklistId != oldWidget.checklistId) {
+      _checklistId = widget.checklistId;
+      _bootstrap();
+    }
+  }
+
+  @override
   void dispose() {
+    _draftTimer?.cancel();
+    if (_checklistId != null && _checklistStatus == 'draft' && !_loading && _rows.isNotEmpty) {
+      unawaited(_flushServerAutosave());
+    }
     for (final r in _rows) {
       r.dispose();
     }
@@ -135,13 +158,15 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
   }
 
   Future<void> _bootstrap() async {
+    _draftTimer?.cancel();
+    _draftTimer = null;
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    if (_isEdit) {
-      final detail = await _service.fetchDetail(widget.checklistId!);
+    if (_checklistId != null) {
+      final detail = await _service.fetchDetail(_checklistId!);
       if (!mounted) return;
       if (detail['success'] != true) {
         setState(() {
@@ -159,6 +184,7 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
         final m = Map<String, dynamic>.from(cl);
         _userDisplayName = m['user_name']?.toString() ?? '-';
         _outletId = int.tryParse('${m['outlet_id']}');
+        _checklistStatus = m['status']?.toString() ?? 'submitted';
         final vd = m['visit_date']?.toString();
         if (vd != null && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(vd)) {
           final p = vd.split('-');
@@ -174,7 +200,9 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
         }
         _rows = items.map((e) => _MvcRowEdit.fromApiItem(e)).toList();
       }
+      if (!mounted) return;
       setState(() => _loading = false);
+      _startDraftTimer();
       return;
     }
 
@@ -197,7 +225,100 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
     }
     _rows = templateRows.map(_MvcRowEdit.fromTemplateRow).toList();
 
+    if (!mounted) return;
     setState(() => _loading = false);
+    _startDraftTimer();
+  }
+
+  String _visitDateYmd() {
+    return '${_visitDate.year}-${_visitDate.month.toString().padLeft(2, '0')}-${_visitDate.day.toString().padLeft(2, '0')}';
+  }
+
+  void _startDraftTimer() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted || _loading || _rows.isEmpty) return;
+      unawaited(_runPeriodicServerSave());
+    });
+  }
+
+  List<Map<String, dynamic>> _buildItemsPayload() {
+    return _rows
+        .map((r) => <String, dynamic>{
+              if (r.dbId != null) 'id': r.dbId,
+              'no': r.no,
+              'category': r.category,
+              'checklist_point': r.checklistPoint,
+              'checked': r.checked,
+              'actual_condition': r.actualCtrl.text.trim(),
+              'action': r.actionCtrl.text.trim(),
+              'remarks': r.remarksCtrl.text.trim(),
+            })
+        .toList();
+  }
+
+  List<List<XFile>> _buildPhotosPerIndex() {
+    return _rows.map((r) => List<XFile>.from(r.newPhotos)).toList();
+  }
+
+  Future<void> _flushServerAutosave() async {
+    if (_checklistId == null || !_isServerDraft || _loading || _rows.isEmpty) return;
+    try {
+      await _service.autosaveMultipart(
+        checklistId: _checklistId!,
+        itemsPayload: _buildItemsPayload(),
+        photosPerIndex: _buildPhotosPerIndex(),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _ensureServerDraftOnce() async {
+    if (_creatingServerDraft || _checklistId != null || _loading || _rows.isEmpty) return;
+    if (_outletId == null || _outletId! <= 0) return;
+    _creatingServerDraft = true;
+    try {
+      final res = await _service.createDraftMultipart(
+        outletId: _outletId!,
+        visitDateYmd: _visitDateYmd(),
+        itemsPayload: _buildItemsPayload(),
+        photosPerIndex: _buildPhotosPerIndex(),
+      );
+      if (!mounted) return;
+      if (res['success'] == true) {
+        final id = int.tryParse('${res['id']}');
+        if (id != null) {
+          final firstDraft = _checklistId == null;
+          setState(() {
+            _checklistId = id;
+            _checklistStatus = 'draft';
+          });
+          await _bootstrap();
+          if (firstDraft && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Draft tersimpan di server. Outlet & tanggal terkunci sampai disimpan final.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      }
+    } finally {
+      _creatingServerDraft = false;
+    }
+  }
+
+  Future<void> _runPeriodicServerSave() async {
+    if (_loading || _rows.isEmpty) return;
+    if (_checklistId == null) {
+      if (_outletId != null && _outletId! > 0) {
+        await _ensureServerDraftOnce();
+      }
+      return;
+    }
+    if (_isServerDraft) {
+      await _flushServerAutosave();
+    }
   }
 
   Future<void> _pickVisitDate() async {
@@ -232,11 +353,26 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
       return;
     }
 
+    if (_checklistId == null) {
+      await _ensureServerDraftOnce();
+      if (!mounted) return;
+      if (_checklistId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal membuat draft di server. Periksa koneksi lalu coba lagi.')),
+        );
+        return;
+      }
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_isEdit ? 'Update checklist?' : 'Simpan checklist?'),
-        content: const Text('Pastikan data sudah benar sebelum menyimpan.'),
+        title: Text(_isServerDraft ? 'Simpan checklist (final)?' : 'Update checklist?'),
+        content: Text(
+          _isServerDraft
+              ? 'Isian terakhir akan disinkronkan, lalu status berubah dari draft menjadi tersimpan.'
+              : 'Pastikan data sudah benar sebelum menyimpan.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Ya')),
@@ -247,37 +383,42 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
 
     setState(() => _saving = true);
 
-    final visitStr =
-        '${_visitDate.year}-${_visitDate.month.toString().padLeft(2, '0')}-${_visitDate.day.toString().padLeft(2, '0')}';
+    final visitStr = _visitDateYmd();
+    final itemsPayload = _buildItemsPayload();
+    final photosPerIndex = _buildPhotosPerIndex();
 
-    final itemsPayload = _rows
-        .map((r) => <String, dynamic>{
-              if (r.dbId != null) 'id': r.dbId,
-              'no': r.no,
-              'category': r.category,
-              'checklist_point': r.checklistPoint,
-              'checked': r.checked,
-              'actual_condition': r.actualCtrl.text.trim(),
-              'action': r.actionCtrl.text.trim(),
-              'remarks': r.remarksCtrl.text.trim(),
-            })
-        .toList();
-
-    final photosPerIndex = _rows.map((r) => List<XFile>.from(r.newPhotos)).toList();
-
-    final res = await _service.submitMultipart(
-      isEdit: _isEdit,
-      checklistId: widget.checklistId,
-      outletId: _outletId!,
-      visitDateYmd: visitStr,
-      itemsPayload: itemsPayload,
-      photosPerIndex: photosPerIndex,
-    );
+    Map<String, dynamic> res;
+    if (_isServerDraft) {
+      final auto = await _service.autosaveMultipart(
+        checklistId: _checklistId!,
+        itemsPayload: itemsPayload,
+        photosPerIndex: photosPerIndex,
+      );
+      if (auto['success'] != true) {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(auto['message']?.toString() ?? 'Gagal sinkron sebelum final.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      res = await _service.finalizeChecklist(_checklistId!);
+    } else {
+      res = await _service.submitMultipart(
+        isEdit: true,
+        checklistId: _checklistId,
+        outletId: _outletId!,
+        visitDateYmd: visitStr,
+        itemsPayload: itemsPayload,
+        photosPerIndex: photosPerIndex,
+      );
+    }
 
     if (!mounted) return;
     setState(() => _saving = false);
 
     if (res['success'] == true) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['message']?.toString() ?? 'Tersimpan.')));
       Navigator.pop(context);
     } else {
@@ -311,7 +452,7 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: _isEdit ? 'Edit Checklist' : 'Tambah Checklist',
+      title: _hasServerId ? 'Edit Checklist' : 'Tambah Checklist',
       showDrawer: false,
       body: _loading
           ? const Center(child: AppLoadingIndicator(size: 36, color: _primary))
@@ -400,6 +541,29 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
               ),
             ],
           ),
+          if (_isServerDraft) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.edit_note_rounded, size: 18, color: Color(0xFFB45309)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Draft di server: outlet & tanggal tidak diubah lagi. Isian disimpan otomatis ±15 detik. Tombol Simpan hanya menyelesaikan (draft → tersimpan).',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           Text('Outlet', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _slate600.withValues(alpha: 0.9))),
           const SizedBox(height: 8),
@@ -426,7 +590,7 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
                     ),
                   ];
                 }).toList(),
-                onChanged: (v) => setState(() => _outletId = v),
+                onChanged: _lockVisitHeader ? null : (v) => setState(() => _outletId = v),
               ),
             ),
           ),
@@ -437,7 +601,7 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
-              onTap: _pickVisitDate,
+              onTap: _lockVisitHeader ? null : _pickVisitDate,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
@@ -470,6 +634,24 @@ class _MarketingVisitChecklistFormScreenState extends State<MarketingVisitCheckl
                 Expanded(child: Text(_userDisplayName, style: const TextStyle(fontWeight: FontWeight.w600, color: _slate900))),
               ],
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.save_outlined, size: 16, color: _primary.withValues(alpha: 0.75)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _hasServerId && _isServerDraft
+                      ? 'Isian disimpan otomatis ke server setiap ±15 detik. Header outlet/tanggal hanya ditulis sekali saat draft dibuat.'
+                      : _hasServerId
+                          ? 'Checklist sudah ada di server. Simpan untuk memperbarui data (termasuk foto baru).'
+                          : 'Pilih outlet & tanggal: draft server dibuat otomatis (±15 detik) lalu isian tersimpan berkala. Jika keluar, lanjutkan lewat Edit dari daftar.',
+                  style: TextStyle(fontSize: 11, color: _slate500.withValues(alpha: 0.95), height: 1.35),
+                ),
+              ),
+            ],
           ),
         ],
       ),

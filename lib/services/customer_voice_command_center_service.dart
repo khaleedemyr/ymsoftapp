@@ -38,6 +38,7 @@ class CustomerVoiceCommandCenterService {
     String? dateFrom,
     String? dateTo,
     int page = 1,
+    String? followUpStatus,
   }) async {
     final headers = await _headers();
     final query = <String, String>{
@@ -48,6 +49,9 @@ class CustomerVoiceCommandCenterService {
 
     if (status != null && status.isNotEmpty && status != 'all') {
       query['status'] = status;
+    }
+    if (followUpStatus != null && followUpStatus.isNotEmpty && followUpStatus != 'all') {
+      query['follow_up_status'] = followUpStatus;
     }
     if (severity != null && severity.isNotEmpty && severity != 'all') {
       query['severity'] = severity;
@@ -243,6 +247,7 @@ class CustomerVoiceCommandCenterService {
     int? assignedTo,
     List<int>? regionalUserIds,
     List<int>? notifyFollowerUserIds,
+    String? followUpStatus,
   }) async {
     final headers = await _headers(withJsonBody: true);
     final uri = Uri.parse(
@@ -254,6 +259,7 @@ class CustomerVoiceCommandCenterService {
       headers: headers,
       body: jsonEncode({
         'status': status,
+        'follow_up_status': followUpStatus ?? 'new',
         'assigned_to': assignedTo,
         // Selaras web Index.vue: kosongkan follower lama di meta.
         'notify_follower_user_ids': notifyFollowerUserIds ?? <int>[],

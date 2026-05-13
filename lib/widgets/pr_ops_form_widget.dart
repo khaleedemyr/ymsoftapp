@@ -5,12 +5,15 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:image_picker/image_picker.dart';
 import '../services/purchase_requisition_service.dart';
+import '../services/auth_service.dart';
 import 'app_loading_indicator.dart';
 
 class PROpsFormWidget extends StatefulWidget {
   final List<Map<String, dynamic>> outlets;
   final List<Map<String, dynamic>> categories;
   final List<Map<String, dynamic>> outletOptions;
+  final String mode;
+  final List<Map<String, dynamic>> assetItems;
   final Function(List<Map<String, dynamic>>) onOutletsChanged;
   final Function(double) onTotalChanged;
   final Function(Map<int, List<File>>)? onAttachmentsChanged;
@@ -20,6 +23,8 @@ class PROpsFormWidget extends StatefulWidget {
     required this.outlets,
     required this.categories,
     required this.outletOptions,
+    this.mode = 'pr_ops',
+    this.assetItems = const [],
     required this.onOutletsChanged,
     required this.onTotalChanged,
     this.onAttachmentsChanged,
@@ -1080,31 +1085,34 @@ class _PROpsFormWidgetState extends State<PROpsFormWidget> {
           const SizedBox(height: 16),
           
           // Item Name (Full Width)
-          TextFormField(
-            key: ValueKey('item_name_${outletIdx}_${categoryIdx}_${itemIdx}'),
-            controller: itemNameController,
-            textDirection: ui.TextDirection.ltr,
-            textAlign: TextAlign.left,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9\s\-_.,]')),
-            ],
-            decoration: InputDecoration(
-              labelText: 'Item Name *',
-              hintText: 'Enter item name',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              filled: true,
-              fillColor: Colors.grey.shade50,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          if (widget.mode == 'pr_assets')
+            _buildAssetItemAutocomplete(outletIdx, categoryIdx, itemIdx, item, itemNameController, unitController)
+          else
+            TextFormField(
+              key: ValueKey('item_name_${outletIdx}_${categoryIdx}_${itemIdx}'),
+              controller: itemNameController,
+              textDirection: ui.TextDirection.ltr,
+              textAlign: TextAlign.left,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9\s\-_.,]')),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Item Name *',
+                hintText: 'Enter item name',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              ),
+              style: const TextStyle(
+                fontSize: 16,
+                textBaseline: TextBaseline.alphabetic,
+              ),
+              onChanged: (value) {
+                item['item_name'] = value;
+                widget.onOutletsChanged(widget.outlets);
+              },
             ),
-            style: const TextStyle(
-              fontSize: 16,
-              textBaseline: TextBaseline.alphabetic,
-            ),
-            onChanged: (value) {
-              item['item_name'] = value;
-              widget.onOutletsChanged(widget.outlets);
-            },
-          ),
           const SizedBox(height: 16),
           
           // Qty and Unit Row
@@ -1246,6 +1254,111 @@ class _PROpsFormWidgetState extends State<PROpsFormWidget> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAssetItemAutocomplete(
+    int outletIdx,
+    int categoryIdx,
+    int itemIdx,
+    Map<String, dynamic> item,
+    TextEditingController itemNameController,
+    TextEditingController unitController,
+  ) {
+    return Autocomplete<Map<String, dynamic>>(
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        if (textEditingValue.text.isEmpty) return const Iterable.empty();
+        final query = textEditingValue.text.toLowerCase();
+        return widget.assetItems.where((assetItem) {
+          final name = (assetItem['name'] ?? '').toString().toLowerCase();
+          final sku = (assetItem['sku'] ?? '').toString().toLowerCase();
+          final category = (assetItem['category_name'] ?? '').toString().toLowerCase();
+          return name.contains(query) || sku.contains(query) || category.contains(query);
+        });
+      },
+      displayStringForOption: (option) => option['name']?.toString() ?? '',
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        if (controller.text.isEmpty && itemNameController.text.isNotEmpty) {
+          controller.text = itemNameController.text;
+        }
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: 'Item Name *',
+            hintText: 'Search asset item...',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            prefixIcon: const Icon(Icons.search, size: 18),
+            filled: true,
+            fillColor: Colors.grey.shade50,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          ),
+          style: const TextStyle(fontSize: 16),
+          onChanged: (value) {
+            item['item_name'] = value;
+            widget.onOutletsChanged(widget.outlets);
+          },
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 250, maxWidth: 300),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final assetItem = options.elementAt(index);
+                  final imageUrl = assetItem['image'] != null
+                      ? '${AuthService.storageUrl}/storage/${assetItem['image']}'
+                      : null;
+                  return ListTile(
+                    dense: true,
+                    leading: imageUrl != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.network(
+                              imageUrl,
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.image_not_supported, size: 36),
+                            ),
+                          )
+                        : const Icon(Icons.inventory_2, size: 36, color: Colors.grey),
+                    title: Text(
+                      assetItem['name'] ?? '',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${assetItem['category_name'] ?? ''} • ${assetItem['sku'] ?? ''}',
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                    ),
+                    onTap: () => onSelected(assetItem),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      onSelected: (selectedItem) {
+        final selectedName = selectedItem['name'] ?? '';
+        final selectedUnit = selectedItem['unit_name'] ?? selectedItem['unit'] ?? '';
+        setState(() {
+          item['item_name'] = selectedName;
+          item['unit'] = selectedUnit;
+        });
+        itemNameController.text = selectedName;
+        unitController.text = selectedUnit;
+        widget.onOutletsChanged(widget.outlets);
+      },
     );
   }
 

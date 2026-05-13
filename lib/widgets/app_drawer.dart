@@ -9,6 +9,7 @@ import '../screens/categories/category_index_screen.dart';
 import '../screens/sub_categories/sub_category_index_screen.dart';
 import '../screens/units/unit_index_screen.dart';
 import '../screens/items/item_index_screen.dart';
+import '../screens/lost_breakage/lost_breakage_list_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -192,6 +193,32 @@ class AppDrawer extends StatelessWidget {
                           context,
                           MaterialPageRoute(
                             builder: (context) => const ItemIndexScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+
+                const Divider(height: 32),
+
+                // Menu Group: Outlet Management
+                _buildMenuGroup(
+                  context,
+                  'Outlet Management',
+                  [
+                    _buildMenuItem(
+                      context,
+                      icon: Icons.broken_image_outlined,
+                      title: 'Lost & Breakage',
+                      subtitle: 'Kehilangan & kerusakan aset',
+                      color: Colors.orange,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LostBreakageListScreen(),
                           ),
                         );
                       },

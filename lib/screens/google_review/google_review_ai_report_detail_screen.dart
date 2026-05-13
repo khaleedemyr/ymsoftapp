@@ -55,12 +55,15 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
         return 'Positif';
       case 'neutral':
         return 'Netral';
+      case 'minor':
       case 'mild_negative':
-        return 'Negatif ringan';
+        return 'Minor';
+      case 'major':
       case 'negative':
-        return 'Negatif';
+        return 'Major';
+      case 'critical':
       case 'severe':
-        return 'Sangat parah';
+        return 'Critical';
       default:
         return key;
     }
@@ -72,10 +75,13 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
         return const Color(0xFF166534);
       case 'neutral':
         return const Color(0xFF334155);
+      case 'minor':
       case 'mild_negative':
         return const Color(0xFF92400E);
+      case 'major':
       case 'negative':
         return const Color(0xFFB91C1C);
+      case 'critical':
       case 'severe':
         return const Color(0xFF7F1D1D);
       default:
@@ -290,7 +296,7 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
   }
 
   Widget _buildSeverityChips() {
-    final keys = const ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
+    final keys = const ['positive', 'neutral', 'minor', 'major', 'critical'];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -353,6 +359,68 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
     );
   }
 
+  Future<void> _showSeverityPicker(Map<String, dynamic> item) async {
+    final options = ['positive', 'neutral', 'minor', 'major', 'critical'];
+    final current = item['severity']?.toString() ?? '';
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Ubah Severity', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
+            const Divider(),
+            ...options.map((opt) => ListTile(
+              leading: CircleAvatar(
+                radius: 12,
+                backgroundColor: _sevColor(opt).withValues(alpha: 0.15),
+                child: Icon(Icons.circle, size: 14, color: _sevColor(opt)),
+              ),
+              title: Text(
+                _sevLabel(opt),
+                style: TextStyle(
+                  fontWeight: opt == current ? FontWeight.w700 : FontWeight.w500,
+                  color: _sevColor(opt),
+                ),
+              ),
+              trailing: opt == current ? const Icon(Icons.check_rounded, color: Colors.green) : null,
+              onTap: () => Navigator.pop(ctx, opt),
+            )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (selected == null || selected == current || !mounted) return;
+
+    final itemId = _toInt(item['id']);
+    if (itemId <= 0) return;
+
+    final result = await _service.updateItemSeverity(itemId, selected);
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      setState(() {
+        item['severity'] = selected;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Severity diubah ke ${_sevLabel(selected)}')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error']?.toString() ?? result['message']?.toString() ?? 'Gagal mengubah severity')),
+      );
+    }
+  }
+
   Widget _buildItemCard(Map<String, dynamic> item) {
     final author = item['author']?.toString().isNotEmpty == true ? item['author'].toString() : '-';
     final text = item['text']?.toString().isNotEmpty == true ? item['text'].toString() : '-';
@@ -371,15 +439,26 @@ class _GoogleReviewAiReportDetailScreenState extends State<GoogleReviewAiReportD
             Row(
               children: [
                 Expanded(child: Text(author, style: const TextStyle(fontWeight: FontWeight.w700))),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _sevColor(severity).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    _sevLabel(severity),
-                    style: TextStyle(color: _sevColor(severity), fontWeight: FontWeight.w700, fontSize: 12),
+                GestureDetector(
+                  onTap: () => _showSeverityPicker(item),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _sevColor(severity).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _sevColor(severity).withValues(alpha: 0.3), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _sevLabel(severity),
+                          style: TextStyle(color: _sevColor(severity), fontWeight: FontWeight.w700, fontSize: 12),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.edit_rounded, size: 12, color: _sevColor(severity)),
+                      ],
+                    ),
                   ),
                 ),
               ],

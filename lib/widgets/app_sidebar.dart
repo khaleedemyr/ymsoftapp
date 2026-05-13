@@ -40,6 +40,14 @@ import '../screens/inventory/warehouse_stock_position_screen.dart';
 import '../screens/inventory/warehouse_stock_card_screen.dart';
 import '../screens/outlet_inventory/outlet_stock_card_screen.dart';
 import '../screens/outlet_inventory/category_cost_outlet_index_screen.dart';
+import '../screens/lost_breakage/lost_breakage_list_screen.dart';
+import '../screens/asset_good_receive/asset_good_receive_index_screen.dart';
+import '../screens/asset_inventory_transfer/asset_inventory_transfer_index_screen.dart';
+import '../screens/asset_inventory_adjustment/asset_inventory_adjustment_index_screen.dart';
+import '../screens/asset_service_order/asset_service_order_index_screen.dart';
+import '../screens/asset_disposal/asset_disposal_index_screen.dart';
+import '../screens/asset_inventory_report/asset_inventory_report_screen.dart';
+import '../screens/outlet_serial_receive/outlet_serial_receive_list_screen.dart';
 import '../screens/warehouse_internal_use_waste/warehouse_internal_use_waste_index_screen.dart';
 import '../screens/manual_point/manual_point_index_screen.dart';
 import '../screens/members/member_index_screen.dart';
@@ -723,6 +731,12 @@ class _AppSidebarState extends State<AppSidebar> {
       '/outlet-inventory/stock-card', // Stock Card Outlet
       '/internal-use-waste', // Warehouse Internal Use & Waste
       '/outlet-internal-use-waste', // Category Cost Outlet
+      '/lost-breakage', // Lost & Breakage
+      '/asset-good-receives', // Asset Good Receive
+      '/asset-inventory-transfers', // Asset Inventory Transfer
+      '/asset-inventory-adjustments', // Asset Stock Adjustment
+      '/asset-service-orders', // Asset Service
+      '/outlet-serial-receive', // GR Nomor Seri
       '/outlet-transfer', // Pindah Outlet (Outlet Transfer)
       '/outlet-revenue-targets', // Revenue Targets
       '/internal-warehouse-transfer', // Internal Warehouse Transfer
@@ -1246,6 +1260,62 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const CategoryCostOutletIndexScreen(),
+        ),
+      );
+    } else if (route == '/lost-breakage') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LostBreakageListScreen(),
+        ),
+      );
+    } else if (route == '/asset-good-receives') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetGoodReceiveIndexScreen(),
+        ),
+      );
+    } else if (route == '/asset-inventory-transfers') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetInventoryTransferIndexScreen(),
+        ),
+      );
+    } else if (route == '/asset-inventory-adjustments') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetInventoryAdjustmentIndexScreen(),
+        ),
+      );
+    } else if (route == '/asset-service-orders') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetServiceOrderIndexScreen(),
+        ),
+      );
+    } else if (route == '/asset-disposals') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetDisposalIndexScreen(),
+        ),
+      );
+    } else if (route == '/asset-inventory-report') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetInventoryReportScreen(),
+        ),
+      );
+    } else if (route == '/outlet-serial-receive') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const OutletSerialReceiveListScreen(),
         ),
       );
     } else if (route == '/outlet-transfer') {

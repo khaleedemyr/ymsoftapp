@@ -272,6 +272,8 @@ class _PurchaseRequisitionListScreenState extends State<PurchaseRequisitionListS
         return 'PR Ops';
       case 'purchase_payment':
         return 'Payment';
+      case 'pr_assets':
+        return 'PR Assets';
       case 'travel_application':
         return 'Travel';
       case 'kasbon':

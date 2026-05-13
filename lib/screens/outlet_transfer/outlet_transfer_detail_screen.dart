@@ -34,6 +34,9 @@ class _OutletTransferDetailScreenState extends State<OutletTransferDetailScreen>
     if (mounted) {
       setState(() {
         _transfer = result?['transfer'] ?? result;
+        if (_transfer != null && result?['serial_items'] != null) {
+          _transfer!['serial_items'] = result!['serial_items'];
+        }
         _canApprove = result?['can_approve'] == true;
         _isLoading = false;
       });
@@ -189,6 +192,8 @@ class _OutletTransferDetailScreenState extends State<OutletTransferDetailScreen>
     final creatorAvatar = t['creator']?['avatar']?.toString();
     final notes = t['notes']?.toString();
     final items = (t['items'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+    final serialItems = (t['serial_items'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+    final transferMode = (t['transfer_mode'] ?? 'normal').toString();
     final flows = (t['approval_flows'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
 
     return SingleChildScrollView(
@@ -211,14 +216,45 @@ class _OutletTransferDetailScreenState extends State<OutletTransferDetailScreen>
               _InfoRow(label: 'Keterangan', value: (notes != null && notes.isNotEmpty) ? notes : '-'),
             ],
           ),
+          if (transferMode != 'normal') ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: transferMode == 'serial' ? const Color(0xFFEEF2FF) : const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.qr_code_scanner_rounded, size: 14,
+                    color: transferMode == 'serial' ? const Color(0xFF6366F1) : const Color(0xFFB45309)),
+                  const SizedBox(width: 6),
+                  Text(
+                    transferMode == 'serial' ? 'Mode Serial' : 'Mode Mixed',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                      color: transferMode == 'serial' ? const Color(0xFF6366F1) : const Color(0xFFB45309)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (flows.isNotEmpty) ...[
             const SizedBox(height: 16),
             _buildApprovalFlowCard(flows),
           ],
-          const SizedBox(height: 16),
-          const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-          const SizedBox(height: 10),
-          ...items.map(_buildItemCard),
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+            const SizedBox(height: 10),
+            ...items.map(_buildItemCard),
+          ],
+          if (serialItems.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Serial Items', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+            const SizedBox(height: 10),
+            ...serialItems.map(_buildSerialItemCard),
+          ],
           const SizedBox(height: 24),
           if (status == 'draft')
             SizedBox(
@@ -435,6 +471,40 @@ class _OutletTransferDetailScreenState extends State<OutletTransferDetailScreen>
               if (note != null && note.isNotEmpty) ...[const SizedBox(width: 8), _buildPill(Icons.note, note)],
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialItemCard(Map<String, dynamic> item) {
+    final serialNumber = item['serial_number']?.toString() ?? '-';
+    final name = item['item_name']?.toString() ?? '-';
+    final qty = item['qty']?.toString() ?? '0';
+    final unit = item['unit_name']?.toString() ?? '-';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.2)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.qr_code, size: 16, color: Color(0xFF6366F1)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(serialNumber, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)))),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(name, style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
+          const SizedBox(height: 6),
+          _buildPill(Icons.scale_rounded, '$qty $unit'),
         ],
       ),
     );

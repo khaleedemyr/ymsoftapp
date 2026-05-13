@@ -212,7 +212,9 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
                           ? 'payment'
                           : modeStr == 'pr_ops'
                               ? 'pr ops'
-                              : modeStr;
+                              : modeStr == 'pr_assets'
+                                  ? 'pr assets'
+                                  : modeStr;
               return pr.prNumber.toLowerCase().contains(query) ||
                   (pr.title?.toLowerCase().contains(query) ?? false) ||
                   (pr.divisionName?.toLowerCase().contains(query) ?? false) ||
@@ -1089,6 +1091,10 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
                   DropdownMenuItem<String?>(
                     value: 'purchase_payment',
                     child: Text('Purchase Payment'),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: 'pr_assets',
+                    child: Text('PR Assets'),
                   ),
                   DropdownMenuItem<String?>(
                     value: 'travel_application',

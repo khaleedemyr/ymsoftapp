@@ -29,6 +29,7 @@ class _CustomerVoiceCommandCenterScreenState
   String? _errorMessage;
 
   String _statusFilter = 'all';
+  String _followUpStatusFilter = 'all';
   String _severityFilter = 'all';
   String _sourceFilter = 'all';
   int? _outletFilter;
@@ -38,12 +39,18 @@ class _CustomerVoiceCommandCenterScreenState
   DateTime? _dateTo;
   int _currentPage = 1;
 
-  /// Opsi filter status sama dengan web (`voiceCaseStatusFilterValues` di backend).
+  /// Opsi filter courtesy status.
   static const List<_FilterOption> _statusOptions = [
-    _FilterOption('all', 'Semua status'),
+    _FilterOption('all', 'Semua Courtesy Status'),
     _FilterOption('new', 'New'),
-    _FilterOption('courtesy_by_cs', 'Courtesy by CS'),
-    _FilterOption('follow_up_by_ops', 'Follow Up by Ops'),
+    _FilterOption('internal_follow_up', 'Internal Follow Up'),
+    _FilterOption('courtesy_done', 'Courtesy Done'),
+  ];
+
+  static const List<_FilterOption> _followUpStatusOptions = [
+    _FilterOption('all', 'Semua Follow Up Status'),
+    _FilterOption('new', 'New'),
+    _FilterOption('on_progress', 'On Progress'),
     _FilterOption('done', 'Done'),
   ];
 
@@ -95,6 +102,7 @@ class _CustomerVoiceCommandCenterScreenState
     try {
       final dashboard = await _service.getDashboard(
         status: _statusFilter,
+        followUpStatus: _followUpStatusFilter,
         severity: _severityFilter,
         sourceType: _sourceFilter,
         outletId: _outletFilter,
@@ -263,6 +271,7 @@ class _CustomerVoiceCommandCenterScreenState
     }
 
     String localStatus = _statusFilter;
+    String localFollowUpStatus = _followUpStatusFilter;
     String localSeverity = _severityFilter;
     String localSource = _sourceFilter;
     int? localOutlet = _outletFilter;
@@ -315,7 +324,7 @@ class _CustomerVoiceCommandCenterScreenState
                     ),
                     const SizedBox(height: 18),
                     _buildDropdownField<String>(
-                      label: 'Status',
+                      label: 'Courtesy Status',
                       value: localStatus,
                       items: _statusOptions
                           .map(
@@ -327,6 +336,22 @@ class _CustomerVoiceCommandCenterScreenState
                           .toList(),
                       onChanged: (value) {
                         setModalState(() => localStatus = value ?? 'all');
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    _buildDropdownField<String>(
+                      label: 'Follow Up Status',
+                      value: localFollowUpStatus,
+                      items: _followUpStatusOptions
+                          .map(
+                            (option) => DropdownMenuItem<String>(
+                              value: option.value,
+                              child: Text(option.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setModalState(() => localFollowUpStatus = value ?? 'all');
                       },
                     ),
                     const SizedBox(height: 14),
@@ -479,6 +504,7 @@ class _CustomerVoiceCommandCenterScreenState
                             onPressed: () {
                               setState(() {
                                 _statusFilter = 'all';
+                                _followUpStatusFilter = 'all';
                                 _severityFilter = 'all';
                                 _sourceFilter = 'all';
                                 _outletFilter = null;
@@ -506,6 +532,7 @@ class _CustomerVoiceCommandCenterScreenState
                             onPressed: () {
                               setState(() {
                                 _statusFilter = localStatus;
+                                _followUpStatusFilter = localFollowUpStatus;
                                 _severityFilter = localSeverity;
                                 _sourceFilter = localSource;
                                 _outletFilter = localOutlet;
@@ -731,8 +758,8 @@ class _CustomerVoiceCommandCenterScreenState
       children: [
         _buildQuickChip(
           label: 'Follow Up',
-          isActive: _statusFilter == 'follow_up_by_ops',
-          onTap: () => _applyQuickFilter(status: 'follow_up_by_ops'),
+          isActive: _statusFilter == 'internal_follow_up',
+          onTap: () => _applyQuickFilter(status: 'internal_follow_up'),
         ),
         _buildQuickChip(
           label: 'Critical',
@@ -750,6 +777,7 @@ class _CustomerVoiceCommandCenterScreenState
           onTap: () {
             setState(() {
               _statusFilter = 'all';
+              _followUpStatusFilter = 'all';
               _severityFilter = 'all';
               _sourceFilter = 'all';
               _outletFilter = null;
@@ -1010,6 +1038,7 @@ class _CustomerVoiceCommandCenterScreenState
 
   bool get _hasActiveFilters {
     return _statusFilter != 'all' ||
+        _followUpStatusFilter != 'all' ||
         _severityFilter != 'all' ||
         _sourceFilter != 'all' ||
         _outletFilter != null ||

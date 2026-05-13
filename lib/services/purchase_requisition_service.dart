@@ -351,7 +351,7 @@ class PurchaseRequisitionService {
       );
 
       // Add attachments (for non-pr_ops/purchase_payment)
-      if (attachments != null && attachments.isNotEmpty && mode != 'pr_ops' && mode != 'purchase_payment') {
+      if (attachments != null && attachments.isNotEmpty && mode != 'pr_ops' && mode != 'purchase_payment' && mode != 'pr_assets') {
         for (int i = 0; i < attachments.length; i++) {
           final file = attachments[i];
           final fileName = file.path.split('/').last;
@@ -365,7 +365,7 @@ class PurchaseRequisitionService {
         }
       }
       
-      // For pr_ops/purchase_payment: upload attachments per outlet after PR is created
+      // For pr_ops/purchase_payment/pr_assets: upload attachments per outlet after PR is created
       // Note: Attachments per outlet need to be uploaded separately after PR creation
       // This is handled in the create screen after successful PR creation
 
@@ -449,7 +449,7 @@ class PurchaseRequisitionService {
         kasbonReason: kasbonReason,
       );
 
-      if (attachments != null && attachments.isNotEmpty && mode != 'pr_ops' && mode != 'purchase_payment') {
+      if (attachments != null && attachments.isNotEmpty && mode != 'pr_ops' && mode != 'purchase_payment' && mode != 'pr_assets') {
         for (int i = 0; i < attachments.length; i++) {
           final file = attachments[i];
           final fileName = file.path.split('/').last;
@@ -1113,6 +1113,40 @@ class PurchaseRequisitionService {
       print('❌ Error uploading attachment: $e');
       print('❌ Stack trace: $stackTrace');
       return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  /// Get asset items (items with is_asset category) for PR Assets mode
+  Future<List<Map<String, dynamic>>> getAssetItems() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/lost-breakage/items'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) {
+          return List<Map<String, dynamic>>.from(data);
+        }
+        if (data is Map && data['data'] != null) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+        if (data is Map && data['items'] != null) {
+          return List<Map<String, dynamic>>.from(data['items']);
+        }
+      }
+
+      return [];
+    } catch (e) {
+      print('Error getting asset items: $e');
+      return [];
     }
   }
 

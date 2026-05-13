@@ -26,12 +26,17 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
     _loadDetail();
   }
 
+  List<Map<String, dynamic>> _serialItems = [];
+
   Future<void> _loadDetail() async {
     setState(() => _isLoading = true);
     final result = await _service.getTransfer(widget.transferId);
     if (mounted) {
       setState(() {
         _transfer = result?['transfer'] ?? result;
+        if (result?['serial_items'] != null) {
+          _serialItems = (result!['serial_items'] as List).map((e) => Map<String, dynamic>.from(e)).toList();
+        }
         _isLoading = false;
       });
     }
@@ -61,6 +66,7 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
     final creatorAvatar = t['creator']?['avatar']?.toString();
     final notes = t['notes']?.toString();
     final items = (t['items'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+    final transferMode = (t['transfer_mode'] ?? 'normal').toString();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -68,6 +74,29 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeaderCard(number, dateText),
+          if (transferMode != 'normal') ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: transferMode == 'serial' ? const Color(0xFFE0F2FE) : const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.qr_code_scanner_rounded, size: 14,
+                    color: transferMode == 'serial' ? const Color(0xFF0EA5E9) : const Color(0xFFB45309)),
+                  const SizedBox(width: 6),
+                  Text(
+                    transferMode == 'serial' ? 'Mode Serial' : 'Mode Mixed',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                      color: transferMode == 'serial' ? const Color(0xFF0EA5E9) : const Color(0xFFB45309)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           _buildInfoCard(
             title: 'Informasi Outlet & Gudang',
@@ -79,10 +108,18 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
               _InfoRow(label: 'Keterangan', value: (notes != null && notes.isNotEmpty) ? notes : '-'),
             ],
           ),
-          const SizedBox(height: 16),
-          const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-          const SizedBox(height: 10),
-          ...items.map(_buildItemCard),
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+            const SizedBox(height: 10),
+            ...items.map(_buildItemCard),
+          ],
+          if (_serialItems.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Serial Items', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0EA5E9))),
+            const SizedBox(height: 10),
+            ..._serialItems.map(_buildSerialItemCard),
+          ],
         ],
       ),
     );
@@ -169,6 +206,40 @@ class _InternalWarehouseTransferDetailScreenState extends State<InternalWarehous
               if (note != null && note.isNotEmpty) ...[const SizedBox(width: 8), _buildPill(Icons.note, note)],
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialItemCard(Map<String, dynamic> item) {
+    final serialNumber = item['serial_number']?.toString() ?? '-';
+    final name = item['item_name']?.toString() ?? '-';
+    final qty = item['qty']?.toString() ?? '0';
+    final unit = item['unit_name']?.toString() ?? '-';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF0EA5E9).withOpacity(0.2)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.qr_code, size: 16, color: Color(0xFF0EA5E9)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(serialNumber, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0EA5E9)))),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(name, style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
+          const SizedBox(height: 6),
+          _buildPill(Icons.scale_rounded, '$qty $unit'),
         ],
       ),
     );

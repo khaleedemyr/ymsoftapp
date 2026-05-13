@@ -1,7 +1,7 @@
 name: ymsoftapp
 description: YM Soft Approval Mobile App
 publish_to: 'none'
-version: 1.0.10+11
+version: 1.0.11+12
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -54,6 +54,12 @@ dependencies:
   # URL Launcher
   url_launcher: ^6.2.2
   
+  # Audio
+  audioplayers: ^6.1.0
+
+  # Barcode Scanner (camera)
+  mobile_scanner: ^6.0.2
+
   # File Opener
   open_filex: ^4.3.2
   

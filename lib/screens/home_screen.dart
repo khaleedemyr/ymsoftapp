@@ -30,6 +30,10 @@ import '../widgets/approvals/pr_food_approval_card.dart';
 import '../widgets/approvals/po_food_approval_card.dart';
 import '../widgets/approvals/ro_khusus_approval_card.dart';
 import '../widgets/approvals/employee_resignation_approval_card.dart';
+import '../widgets/approvals/asset_transfer_approval_card.dart';
+import '../widgets/approvals/asset_adjustment_approval_card.dart';
+import '../widgets/approvals/asset_service_order_approval_card.dart';
+import '../widgets/approvals/asset_disposal_approval_card.dart';
 import 'approvals/pr_approval_detail_screen.dart';
 import 'approvals/po_ops_approval_detail_screen.dart';
 import 'approvals/leave_approval_detail_screen.dart';
@@ -49,6 +53,10 @@ import 'approvals/pr_food_approval_detail_screen.dart';
 import 'approvals/po_food_approval_detail_screen.dart';
 import 'approvals/ro_khusus_approval_detail_screen.dart';
 import 'approvals/employee_resignation_approval_detail_screen.dart';
+import 'approvals/asset_inventory_transfer_detail_screen.dart';
+import 'approvals/asset_inventory_adjustment_detail_screen.dart';
+import 'approvals/asset_service_order_detail_screen.dart';
+import 'asset_disposal/asset_disposal_detail_screen.dart';
 import '../widgets/approval_list_modal.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/customer_voice/capa_home_verification_card.dart';
@@ -98,6 +106,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<POFoodApproval> _poFoodApprovals = [];
   List<ROKhususApproval> _roKhususApprovals = [];
   List<EmployeeResignationApproval> _employeeResignationApprovals = [];
+  List<AssetInventoryTransferApproval> _assetTransferApprovals = [];
+  List<AssetInventoryAdjustmentApproval> _assetAdjustmentApprovals = [];
+  List<AssetServiceOrderApproval> _assetServiceOrderApprovals = [];
+  List<AssetDisposalApproval> _assetDisposalApprovals = [];
   bool _isLoadingApprovals = false;
   bool _isApprovalsRefreshInProgress = false;
   
@@ -697,6 +709,58 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingAssetTransferApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingAssetTransferApprovals();
+      if (mounted) {
+        setState(() {
+          _assetTransferApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Asset Transfer approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingAssetAdjustmentApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingAssetAdjustmentApprovals();
+      if (mounted) {
+        setState(() {
+          _assetAdjustmentApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Asset Adjustment approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingAssetServiceOrderApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingAssetServiceOrderApprovals();
+      if (mounted) {
+        setState(() {
+          _assetServiceOrderApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Asset Service Order approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingAssetDisposalApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingAssetDisposalApprovals();
+      if (mounted) {
+        setState(() {
+          _assetDisposalApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Asset Disposal approvals: $e');
+    }
+  }
+
   // Cache raw JSON data from API responses
   Map<String, List<dynamic>> _cachedApprovalsJson = {};
 
@@ -779,6 +843,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       .toList() ?? [];
               _employeeResignationApprovals = (_cachedApprovalsJson['employee_resignation'] as List<dynamic>?)
                       ?.map((e) => EmployeeResignationApproval.fromJson(e))
+                      .toList() ?? [];
+              _assetTransferApprovals = (_cachedApprovalsJson['asset_transfer'] as List<dynamic>?)
+                      ?.map((e) => AssetInventoryTransferApproval.fromJson(e))
+                      .toList() ?? [];
+              _assetAdjustmentApprovals = (_cachedApprovalsJson['asset_adjustment'] as List<dynamic>?)
+                      ?.map((e) => AssetInventoryAdjustmentApproval.fromJson(e))
+                      .toList() ?? [];
+              _assetServiceOrderApprovals = (_cachedApprovalsJson['asset_service_order'] as List<dynamic>?)
+                      ?.map((e) => AssetServiceOrderApproval.fromJson(e))
+                      .toList() ?? [];
+              _assetDisposalApprovals = (_cachedApprovalsJson['asset_disposal'] as List<dynamic>?)
+                      ?.map((e) => AssetDisposalApproval.fromJson(e))
                       .toList() ?? [];
             });
           }
@@ -869,6 +945,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'employee_resignation':
           await _loadPendingEmployeeResignationApprovals();
           break;
+        case 'asset_transfer':
+          await _loadPendingAssetTransferApprovals();
+          break;
+        case 'asset_adjustment':
+          await _loadPendingAssetAdjustmentApprovals();
+          break;
+        case 'asset_service_order':
+          await _loadPendingAssetServiceOrderApprovals();
+          break;
+        case 'asset_disposal':
+          await _loadPendingAssetDisposalApprovals();
+          break;
       }
       // Save to cache after refresh
       await _saveApprovalsToCache();
@@ -936,10 +1024,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _loadPendingEmployeeResignationApprovals(),
       ], eagerError: false);
 
+      // Batch 5: Asset approvals
+      await Future.wait([
+        _loadPendingAssetTransferApprovals(),
+        _loadPendingAssetAdjustmentApprovals(),
+        _loadPendingAssetServiceOrderApprovals(),
+      ], eagerError: false);
+
       // Save to cache after loading
       await _saveApprovalsToCache();
 
-      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}');
+      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}, AssetTransfer=${_assetTransferApprovals.length}, AssetAdjustment=${_assetAdjustmentApprovals.length}, AssetServiceOrder=${_assetServiceOrderApprovals.length}, AssetDisposal=${_assetDisposalApprovals.length}');
     } catch (e) {
       print('Error loading approvals: $e');
     } finally {
@@ -972,7 +1067,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _prFoodApprovals.length +
         _poFoodApprovals.length +
         _roKhususApprovals.length +
-        _employeeResignationApprovals.length;
+        _employeeResignationApprovals.length +
+        _assetTransferApprovals.length +
+        _assetAdjustmentApprovals.length +
+        _assetServiceOrderApprovals.length +
+        _assetDisposalApprovals.length;
   }
 
   String _getInitials(String? name) {
@@ -3121,6 +3220,110 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 'employee_resignation',
               ),
             ],
+
+            // Asset Inventory Transfer Approvals
+            if (_assetTransferApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Asset Inventory Transfer',
+                _assetTransferApprovals.length,
+                Colors.teal,
+                _assetTransferApprovals.map((approval) => AssetTransferApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AssetInventoryTransferDetailScreen(transferId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('asset_transfer');
+                      }
+                    });
+                  },
+                )).toList(),
+                'asset_transfer',
+              ),
+            ],
+
+            // Asset Stock Adjustment Approvals
+            if (_assetAdjustmentApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Asset Stock Adjustment',
+                _assetAdjustmentApprovals.length,
+                Colors.amber,
+                _assetAdjustmentApprovals.map((approval) => AssetAdjustmentApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AssetInventoryAdjustmentDetailScreen(adjustmentId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('asset_adjustment');
+                      }
+                    });
+                  },
+                )).toList(),
+                'asset_adjustment',
+              ),
+            ],
+
+            // Asset Service Order Approvals
+            if (_assetServiceOrderApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Asset Service Order',
+                _assetServiceOrderApprovals.length,
+                Colors.purple,
+                _assetServiceOrderApprovals.map((approval) => AssetServiceOrderApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AssetServiceOrderDetailScreen(orderId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('asset_service_order');
+                      }
+                    });
+                  },
+                )).toList(),
+                'asset_service_order',
+              ),
+            ],
+
+            // Asset Disposal Approvals
+            if (_assetDisposalApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Asset Disposal',
+                _assetDisposalApprovals.length,
+                Colors.red.shade400,
+                _assetDisposalApprovals.map((approval) => AssetDisposalApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AssetDisposalDetailScreen(disposalId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('asset_disposal');
+                      }
+                    });
+                  },
+                )).toList(),
+                'asset_disposal',
+              ),
+            ],
           ],
         ],
       ),
@@ -3338,6 +3541,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         break;
       case 'employee_resignation':
         approvals = _employeeResignationApprovals;
+        break;
+      case 'asset_transfer':
+        approvals = _assetTransferApprovals;
+        break;
+      case 'asset_adjustment':
+        approvals = _assetAdjustmentApprovals;
+        break;
+      case 'asset_service_order':
+        approvals = _assetServiceOrderApprovals;
+        break;
+      case 'asset_disposal':
+        approvals = _assetDisposalApprovals;
         break;
     }
 
