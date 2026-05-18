@@ -97,11 +97,11 @@ class _OutletSerialReceiveDetailScreenState extends State<OutletSerialReceiveDet
     return n.toStringAsFixed(2);
   }
 
-  String _fmtCostSource(String? src) {
-    if (src == null) return '-';
-    if (src == 'fgr_modal_12pct') return 'FGR (Modal+12%)';
-    if (src == 'item_prices') return 'Item Price';
-    return src;
+  /// Sama kolom Warehouse di web (`warehouse_name` dari join `warehouse_outlets`).
+  String _warehouseOutletLabel(Map<String, dynamic> item) {
+    final w = item['warehouse_name']?.toString().trim();
+    if (w != null && w.isNotEmpty) return w;
+    return '-';
   }
 
   @override
@@ -307,24 +307,27 @@ class _OutletSerialReceiveDetailScreenState extends State<OutletSerialReceiveDet
                     Text(_fmtRupiah(item['cost_small']), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
                   ],
                 ),
-                const SizedBox(height: 2),
+                if ((item['outlet_name'] ?? item['outlet_id']) != null &&
+                    '${item['outlet_name'] ?? item['outlet_id'] ?? ''}'.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${item['outlet_name'] ?? item['outlet_id'] ?? ''}',
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                ],
+                const SizedBox(height: 4),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${item['outlet_name'] ?? item['outlet_id'] ?? ''}', style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: item['cost_source'] == 'fgr_modal_12pct' ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(Icons.warehouse_outlined, size: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
                       child: Text(
-                        _fmtCostSource(item['cost_source']),
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600,
-                          color: item['cost_source'] == 'fgr_modal_12pct' ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                        ),
+                        'Gudang: ${_warehouseOutletLabel(item)}',
+                        style: TextStyle(fontSize: 10, color: Colors.grey.shade500, height: 1.35),
                       ),
                     ),
                   ],

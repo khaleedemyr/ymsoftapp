@@ -168,6 +168,11 @@ class _HeadOfficeReturnDetailScreenState extends State<HeadOfficeReturnDetailScr
     final items = rawItems is List
         ? rawItems.map((e) => Map<String, dynamic>.from(e is Map ? e : <String, dynamic>{})).toList()
         : <Map<String, dynamic>>[];
+    final serialRaw = t['serialItems'] ?? t['serial_items'];
+    final serials = serialRaw is List
+        ? serialRaw.map((e) => Map<String, dynamic>.from(e is Map ? e : <String, dynamic>{})).toList()
+        : <Map<String, dynamic>>[];
+    final returnMode = t['return_mode']?.toString();
     final statusPending = status == 'pending';
 
     return RefreshIndicator(
@@ -228,9 +233,51 @@ class _HeadOfficeReturnDetailScreenState extends State<HeadOfficeReturnDetailScr
               rejectionReason: rejectionReason,
             ),
             const SizedBox(height: 16),
-            _buildItemsCard(items),
+            if (returnMode != null && returnMode != 'normal')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Chip(
+                  label: Text(returnMode == 'serial' ? 'Mode Serial' : 'Mode Campuran'),
+                  backgroundColor: const Color(0xFFFFF7ED),
+                ),
+              ),
+            if (serials.isNotEmpty) ...[
+              _buildSerialsCard(serials),
+              const SizedBox(height: 16),
+            ],
+            if (items.isNotEmpty) _buildItemsCard(items),
+            if (items.isEmpty && serials.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('Tidak ada baris return', style: TextStyle(color: Color(0xFF64748B))),
+              ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSerialsCard(List<Map<String, dynamic>> serials) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nomor Seri', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+          const SizedBox(height: 10),
+          ...serials.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '${s['serial_number']} — ${s['item_name'] ?? '-'} (${s['return_qty'] ?? 1} ${s['unit_name'] ?? ''})',
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                ),
+              )),
+        ],
       ),
     );
   }

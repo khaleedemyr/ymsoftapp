@@ -18,11 +18,13 @@ import '../screens/settings/role_management_screen.dart';
 import '../screens/reports/activity_log_report_screen.dart';
 import '../screens/reports/report_invoice_outlet_screen.dart';
 import '../screens/reports/attendance_report_screen.dart';
+import '../screens/reports/kasbon_report_screen.dart';
 import '../screens/reports/sales_report_simple_screen.dart';
 import '../screens/reports/item_engineering_screen.dart';
 import '../screens/schedule_attendance_correction/schedule_attendance_correction_screen.dart';
 import '../screens/user_shift_input_screen.dart';
 import '../screens/packing_list/packing_list_index_screen.dart';
+import '../screens/delivery_order/delivery_order_index_screen.dart';
 import '../screens/pr_food/pr_food_index_screen.dart';
 import '../screens/good_receive/good_receive_index_screen.dart';
 import '../screens/outlet_food_good_receive/outlet_food_good_receive_index_screen.dart';
@@ -48,6 +50,7 @@ import '../screens/asset_service_order/asset_service_order_index_screen.dart';
 import '../screens/asset_disposal/asset_disposal_index_screen.dart';
 import '../screens/asset_inventory_report/asset_inventory_report_screen.dart';
 import '../screens/outlet_serial_receive/outlet_serial_receive_list_screen.dart';
+import '../screens/serial_tracking/serial_tracking_screen.dart';
 import '../screens/warehouse_internal_use_waste/warehouse_internal_use_waste_index_screen.dart';
 import '../screens/manual_point/manual_point_index_screen.dart';
 import '../screens/members/member_index_screen.dart';
@@ -704,6 +707,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/sales-outlet-dashboard',
       '/attendance', // My Attendance
       '/attendance-report', // Report Attendance
+      '/report-kasbon',
       '/schedule-attendance-correction', // Schedule/Attendance Correction
       '/purchase-requisitions', // Payment
       '/support/admin', // Support Admin Panel
@@ -715,6 +719,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/stock-cut', // Stock Cut → native di mobile, WebView di web
       '/user-shifts', // Input Shift Mingguan
       '/packing-list', // Packing List
+      '/delivery-order', // Delivery Order
       '/pr-foods', // PR Foods
       '/food-good-receive', // Good Receive
       '/outlet-food-good-receives', // Outlet Good Receive
@@ -837,6 +842,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/enroll-test-report',
       '/leave-management',
       '/travel-kasbon-report',
+      '/report-kasbon',
       // Outlet Management (tambah)
       '/outlet-dashboard',
       '/outlet-stock-balances',
@@ -874,7 +880,6 @@ class _AppSidebarState extends State<AppSidebar> {
       '/po-ops/report',
       // Warehouse (tambah)
       '/food-good-receive-report',
-      '/delivery-order',
       '/food-stock-balances',
       '/inventory/goods-received-report',
       '/inventory/cost-history-report',
@@ -897,6 +902,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/retail-food/report-supplier',
       '/stock-opname-adjustment-report',
       '/report-rekap-diskon',
+      '/serial-tracking',
       // Production
       '/butcher-processes',
       '/butcher-processes/report',
@@ -1025,6 +1031,13 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const AttendanceReportScreen(),
         ),
       );
+    } else if (route == '/report-kasbon') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const KasbonReportScreen(),
+        ),
+      );
     } else if (route == '/report-sales-simple') {
       Navigator.push(
         context,
@@ -1141,6 +1154,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const PackingListIndexScreen(),
+        ),
+      );
+    } else if (route == '/delivery-order') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const DeliveryOrderIndexScreen(),
         ),
       );
     } else if (route == '/pr-foods') {
@@ -1316,6 +1336,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const OutletSerialReceiveListScreen(),
+        ),
+      );
+    } else if (route == '/serial-tracking') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const SerialTrackingScreen(),
         ),
       );
     } else if (route == '/outlet-transfer') {

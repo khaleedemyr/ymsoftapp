@@ -34,6 +34,7 @@ import '../widgets/approvals/asset_transfer_approval_card.dart';
 import '../widgets/approvals/asset_adjustment_approval_card.dart';
 import '../widgets/approvals/asset_service_order_approval_card.dart';
 import '../widgets/approvals/asset_disposal_approval_card.dart';
+import '../widgets/approvals/pos_void_item_approval_card.dart';
 import 'approvals/pr_approval_detail_screen.dart';
 import 'approvals/po_ops_approval_detail_screen.dart';
 import 'approvals/leave_approval_detail_screen.dart';
@@ -110,6 +111,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<AssetInventoryAdjustmentApproval> _assetAdjustmentApprovals = [];
   List<AssetServiceOrderApproval> _assetServiceOrderApprovals = [];
   List<AssetDisposalApproval> _assetDisposalApprovals = [];
+  List<PosVoidItemApproval> _posVoidItemApprovals = [];
   bool _isLoadingApprovals = false;
   bool _isApprovalsRefreshInProgress = false;
   
@@ -761,6 +763,87 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingPosVoidItemApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingPosVoidItemApprovals();
+      final rawCache = _approvalService.getRawJsonCache();
+      if (rawCache.containsKey('pos_void_item')) {
+        _cachedApprovalsJson['pos_void_item'] = rawCache['pos_void_item']!;
+      }
+      if (mounted) {
+        setState(() {
+          _posVoidItemApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading POS Void Item approvals: $e');
+    }
+  }
+
+  Future<void> _handlePosVoidApprove(PosVoidItemApproval approval) async {
+    final r = await _approvalService.approvePosVoidItem(approval.id);
+    if (!mounted) return;
+    final ok = r['success'] == true;
+    final msg = r['message']?.toString() ?? (ok ? 'Disetujui' : 'Gagal');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) await _refreshApprovalType('pos_void_item');
+  }
+
+  Future<void> _handlePosVoidReject(PosVoidItemApproval approval) async {
+    final noteCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Tolak void item?'),
+          content: TextField(
+            controller: noteCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Alasan (opsional)',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Tolak', style: TextStyle(color: Colors.red.shade700)),
+            ),
+          ],
+        );
+      },
+    );
+    final note = noteCtrl.text.trim();
+    noteCtrl.dispose();
+    if (confirmed != true || !mounted) return;
+
+    final r = await _approvalService.rejectPosVoidItem(
+      approval.id,
+      note: note.isEmpty ? null : note,
+    );
+    if (!mounted) return;
+    final ok = r['success'] == true;
+    final msg = r['message']?.toString() ?? (ok ? 'Ditolak' : 'Gagal');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) await _refreshApprovalType('pos_void_item');
+  }
+
   // Cache raw JSON data from API responses
   Map<String, List<dynamic>> _cachedApprovalsJson = {};
 
@@ -855,6 +938,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       .toList() ?? [];
               _assetDisposalApprovals = (_cachedApprovalsJson['asset_disposal'] as List<dynamic>?)
                       ?.map((e) => AssetDisposalApproval.fromJson(e))
+                      .toList() ?? [];
+              _posVoidItemApprovals = (_cachedApprovalsJson['pos_void_item'] as List<dynamic>?)
+                      ?.map((e) => PosVoidItemApproval.fromJson(e as Map<String, dynamic>))
                       .toList() ?? [];
             });
           }
@@ -957,6 +1043,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'asset_disposal':
           await _loadPendingAssetDisposalApprovals();
           break;
+        case 'pos_void_item':
+          await _loadPendingPosVoidItemApprovals();
+          break;
       }
       // Save to cache after refresh
       await _saveApprovalsToCache();
@@ -1029,12 +1118,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _loadPendingAssetTransferApprovals(),
         _loadPendingAssetAdjustmentApprovals(),
         _loadPendingAssetServiceOrderApprovals(),
+        _loadPendingPosVoidItemApprovals(),
       ], eagerError: false);
 
       // Save to cache after loading
       await _saveApprovalsToCache();
 
-      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}, AssetTransfer=${_assetTransferApprovals.length}, AssetAdjustment=${_assetAdjustmentApprovals.length}, AssetServiceOrder=${_assetServiceOrderApprovals.length}, AssetDisposal=${_assetDisposalApprovals.length}');
+      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}, AssetTransfer=${_assetTransferApprovals.length}, AssetAdjustment=${_assetAdjustmentApprovals.length}, AssetServiceOrder=${_assetServiceOrderApprovals.length}, AssetDisposal=${_assetDisposalApprovals.length}, PosVoidItem=${_posVoidItemApprovals.length}');
     } catch (e) {
       print('Error loading approvals: $e');
     } finally {
@@ -1071,7 +1161,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _assetTransferApprovals.length +
         _assetAdjustmentApprovals.length +
         _assetServiceOrderApprovals.length +
-        _assetDisposalApprovals.length;
+        _assetDisposalApprovals.length +
+        _posVoidItemApprovals.length;
   }
 
   String _getInitials(String? name) {
@@ -3324,6 +3415,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 'asset_disposal',
               ),
             ],
+
+            // POS Void Item (kasir)
+            if (_posVoidItemApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'POS — Void Item',
+                _posVoidItemApprovals.length,
+                Colors.deepOrange.shade600,
+                _posVoidItemApprovals.map((approval) => PosVoidItemApprovalCard(
+                  approval: approval,
+                  onApprove: () => _handlePosVoidApprove(approval),
+                  onReject: () => _handlePosVoidReject(approval),
+                )).toList(),
+                'pos_void_item',
+              ),
+            ],
           ],
         ],
       ),
@@ -3553,6 +3660,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         break;
       case 'asset_disposal':
         approvals = _assetDisposalApprovals;
+        break;
+      case 'pos_void_item':
+        approvals = _posVoidItemApprovals;
         break;
     }
 

@@ -354,6 +354,7 @@ class _WarehouseTransferIndexScreenState extends State<WarehouseTransferIndexScr
     final creator = item['creator']?['nama_lengkap']?.toString() ?? '-';
     final creatorAvatar = item['creator']?['avatar']?.toString();
     final totalItems = item['total_items']?.toString() ?? '0';
+    final transferMode = (item['transfer_mode'] ?? 'normal').toString();
     final transferId = item['id'] is int
         ? item['id'] as int
         : int.tryParse(item['id']?.toString() ?? '0') ?? 0;
@@ -390,6 +391,7 @@ class _WarehouseTransferIndexScreenState extends State<WarehouseTransferIndexScr
                     ),
                   ),
                 ),
+                if (transferMode != 'normal') _buildModeChip(transferMode),
               ],
             ),
             const SizedBox(height: 8),
@@ -429,6 +431,20 @@ class _WarehouseTransferIndexScreenState extends State<WarehouseTransferIndexScr
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildModeChip(String mode) {
+    final isSerial = mode == 'serial';
+    final label = isSerial ? 'Seri' : (mode == 'mixed' ? 'Mix' : '');
+    if (label.isEmpty) return const SizedBox.shrink();
+    final color = isSerial ? const Color(0xFF6366F1) : const Color(0xFF9333EA);
+    final bg = isSerial ? const Color(0xFFEEF2FF) : const Color(0xFFF3E8FF);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
     );
   }
 

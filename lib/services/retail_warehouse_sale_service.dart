@@ -248,6 +248,40 @@ class RetailWarehouseSaleService {
     return null;
   }
 
+  Future<Map<String, dynamic>> validateSerialForRWS({
+    required String serialNumber,
+    required int warehouseId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'valid': false, 'message': 'Unauthorized'};
+
+      final response = await http.post(
+        Uri.parse('$_base/validate-serial'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'serial_number': serialNumber,
+          'warehouse_id': warehouseId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'valid': false, 'message': 'Gagal validasi serial'};
+      }
+    } catch (e) {
+      return {'valid': false, 'message': e.toString()};
+    }
+  }
+
   /// Submit sale. items: [{ item_id, barcode?, qty, unit, price, subtotal }]
   Future<Map<String, dynamic>> store({
     required int customerId,
@@ -255,7 +289,8 @@ class RetailWarehouseSaleService {
     required int warehouseId,
     int? warehouseDivisionId,
     String? notes,
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
     required double totalAmount,
   }) async {
     try {
@@ -269,7 +304,8 @@ class RetailWarehouseSaleService {
         'warehouse_id': warehouseId,
         if (warehouseDivisionId != null) 'warehouse_division_id': warehouseDivisionId,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
-        'items': items,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
         'total_amount': totalAmount,
       };
       final response = await http.post(

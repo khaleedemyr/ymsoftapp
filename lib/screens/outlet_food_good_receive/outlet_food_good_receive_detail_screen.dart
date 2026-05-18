@@ -5,6 +5,8 @@ import '../../services/outlet_food_good_receive_service.dart';
 import '../../widgets/app_loading_indicator.dart';
 import '../../widgets/app_scaffold.dart';
 
+/// Detail Outlet GR — layout mengikuti web `OutletFoodGoodReceive/Show.vue`.
+/// Serial number generate/rollback hanya tersedia untuk **Food Good Receive** (gudang pusat), bukan outlet GR (belum ada API).
 class OutletFoodGoodReceiveDetailScreen extends StatefulWidget {
   final int goodReceiveId;
 
@@ -40,20 +42,15 @@ class _OutletFoodGoodReceiveDetailScreenState extends State<OutletFoodGoodReceiv
     if (!mounted) return;
 
     if (result != null) {
-      final rawGoodReceive = (result['goodReceive'] ?? result['good_receive'] ?? result['data'] ?? result)
-          as Map<String, dynamic>;
-      final rawDetails = (result['details'] as List<dynamic>?) ??
-          (rawGoodReceive['items'] as List<dynamic>?) ??
-          [];
+      final rawGoodReceive = (result['goodReceive'] ?? result['good_receive'] ?? result['data'] ?? result) as Map<String, dynamic>;
+      final rawDetails = (result['details'] as List<dynamic>?) ?? (rawGoodReceive['items'] as List<dynamic>?) ?? [];
 
       setState(() {
         _goodReceive = OutletFoodGoodReceiveDetail.fromJson({
           ...rawGoodReceive,
           'items': rawDetails,
         });
-        _items = rawDetails
-            .map((item) => OutletFoodGoodReceiveItem.fromJson(item as Map<String, dynamic>))
-            .toList();
+        _items = rawDetails.map((item) => OutletFoodGoodReceiveItem.fromJson(item as Map<String, dynamic>)).toList();
 
         final deliveryOrderRaw = result['deliveryOrder'] as Map<String, dynamic>?;
         _deliveryOrderInfo = deliveryOrderRaw != null ? OutletDeliveryOrderInfo.fromJson(deliveryOrderRaw) : null;
@@ -109,10 +106,27 @@ class _OutletFoodGoodReceiveDetailScreenState extends State<OutletFoodGoodReceiv
     }
   }
 
+  String _formatDate(String? v) {
+    if (v == null || v.isEmpty) return '-';
+    try {
+      return DateFormat.yMMMd('id_ID').format(DateTime.parse(v));
+    } catch (_) {
+      return v;
+    }
+  }
+
+  Color _statusColor(String? status) {
+    final s = (status ?? '').toLowerCase();
+    if (s == 'draft') return const Color(0xFFB45309);
+    if (s == 'completed') return const Color(0xFF1D4ED8);
+    if (s == 'stocked') return const Color(0xFF047857);
+    return const Color(0xFF4B5563);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Detail Outlet GR',
+      title: 'Detail Good Receive Outlet',
       actions: [
         IconButton(
           onPressed: _isDeleting ? null : _deleteGoodReceive,
@@ -154,21 +168,31 @@ class _OutletFoodGoodReceiveDetailScreenState extends State<OutletFoodGoodReceiv
                 SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildInfoCard(),
-                      if (_deliveryOrderInfo != null) ...[
-                        const SizedBox(height: 16),
-                        _buildDeliveryOrderCard(),
-                      ],
+                      _buildStatusHeader(),
                       const SizedBox(height: 16),
-                      _buildItemsCard(),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildFloorOrderCard()),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildPackingCard()),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _buildItemsTableCard(),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Kembali'),
+                      ),
                     ],
                   ),
                 ),
                 if (_isDeleting)
                   Container(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     child: const Center(child: CircularProgressIndicator()),
                   ),
               ],
@@ -178,160 +202,91 @@ class _OutletFoodGoodReceiveDetailScreenState extends State<OutletFoodGoodReceiv
     );
   }
 
-  Widget _buildInfoCard() {
-    final receiveDate = _goodReceive!.receiveDate.isNotEmpty
-        ? DateFormat('dd MMMM yyyy').format(DateTime.parse(_goodReceive!.receiveDate))
-        : '-';
-
-    return _buildSectionCard(
-      title: 'Informasi Good Receive',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInfoRow('Nomor GR', _goodReceive!.number),
-          _buildInfoRow('Tanggal', receiveDate),
-          _buildInfoRow('Outlet', _goodReceive!.outletName ?? '-'),
-          _buildInfoRow('Nomor DO', _goodReceive!.deliveryOrderNumber ?? '-'),
-          _buildStatusRow('Status', _goodReceive!.status ?? '-'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeliveryOrderCard() {
-    return _buildSectionCard(
-      title: 'Info Delivery Order',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInfoRow('Nomor DO', _deliveryOrderInfo!.number),
-          _buildInfoRow('Floor Order', _deliveryOrderInfo!.floorOrderNumber ?? '-'),
-          _buildInfoRow('Packing List', _deliveryOrderInfo!.packingNumber ?? '-'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemsCard() {
-    return _buildSectionCard(
-      title: 'List Item',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_items.isEmpty)
-            const Text('Tidak ada item')
-          else
-            ..._items.map(
-              (item) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F8FC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE3E7EF)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.itemName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        _buildQtyChip('Qty DO', _formatQty(item.qtyDo), item.unitName),
-                        const SizedBox(width: 10),
-                        _buildQtyChip('Qty Terima', _formatQty(item.qtyReceived), item.unitName),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    final safeValue = value.trim().isEmpty ? '-' : value;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-          ),
-          Expanded(
-            child: Text(
-              safeValue,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusRow(String label, String value) {
-    final safeValue = value.trim().isEmpty ? '-' : value;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: _statusColor(safeValue).withOpacity(0.16),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _statusColor(safeValue).withOpacity(0.4)),
-            ),
-            child: Text(
-              safeValue,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: _statusColor(safeValue),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionCard({required String title, required Widget child}) {
+  Widget _buildStatusHeader() {
+    final st = _goodReceive!.status ?? '-';
+    final c = _statusColor(st);
     return Card(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Container(
-        width: double.infinity,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFBFDBFE))),
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            Row(
+              children: [
+                Text('Status: ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
+                Text(st, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: c)),
+              ],
             ),
-            const SizedBox(height: 12),
-            Container(height: 1, color: const Color(0xFFE5E7EB)),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            Text('Tanggal: ${_formatDate(_goodReceive!.receiveDate)}', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+            Text('Nomor GR: ${_goodReceive!.number}', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+            Text('Outlet: ${_goodReceive!.outletName ?? '-'}', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+            Text('Nomor DO: ${_goodReceive!.deliveryOrderNumber ?? '-'}', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloorOrderCard() {
+    final d = _deliveryOrderInfo;
+    final has = d != null &&
+        ((d.floorOrderNumber ?? '').isNotEmpty ||
+            (d.floorOrderDate ?? '').isNotEmpty ||
+            (d.floorOrderDesc ?? '').isNotEmpty);
+    return _buildSmallInfoCard(
+      title: 'Floor Order',
+      icon: Icons.list_alt,
+      child: has
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if ((d.floorOrderNumber ?? '').isNotEmpty) Text('No: ${d.floorOrderNumber}', style: const TextStyle(fontSize: 13)),
+                if ((d.floorOrderDate ?? '').isNotEmpty) Text('Tanggal: ${d.floorOrderDate}', style: const TextStyle(fontSize: 13)),
+                if ((d.floorOrderDesc ?? '').isNotEmpty) Text('Keterangan: ${d.floorOrderDesc}', style: const TextStyle(fontSize: 13)),
+              ],
+            )
+          : const Text('—', style: TextStyle(color: Colors.grey)),
+    );
+  }
+
+  Widget _buildPackingCard() {
+    final d = _deliveryOrderInfo;
+    final has = d != null && ((d.packingNumber ?? '').isNotEmpty || (d.packingReason ?? '').isNotEmpty);
+    return _buildSmallInfoCard(
+      title: 'Packing List',
+      icon: Icons.inventory_2_outlined,
+      child: has
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if ((d.packingNumber ?? '').isNotEmpty) Text('No: ${d.packingNumber}', style: const TextStyle(fontSize: 13)),
+                if ((d.packingReason ?? '').isNotEmpty) Text('Alasan: ${d.packingReason}', style: const TextStyle(fontSize: 13)),
+              ],
+            )
+          : const Text('—', style: TextStyle(color: Colors.grey)),
+    );
+  }
+
+  Widget _buildSmallInfoCard({required String title, required IconData icon, required Widget child}) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFBFDBFE))),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: Colors.blue.shade700),
+                const SizedBox(width: 6),
+                Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade800)),
+              ],
+            ),
+            const SizedBox(height: 8),
             child,
           ],
         ),
@@ -339,25 +294,44 @@ class _OutletFoodGoodReceiveDetailScreenState extends State<OutletFoodGoodReceiv
     );
   }
 
-  Widget _buildQtyChip(String label, String value, String? unitName) {
-    final unitText = (unitName ?? '').trim();
-    final displayUnit = unitText.isEmpty ? '' : ' $unitText';
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE3E7EF)),
-        ),
+  Widget _buildItemsTableCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFBFDBFE))),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
-            const SizedBox(height: 4),
-            Text(
-              '$value$displayUnit',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Icon(Icons.fact_check_outlined, color: Colors.blue.shade700),
+                const SizedBox(width: 8),
+                Text('List Item DO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.blue.shade900)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.blue.shade50),
+                columns: const [
+                  DataColumn(label: Text('Item')),
+                  DataColumn(label: Text('Satuan')),
+                  DataColumn(label: Text('Qty DO'), numeric: true),
+                  DataColumn(label: Text('Qty Scan'), numeric: true),
+                ],
+                rows: _items.map((it) {
+                  return DataRow(
+                    cells: [
+                      DataCell(SizedBox(width: 180, child: Text(it.itemName, maxLines: 2, overflow: TextOverflow.ellipsis))),
+                      DataCell(Text(it.unitName ?? '-')),
+                      DataCell(Text(_formatQty(it.qtyDo))),
+                      DataCell(Text(_formatQty(it.qtyReceived))),
+                    ],
+                  );
+                }).toList(),
+              ),
             ),
           ],
         ),
@@ -365,27 +339,8 @@ class _OutletFoodGoodReceiveDetailScreenState extends State<OutletFoodGoodReceiv
     );
   }
 
-  String _formatQty(dynamic value) {
-    if (value == null) return '-';
-    if (value is num) {
-      if (value % 1 == 0) return value.toInt().toString();
-      return value.toString();
-    }
-    final raw = value.toString();
-    return raw.trim().isEmpty ? '-' : raw;
-  }
-
-  Color _statusColor(String status) {
-    final normalized = status.toLowerCase();
-    if (normalized.contains('complete') || normalized.contains('selesai')) {
-      return const Color(0xFF16A34A);
-    }
-    if (normalized.contains('draft') || normalized.contains('pending')) {
-      return const Color(0xFFF59E0B);
-    }
-    if (normalized.contains('cancel') || normalized.contains('batal')) {
-      return const Color(0xFFDC2626);
-    }
-    return const Color(0xFF4B5563);
+  String _formatQty(double v) {
+    if (v == v.truncateToDouble()) return v.toInt().toString();
+    return v.toString();
   }
 }

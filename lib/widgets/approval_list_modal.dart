@@ -39,6 +39,7 @@ import 'approvals/pr_food_approval_card.dart';
 import 'approvals/po_food_approval_card.dart';
 import 'approvals/ro_khusus_approval_card.dart';
 import 'approvals/employee_resignation_approval_card.dart';
+import 'approvals/pos_void_item_approval_card.dart';
 import '../services/approval_service.dart';
 
 class ApprovalListModal extends StatefulWidget {
@@ -159,6 +160,9 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           break;
         case 'employee_resignation':
           approvals = await _approvalService.getPendingEmployeeResignationApprovals();
+          break;
+        case 'pos_void_item':
+          approvals = await _approvalService.getPendingPosVoidItemApprovals();
           break;
       }
 
@@ -305,6 +309,15 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
               final er = approval as EmployeeResignationApproval;
               return er.employeeName.toLowerCase().contains(query) ||
                   (er.reason?.toLowerCase().contains(query) ?? false);
+            case 'pos_void_item':
+              final pv = approval as PosVoidItemApproval;
+              return (pv.number?.toLowerCase().contains(query) ?? false) ||
+                  (pv.orderNomor?.toLowerCase().contains(query) ?? false) ||
+                  (pv.orderId?.toLowerCase().contains(query) ?? false) ||
+                  (pv.itemName?.toLowerCase().contains(query) ?? false) ||
+                  (pv.outletName?.toLowerCase().contains(query) ?? false) ||
+                  (pv.creatorName?.toLowerCase().contains(query) ?? false) ||
+                  (pv.reason?.toLowerCase().contains(query) ?? false);
             default:
               return true;
           }
@@ -352,6 +365,8 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         return 'Cari Number atau Outlet...';
       case 'employee_resignation':
         return 'Cari Nama Karyawan atau Alasan...';
+      case 'pos_void_item':
+        return 'Cari order, item, outlet, atau kasir...';
       default:
         return 'Cari...';
     }
@@ -398,6 +413,8 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         return (approval as ROKhususApproval).id;
       case 'employee_resignation':
         return (approval as EmployeeResignationApproval).id;
+      case 'pos_void_item':
+        return (approval as PosVoidItemApproval).id;
       default:
         return 0;
     }
@@ -608,6 +625,76 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
     }
   }
 
+  Future<void> _posVoidApproveFromModal(PosVoidItemApproval approval) async {
+    final r = await _approvalService.approvePosVoidItem(approval.id);
+    if (!mounted) return;
+    final ok = r['success'] == true;
+    final msg = r['message']?.toString() ?? (ok ? 'Disetujui' : 'Gagal');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) {
+      await _reloadApprovals();
+      widget.onRefresh?.call(widget.type);
+    }
+  }
+
+  Future<void> _posVoidRejectFromModal(PosVoidItemApproval approval) async {
+    final noteCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Tolak void item?'),
+          content: TextField(
+            controller: noteCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Alasan (opsional)',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text('Tolak', style: TextStyle(color: Colors.red.shade700)),
+            ),
+          ],
+        );
+      },
+    );
+    final note = noteCtrl.text.trim();
+    noteCtrl.dispose();
+    if (confirmed != true || !mounted) return;
+
+    final r = await _approvalService.rejectPosVoidItem(
+      approval.id,
+      note: note.isEmpty ? null : note,
+    );
+    if (!mounted) return;
+    final ok = r['success'] == true;
+    final msg = r['message']?.toString() ?? (ok ? 'Ditolak' : 'Gagal');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) {
+      await _reloadApprovals();
+      widget.onRefresh?.call(widget.type);
+    }
+  }
+
   Widget _buildApprovalCard(dynamic approval) {
     final id = _getApprovalId(approval);
     final isSelected = _selectedApprovals.contains(id);
@@ -727,6 +814,14 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         card = EmployeeResignationApprovalCard(
           approval: approval as EmployeeResignationApproval,
           onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
+        );
+        break;
+      case 'pos_void_item':
+        final pv = approval as PosVoidItemApproval;
+        card = PosVoidItemApprovalCard(
+          approval: pv,
+          onApprove: () => _posVoidApproveFromModal(pv),
+          onReject: () => _posVoidRejectFromModal(pv),
         );
         break;
       default:

@@ -35,6 +35,11 @@ class _OutletFoodReturnFormScreenState extends State<OutletFoodReturnFormScreen>
   // gr_item_id -> return_qty (string from TextField)
   final Map<int, TextEditingController> _returnQtyControllers = {};
 
+  bool _serialMode = false;
+  bool _serialScanning = false;
+  final TextEditingController _serialInputController = TextEditingController();
+  final List<Map<String, dynamic>> _scannedSerials = [];
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +54,7 @@ class _OutletFoodReturnFormScreenState extends State<OutletFoodReturnFormScreen>
     for (final c in _returnQtyControllers.values) {
       c.dispose();
     }
+    _serialInputController.dispose();
     super.dispose();
   }
 
@@ -188,8 +194,17 @@ class _OutletFoodReturnFormScreenState extends State<OutletFoodReturnFormScreen>
         'return_qty': qty,
       });
     }
-    if (items.isEmpty) {
-      _showMessage('Pilih minimal 1 item dengan qty return > 0');
+    final serialItems = _scannedSerials.map((s) => {
+      'serial_id': s['serial_id'],
+      'serial_number': s['serial_number'],
+      'item_id': s['item_id'],
+      'unit_id': s['unit_id'],
+      'qty': s['qty'],
+      if (s['gr_item_id'] != null) 'gr_item_id': s['gr_item_id'],
+    }).toList();
+
+    if (items.isEmpty && serialItems.isEmpty) {
+      _showMessage('Pilih minimal 1 item qty atau scan serial');
       return;
     }
     setState(() => _isSubmitting = true);
@@ -198,7 +213,8 @@ class _OutletFoodReturnFormScreenState extends State<OutletFoodReturnFormScreen>
       outletId: _outletId!,
       warehouseOutletId: _warehouseOutletId!,
       returnDate: returnDate,
-      items: items,
+      items: items.isEmpty ? null : items,
+      serialItems: serialItems.isEmpty ? null : serialItems,
       notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
     );
     if (mounted) {
@@ -216,6 +232,110 @@ class _OutletFoodReturnFormScreenState extends State<OutletFoodReturnFormScreen>
 
   void _showMessage(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+  }
+
+  Future<void> _scanSerial() async {
+    final sn = _serialInputController.text.trim();
+    if (sn.isEmpty || _outletId == null || _warehouseOutletId == null) return;
+    if (_scannedSerials.any((s) => s['serial_number'] == sn)) {
+      _showMessage('Serial sudah discan');
+      return;
+    }
+    setState(() => _serialScanning = true);
+    final res = await _service.validateSerial(
+      serialNumber: sn,
+      outletId: _outletId!,
+      warehouseOutletId: _warehouseOutletId!,
+      outletFoodGoodReceiveId: _goodReceiveId,
+    );
+    if (!mounted) return;
+    setState(() => _serialScanning = false);
+    if (res == null || res['valid'] != true) {
+      _showMessage(res?['message']?.toString() ?? 'Serial tidak valid');
+      return;
+    }
+    final s = res['serial'] as Map<String, dynamic>;
+    setState(() {
+      _scannedSerials.add({
+        'serial_id': s['id'],
+        'serial_number': s['serial_number'],
+        'item_id': s['item_id'],
+        'item_name': s['item_name'],
+        'unit_id': s['unit_id'],
+        'unit_name': s['unit_name'],
+        'qty': s['qty'],
+        'gr_item_id': s['gr_item_id'],
+      });
+      _serialInputController.clear();
+    });
+  }
+
+  Widget _buildSerialSection() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            title: const Text('Mode Nomor Seri', style: TextStyle(fontWeight: FontWeight.w600)),
+            value: _serialMode,
+            activeColor: const Color(0xFFEA580C),
+            onChanged: (v) => setState(() => _serialMode = v),
+            contentPadding: EdgeInsets.zero,
+          ),
+          if (_serialMode) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _serialInputController,
+                    decoration: InputDecoration(
+                      hintText: 'Scan / ketik serial',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onSubmitted: (_) => _scanSerial(),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _serialScanning ? null : _scanSerial,
+                  icon: _serialScanning
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.qr_code_scanner, color: Color(0xFFEA580C)),
+                ),
+              ],
+            ),
+            ..._scannedSerials.asMap().entries.map((e) {
+              final s = e.value;
+              return Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFDBA74)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${s['serial_number']}\n${s['item_name']} — ${s['qty']} ${s['unit_name']}',
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                      onPressed: () => setState(() => _scannedSerials.removeAt(e.key)),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
   }
 
   Future<void> _selectDate() async {
@@ -247,6 +367,7 @@ class _OutletFoodReturnFormScreenState extends State<OutletFoodReturnFormScreen>
                   _buildSection('Good Receive', _buildGoodReceiveDropdown()),
                   _buildSection('Tanggal Return', _buildDateField()),
                   _buildSection('Keterangan', _buildNotesField()),
+                  if (_goodReceiveId != null) _buildSerialSection(),
                   if (_grItems.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildItemsSection(),

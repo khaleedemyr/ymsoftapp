@@ -141,6 +141,9 @@ class _OutletFoodReturnDetailScreenState extends State<OutletFoodReturnDetailScr
     final createdByName = (t['created_by_name'] ?? '-').toString();
     final notes = t['notes']?.toString();
     final items = (t['items'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+    final serialRaw = t['serialItems'] ?? t['serial_items'];
+    final serials = (serialRaw is List) ? serialRaw.map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
+    final returnMode = t['return_mode']?.toString();
 
     final statusPending = status == 'pending';
     return RefreshIndicator(
@@ -196,9 +199,46 @@ class _OutletFoodReturnDetailScreenState extends State<OutletFoodReturnDetailScr
               notes: notes,
             ),
             const SizedBox(height: 16),
-            _buildItemsCard(items),
+            if (returnMode != null && returnMode != 'normal')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Chip(
+                  label: Text(returnMode == 'serial' ? 'Mode Serial' : 'Mode Campuran'),
+                  backgroundColor: const Color(0xFFFFF7ED),
+                ),
+              ),
+            if (serials.isNotEmpty) ...[
+              _buildSerialsCard(serials),
+              const SizedBox(height: 16),
+            ],
+            if (items.isNotEmpty) _buildItemsCard(items),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSerialsCard(List<Map<String, dynamic>> serials) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 6))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nomor Seri', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          ...serials.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '${s['serial_number']} — ${s['item_name'] ?? '-'} (${s['return_qty'] ?? 1} ${s['unit_name'] ?? ''})',
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                ),
+              )),
+        ],
       ),
     );
   }

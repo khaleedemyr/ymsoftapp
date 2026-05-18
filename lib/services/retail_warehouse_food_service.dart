@@ -174,11 +174,6 @@ class RetailWarehouseFoodService {
       if (token == null) {
         return {'success': false, 'message': 'Unauthorized'};
       }
-      final totalAmount = items.fold<double>(0, (sum, i) {
-        final q = (i['qty'] is num) ? (i['qty'] as num).toDouble() : double.tryParse(i['qty']?.toString() ?? '0') ?? 0;
-        final p = (i['price'] is num) ? (i['price'] as num).toDouble() : double.tryParse(i['price']?.toString() ?? '0') ?? 0;
-        return sum + q * p;
-      });
       final body = {
         'warehouse_id': warehouseId,
         if (warehouseDivisionId != null) 'warehouse_division_id': warehouseDivisionId,
@@ -186,12 +181,15 @@ class RetailWarehouseFoodService {
         'payment_method': paymentMethod,
         if (supplierId != null) 'supplier_id': supplierId,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
-        'items': items.map((i) => {
-          'item_name': i['item_name'],
-          'qty': i['qty'],
-          'unit': i['unit']?.toString() ?? '',
-          'unit_id': i['unit_id'],
-          'price': i['price'],
+        'items': items.map((i) {
+          return {
+            'item_name': i['item_name'],
+            'qty': i['qty'],
+            'unit': i['unit']?.toString() ?? '',
+            'unit_id': i['unit_id'],
+            if (i['item_id'] != null) 'item_id': i['item_id'],
+            'price': i['price'],
+          };
         }).toList(),
       };
       final response = await http.post(
@@ -216,6 +214,129 @@ class RetailWarehouseFoodService {
         'message': data['message']?.toString() ?? data['error']?.toString() ?? 'Gagal menyimpan',
         'errors': data['errors'],
       };
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Serial summary per baris (mirror web `/api/retail-warehouse-food/{id}/serial-summary`).
+  Future<List<Map<String, dynamic>>> getSerialSummaryForRwf(int retailWarehouseFoodId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/retail-warehouse-food/$retailWarehouseFoodId/serial-summary'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getSerialUnitsForRwfItem(int retailWarehouseFoodItemId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/retail-warehouse-food-items/$retailWarehouseFoodItemId/serial-units'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> generateSerialsForRwfItem(
+    int retailWarehouseFoodItemId, {
+    required int unitId,
+    int? repackUnitId,
+    double? repackQty,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No authentication token'};
+      final body = <String, dynamic>{'unit_id': unitId};
+      if (repackUnitId != null && repackQty != null && repackQty > 0) {
+        body['repack_unit_id'] = repackUnitId;
+        body['repack_qty'] = repackQty;
+      }
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/retail-warehouse-food-items/$retailWarehouseFoodItemId/generate-serials'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final msg = decoded is Map<String, dynamic> ? decoded['message']?.toString() : null;
+        return {'success': true, 'message': msg ?? 'Serial berhasil dibuat'};
+      }
+      if (decoded is Map<String, dynamic>) {
+        return {'success': false, 'message': decoded['message']?.toString() ?? 'Gagal generate serial'};
+      }
+      return {'success': false, 'message': response.body};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSerialsForRwfItem(int retailWarehouseFoodItemId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/retail-warehouse-food-items/$retailWarehouseFoodItemId/serials'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> rollbackSerialsForRwfItem(int retailWarehouseFoodItemId, {int? unitId}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No authentication token'};
+      final response = await http.delete(
+        Uri.parse('$baseUrl/api/approval-app/retail-warehouse-food-items/$retailWarehouseFoodItemId/serials'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: unitId != null ? jsonEncode({'unit_id': unitId}) : jsonEncode({}),
+      );
+      if (response.body.isEmpty) {
+        return {'success': response.statusCode >= 200 && response.statusCode < 300};
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final ok = response.statusCode >= 200 && response.statusCode < 300 && decoded['success'] != false;
+        return {
+          'success': ok,
+          'message': decoded['message']?.toString(),
+        };
+      }
+      return {'success': response.statusCode >= 200 && response.statusCode < 300};
     } catch (e) {
       return {'success': false, 'message': e.toString()};
     }

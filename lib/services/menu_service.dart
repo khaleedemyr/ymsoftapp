@@ -152,6 +152,7 @@ class MenuService {
         {'name': 'Report Hasil Test', 'icon': 'fa-solid fa-chart-line', 'route': '/enroll-test-report', 'code': 'enroll_test_report'},
         {'name': 'Manajemen Cuti', 'icon': 'fa-solid fa-calendar-days', 'route': '/leave-management', 'code': 'leave_management'},
         {'name': 'Report Travel & Kasbon', 'icon': 'fa-solid fa-plane', 'route': '/travel-kasbon-report', 'code': 'travel_kasbon_report'},
+        {'name': 'Report Kasbon', 'icon': 'fa-solid fa-money-bill-transfer', 'route': '/report-kasbon', 'code': 'report_kasbon'},
       ],
     },
     {
@@ -286,6 +287,7 @@ class MenuService {
         {'name': 'Report Retail Food per Supplier', 'icon': 'fa-solid fa-chart-line', 'route': '/retail-food/report-supplier', 'code': 'retail_food_supplier_report'},
         {'name': 'Stock Opname Adjustment Report', 'icon': 'fa-solid fa-chart-bar', 'route': '/stock-opname-adjustment-report', 'code': 'stock_opname_adjustment_report'},
         {'name': 'Report Rekap Diskon', 'icon': 'fa-solid fa-tags', 'route': '/report-rekap-diskon', 'code': 'report_rekap_diskon'},
+        {'name': 'Tracking Nomor Seri', 'icon': 'fa-solid fa-barcode', 'route': '/serial-tracking', 'code': 'serial_tracking'},
       ],
     },
     {

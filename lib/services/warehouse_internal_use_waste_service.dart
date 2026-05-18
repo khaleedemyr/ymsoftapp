@@ -15,6 +15,7 @@ class WarehouseInternalUseWasteService {
     String? dateFrom,
     String? dateTo,
     int? warehouseId,
+    String? search,
     int? page,
     int? perPage,
   }) async {
@@ -22,10 +23,11 @@ class WarehouseInternalUseWasteService {
       final token = await _getToken();
       if (token == null) return null;
       final queryParams = <String, String>{};
-      if (type != null && type.isNotEmpty && type != 'all') queryParams['type'] = type;
+      if (type != null && type.isNotEmpty) queryParams['type'] = type;
       if (dateFrom != null && dateFrom.isNotEmpty) queryParams['date_from'] = dateFrom;
       if (dateTo != null && dateTo.isNotEmpty) queryParams['date_to'] = dateTo;
       if (warehouseId != null) queryParams['warehouse_id'] = warehouseId.toString();
+      if (search != null && search.trim().isNotEmpty) queryParams['search'] = search.trim();
       if (page != null) queryParams['page'] = page.toString();
       if (perPage != null) queryParams['per_page'] = perPage.toString();
       final uri = Uri.parse('$baseUrl/api/approval-app/internal-use-waste').replace(
@@ -126,15 +128,49 @@ class WarehouseInternalUseWasteService {
     }
   }
 
-  Future<Map<String, dynamic>?> store({
+  Future<Map<String, dynamic>> validateSerialForIUW({
+    required String serialNumber,
+    required int warehouseId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'valid': false, 'message': 'Unauthorized'};
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/internal-use-waste/validate-serial'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'serial_number': serialNumber,
+          'warehouse_id': warehouseId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'valid': false, 'message': 'Gagal validasi serial'};
+      }
+    } catch (e) {
+      return {'valid': false, 'message': e.toString()};
+    }
+  }
+
+  /// Sama payload dengan web `InternalUseWaste/Create` — dokumen + banyak baris item.
+  Future<Map<String, dynamic>?> storeDocument({
     required String type,
     required String date,
     required int warehouseId,
     int? rukoId,
-    required int itemId,
-    required double qty,
-    required int unitId,
     String? notes,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
   }) async {
     try {
       final token = await _getToken();
@@ -143,11 +179,10 @@ class WarehouseInternalUseWasteService {
         'type': type,
         'date': date,
         'warehouse_id': warehouseId,
-        'item_id': itemId,
-        'qty': qty,
-        'unit_id': unitId,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
       };
-      if (rukoId != null) body['ruko_id'] = rukoId;
+      if (type == 'internal_use' && rukoId != null) body['ruko_id'] = rukoId;
       if (notes != null && notes.isNotEmpty) body['notes'] = notes;
       final response = await http.post(
         Uri.parse('$baseUrl/api/approval-app/internal-use-waste'),
@@ -162,9 +197,36 @@ class WarehouseInternalUseWasteService {
       if (decoded is Map<String, dynamic>) return decoded;
       return null;
     } catch (e) {
-      print('WarehouseInternalUseWasteService store: $e');
+      print('WarehouseInternalUseWasteService storeDocument: $e');
       return null;
     }
+  }
+
+  /// Legacy satu baris (backend `mergeLegacySingleItemPayload`).
+  Future<Map<String, dynamic>?> store({
+    required String type,
+    required String date,
+    required int warehouseId,
+    int? rukoId,
+    required int itemId,
+    required double qty,
+    required int unitId,
+    String? notes,
+  }) async {
+    return storeDocument(
+      type: type,
+      date: date,
+      warehouseId: warehouseId,
+      rukoId: rukoId,
+      notes: notes,
+      items: [
+        {
+          'item_id': itemId,
+          'qty': qty,
+          'unit_id': unitId,
+        },
+      ],
+    );
   }
 
   Future<Map<String, dynamic>?> delete(int id) async {

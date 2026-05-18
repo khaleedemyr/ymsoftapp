@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import '../../services/warehouse_internal_use_waste_service.dart';
-import '../../services/auth_service.dart';
-import '../../widgets/app_scaffold.dart';
-import '../../widgets/app_loading_indicator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../services/auth_service.dart';
+import '../../services/warehouse_internal_use_waste_service.dart';
+import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/app_scaffold.dart';
+
+/// Selaras web `InternalUseWaste/Show.vue` — data dari API `header` + `lines`.
 class WarehouseInternalUseWasteDetailScreen extends StatefulWidget {
   final int id;
 
@@ -17,9 +19,14 @@ class WarehouseInternalUseWasteDetailScreen extends StatefulWidget {
 
 class _WarehouseInternalUseWasteDetailScreenState extends State<WarehouseInternalUseWasteDetailScreen> {
   final WarehouseInternalUseWasteService _service = WarehouseInternalUseWasteService();
-  Map<String, dynamic>? _data;
-  bool _canDelete = false;
+
+  Map<String, dynamic>? _header;
+  List<Map<String, dynamic>> _lines = [];
+  List<Map<String, dynamic>> _serialItems = [];
   bool _isLoading = true;
+  int? _headerId;
+
+  static const Color _green = Color(0xFF059669);
 
   @override
   void initState() {
@@ -30,21 +37,77 @@ class _WarehouseInternalUseWasteDetailScreenState extends State<WarehouseInterna
   Future<void> _loadDetail() async {
     setState(() => _isLoading = true);
     final result = await _service.getDetail(widget.id);
-    if (mounted && result != null) {
+    if (!mounted) return;
+    if (result != null && result['success'] == true) {
+      final h = result['header'];
+      final rawLines = result['lines'];
+      final rawSerial = result['serial_items'] ?? result['serialItems'];
       setState(() {
-        _data = result['data'] is Map ? Map<String, dynamic>.from(result['data'] as Map) : null;
-        _canDelete = result['can_delete'] == true;
+        _header = h is Map ? Map<String, dynamic>.from(h) : null;
+        final hid = _header?['id'];
+        _headerId = hid is int ? hid : int.tryParse(hid?.toString() ?? '');
+        _lines = rawLines is List
+            ? rawLines.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+            : [];
+        _serialItems = rawSerial is List
+            ? rawSerial.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+            : [];
         _isLoading = false;
       });
-    } else if (mounted) {
-      setState(() => _isLoading = false);
+    } else {
+      setState(() {
+        _header = null;
+        _headerId = null;
+        _lines = [];
+        _serialItems = [];
+        _isLoading = false;
+      });
     }
+  }
+
+  String? _documentModeLabel(String? mode) {
+    if (mode == 'serial') return 'Serial';
+    if (mode == 'mixed') return 'Campuran';
+    return null;
+  }
+
+  bool get _canEdit {
+    final mode = _header?['document_mode']?.toString();
+    return mode == null || mode.isEmpty || mode == 'normal';
+  }
+
+  Widget _buildDocumentModeChip(String? mode) {
+    final label = _documentModeLabel(mode);
+    if (label == null) return const SizedBox.shrink();
+    final isSerial = mode == 'serial';
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isSerial ? const Color(0xFFE0E7FF) : const Color(0xFFF3E8FF),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: isSerial ? const Color(0xFF4338CA) : const Color(0xFF7E22CE),
+        ),
+      ),
+    );
+  }
+
+  String _lineNoteText(Map<String, dynamic> ln) {
+    final n = ln['line_notes'] ?? ln['notes'];
+    if (n == null || n.toString().trim().isEmpty) return '-';
+    return n.toString();
   }
 
   String _formatDate(String? v) {
     if (v == null || v.isEmpty) return '-';
     try {
-      return DateFormat('dd MMM yyyy', 'id_ID').format(DateTime.parse(v));
+      return DateFormat.yMMMd('id_ID').format(DateTime.parse(v));
     } catch (_) {
       return v;
     }
@@ -53,58 +116,32 @@ class _WarehouseInternalUseWasteDetailScreenState extends State<WarehouseInterna
   String _typeLabel(String? type) {
     if (type == null) return '-';
     switch (type) {
-      case 'internal_use': return 'Internal Use';
-      case 'spoil': return 'Spoil';
-      case 'waste': return 'Waste';
-      default: return type;
+      case 'internal_use':
+        return 'Internal Use';
+      case 'spoil':
+        return 'Spoil';
+      case 'waste':
+        return 'Waste';
+      default:
+        return type;
     }
   }
 
-  String _formatQty(dynamic qty, String? unitName) {
-    if (qty == null) return (unitName?.trim().isNotEmpty == true) ? '0 ${unitName!.trim()}' : '-';
-    final n = qty is num ? qty.toDouble() : (double.tryParse(qty.toString()) ?? 0);
-    final formatted = n == n.truncate() ? n.toInt().toString() : n.toString().replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    final unit = (unitName ?? '').trim();
-    return unit.isEmpty ? formatted : '$formatted $unit';
+  String _formatNumber(dynamic val) {
+    if (val == null) return '-';
+    final n = val is num ? val.toDouble() : double.tryParse(val.toString());
+    if (n == null) return '-';
+    if (n == n.truncateToDouble()) return n.toInt().toString();
+    return NumberFormat.decimalPattern('id_ID').format(n);
   }
 
-  String? _getAvatarUrl(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    if (raw.startsWith('http')) return raw;
-    final n = raw.startsWith('/') ? raw.substring(1) : raw;
-    if (n.startsWith('storage/')) return '${AuthService.storageUrl}/$n';
-    return '${AuthService.storageUrl}/storage/$n';
-  }
-
-  String _getInitials(String name) {
-    final t = name.trim();
-    if (t.isEmpty || t == '-') return '?';
-    final parts = t.split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
-    return '${parts.first.characters.first.toUpperCase()}${parts.last.characters.first.toUpperCase()}';
-  }
-
-  Future<void> _confirmDelete() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Hapus data?'),
-        content: const Text('Stok akan di-rollback. Lanjutkan?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus', style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-    final result = await _service.delete(widget.id);
-    if (mounted) {
-      if (result != null && result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data berhasil dihapus'), backgroundColor: Color(0xFF059669)));
-        Navigator.pop(context, true);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result?['message']?.toString() ?? 'Gagal hapus'), backgroundColor: Colors.red));
-      }
+  Future<void> _openEditInWeb() async {
+    final id = _headerId ?? widget.id;
+    final uri = Uri.parse('${AuthService.baseUrl}/internal-use-waste/$id/edit');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tidak bisa membuka browser')));
     }
   }
 
@@ -114,8 +151,8 @@ class _WarehouseInternalUseWasteDetailScreenState extends State<WarehouseInterna
       title: 'Detail Internal Use & Waste',
       showDrawer: false,
       body: _isLoading
-          ? const Center(child: AppLoadingIndicator(size: 32, color: Color(0xFF059669)))
-          : _data == null
+          ? const Center(child: AppLoadingIndicator(size: 32, color: _green))
+          : _header == null
               ? const Center(child: Text('Data tidak ditemukan'))
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
@@ -127,104 +164,125 @@ class _WarehouseInternalUseWasteDetailScreenState extends State<WarehouseInterna
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 6))],
+                          boxShadow: const [
+                            BoxShadow(color: Color.fromRGBO(15, 23, 42, 0.06), blurRadius: 16, offset: Offset(0, 6)),
+                          ],
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(child: Text(_data!['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)))),
-                                _detailTypeChip(_data!['type']?.toString()),
-                              ],
+                            Text(
+                              'No. dokumen: ${_headerId ?? widget.id}',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                             ),
+                            _buildDocumentModeChip(_header!['document_mode']?.toString()),
+                            const SizedBox(height: 12),
+                            _kv('Tipe', _typeLabel(_header!['type']?.toString())),
+                            _kv('Tanggal', _formatDate(_header!['date']?.toString())),
+                            _kv('Warehouse', _header!['warehouse_name']?.toString() ?? '-'),
+                            if (_header!['type']?.toString() == 'internal_use' &&
+                                (_header!['nama_ruko'] != null && _header!['nama_ruko'].toString().isNotEmpty))
+                              _kv('Ruko', _header!['nama_ruko']?.toString() ?? '-'),
+                            if (_header!['notes'] != null && _header!['notes'].toString().isNotEmpty)
+                              _kv('Catatan dokumen', _header!['notes']?.toString() ?? ''),
+                            if (_serialItems.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              const Text('Detail Nomor Seri', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF6366F1))),
+                              const SizedBox(height: 8),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  headingRowColor: WidgetStateProperty.all(const Color(0xFFEEF2FF)),
+                                  columns: const [
+                                    DataColumn(label: Text('Serial')),
+                                    DataColumn(label: Text('Item')),
+                                    DataColumn(label: Text('Qty')),
+                                  ],
+                                  rows: _serialItems.map((s) {
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(s['serial_number']?.toString() ?? '-', style: const TextStyle(fontFamily: 'monospace', fontSize: 13))),
+                                        DataCell(Text(s['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 13))),
+                                        DataCell(Text('${_formatNumber(s['qty'])} ${s['unit_name'] ?? ''}', style: const TextStyle(fontSize: 13))),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 16),
-                            _row('Tanggal', _formatDate(_data!['date']?.toString())),
-                            _row('Tipe', _typeLabel(_data!['type']?.toString())),
-                            _row('Gudang', _data!['warehouse_name']?.toString() ?? '-'),
-                            if (_data!['type'] == 'internal_use') _row('Ruko', _data!['nama_ruko']?.toString() ?? '-'),
-                            _row('Item', _data!['item_name']?.toString() ?? '-'),
-                            _row('Qty', _formatQty(_data!['qty'], _data!['unit_name']?.toString())),
-                            if (_data!['notes'] != null && _data!['notes'].toString().isNotEmpty) _row('Catatan', _data!['notes']?.toString() ?? ''),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 6))],
-                        ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 28,
-                              backgroundColor: const Color(0xFFE5E7EB),
-                              backgroundImage: _getAvatarUrl(_data!['creator_avatar']?.toString()) != null
-                                  ? CachedNetworkImageProvider(_getAvatarUrl(_data!['creator_avatar']?.toString())!)
-                                  : null,
-                              child: _getAvatarUrl(_data!['creator_avatar']?.toString()) == null
-                                  ? Text(_getInitials(_data!['creator_name']?.toString() ?? '-'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)))
-                                  : null,
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Dibuat oleh', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                  const SizedBox(height: 2),
-                                  Text(_data!['creator_name']?.toString() ?? '-', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                            const Text('Daftar item (qty)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            const SizedBox(height: 8),
+                            if (_lines.isEmpty)
+                              const Text('Tidak ada item qty', style: TextStyle(color: Color(0xFF64748B), fontSize: 13))
+                            else
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                                columns: const [
+                                  DataColumn(label: Text('Item')),
+                                  DataColumn(label: Text('Qty')),
+                                  DataColumn(label: Text('Unit')),
+                                  DataColumn(label: Text('Catatan baris')),
                                 ],
+                                rows: _lines.map((ln) {
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(Text(ln['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 13))),
+                                      DataCell(Text(_formatNumber(ln['qty']), style: const TextStyle(fontSize: 13))),
+                                      DataCell(Text(ln['unit_name']?.toString() ?? '-', style: const TextStyle(fontSize: 13))),
+                                      DataCell(
+                                        SizedBox(
+                                          width: 160,
+                                          child: Text(
+                                            _lineNoteText(ln),
+                                            style: const TextStyle(fontSize: 12),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      if (_canDelete) ...[
-                        const SizedBox(height: 16),
-                        OutlinedButton.icon(
-                          onPressed: _confirmDelete,
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          label: const Text('Hapus', style: TextStyle(color: Colors.red)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.red),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (_canEdit)
+                            OutlinedButton(
+                              onPressed: _openEditInWeb,
+                              child: const Text('Edit'),
+                            ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Kembali'),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ],
                   ),
                 ),
     );
   }
 
-  Widget _row(String label, String value) {
+  Widget _kv(String k, String v) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 100, child: Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B), fontWeight: FontWeight.w500))),
+          SizedBox(width: 130, child: Text(k, style: TextStyle(fontSize: 13, color: Colors.grey.shade700))),
+          Expanded(child: Text(v, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF1E293B)))),
         ],
       ),
-    );
-  }
-
-  Widget _detailTypeChip(String? type) {
-    final label = _typeLabel(type);
-    Color bg = const Color(0xFF059669).withOpacity(0.15);
-    Color fg = const Color(0xFF059669);
-    if (type == 'spoil') { bg = Colors.orange.withOpacity(0.15); fg = Colors.orange.shade800; }
-    else if (type == 'waste') { bg = Colors.red.withOpacity(0.15); fg = Colors.red.shade700; }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
-      child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
     );
   }
 }

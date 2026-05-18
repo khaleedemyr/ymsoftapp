@@ -117,6 +117,38 @@ class OutletRejectionService {
     return null;
   }
 
+  Future<Map<String, dynamic>?> validateSerial({
+    required String serialNumber,
+    required int outletId,
+    required int warehouseId,
+    int? deliveryOrderId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final response = await http.post(
+        Uri.parse('$_base/validate-serial'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'serial_number': serialNumber,
+          'outlet_id': outletId,
+          'warehouse_id': warehouseId,
+          if (deliveryOrderId != null) 'delivery_order_id': deliveryOrderId,
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('OutletRejectionService validateSerial: $e');
+    }
+    return null;
+  }
+
   Future<List<Map<String, dynamic>>> getItems({String search = ''}) async {
     if (search.trim().length < 1) return [];
     try {
@@ -167,7 +199,8 @@ class OutletRejectionService {
     required int warehouseId,
     int? deliveryOrderId,
     String? notes,
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
   }) async {
     try {
       final token = await _getToken();
@@ -178,7 +211,8 @@ class OutletRejectionService {
         'warehouse_id': warehouseId,
         if (deliveryOrderId != null) 'delivery_order_id': deliveryOrderId,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
-        'items': items,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
       };
       final response = await http.post(
         Uri.parse(_base),
@@ -206,7 +240,8 @@ class OutletRejectionService {
     required int warehouseId,
     int? deliveryOrderId,
     String? notes,
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
   }) async {
     try {
       final token = await _getToken();
@@ -217,7 +252,8 @@ class OutletRejectionService {
         'warehouse_id': warehouseId,
         if (deliveryOrderId != null) 'delivery_order_id': deliveryOrderId,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
-        'items': items,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
       };
       final response = await http.put(
         Uri.parse('$_base/$id'),

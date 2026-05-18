@@ -18,6 +18,7 @@ class _RetailWarehouseSaleDetailScreenState extends State<RetailWarehouseSaleDet
   final RetailWarehouseSaleService _service = RetailWarehouseSaleService();
   Map<String, dynamic>? _sale;
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _serialItems = [];
   bool _loading = true;
   bool _canDelete = false;
   String? _error;
@@ -51,10 +52,14 @@ class _RetailWarehouseSaleDetailScreenState extends State<RetailWarehouseSaleDet
     }
     final sale = result['sale'];
     final items = result['items'];
+    final serialItems = result['serial_items'];
     setState(() {
       _sale = sale != null ? Map<String, dynamic>.from(sale) : null;
       _items = items is List
           ? (items as List).map((e) => Map<String, dynamic>.from(e)).toList()
+          : [];
+      _serialItems = serialItems is List
+          ? (serialItems as List).map((e) => Map<String, dynamic>.from(e)).toList()
           : [];
       _canDelete = result['can_delete'] == true;
       _loading = false;
@@ -155,6 +160,27 @@ class _RetailWarehouseSaleDetailScreenState extends State<RetailWarehouseSaleDet
     );
   }
 
+  Widget _buildSaleModeChip(String? mode) {
+    if (mode == null || mode == 'normal') return const SizedBox.shrink();
+    final isSerial = mode == 'serial';
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSerial ? const Color(0xFFE0E7FF) : const Color(0xFFF3E8FF),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        isSerial ? 'Serial' : 'Campuran',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: isSerial ? const Color(0xFF4338CA) : const Color(0xFF7E22CE),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -212,13 +238,19 @@ class _RetailWarehouseSaleDetailScreenState extends State<RetailWarehouseSaleDet
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          number,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF2563EB),
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              number,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF2563EB),
+                              ),
+                            ),
+                            _buildSaleModeChip(sale['sale_mode']?.toString()),
+                          ],
                         ),
                       ),
                       _buildStatusChip(status),
@@ -255,12 +287,38 @@ class _RetailWarehouseSaleDetailScreenState extends State<RetailWarehouseSaleDet
                 ],
               ),
             ),
+            if (_serialItems.isNotEmpty)
+              _buildSection(
+                'Detail Nomor Seri',
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowColor: WidgetStateProperty.all(const Color(0xFFEEF2FF)),
+                    columns: const [
+                      DataColumn(label: Text('Serial', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      DataColumn(label: Text('Item', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      DataColumn(label: Text('Qty', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
+                      DataColumn(label: Text('Harga', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
+                      DataColumn(label: Text('Subtotal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
+                    ],
+                    rows: _serialItems.map((s) {
+                      return DataRow(cells: [
+                        DataCell(Text(s['serial_number']?.toString() ?? '-', style: const TextStyle(fontFamily: 'monospace', fontSize: 12))),
+                        DataCell(Text(s['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text('${s['qty']} ${s['unit_name'] ?? ''}', style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(_formatMoney(s['price']), style: const TextStyle(fontSize: 12))),
+                        DataCell(Text(_formatMoney(s['subtotal']), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6366F1), fontSize: 12))),
+                      ]);
+                    }).toList(),
+                  ),
+                ),
+              ),
             _buildSection(
-              'Detail Item',
+              'Item Penjualan (Qty)',
               _items.isEmpty
                   ? const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('Tidak ada item', style: TextStyle(color: Color(0xFF64748B))),
+                      child: Text('Tidak ada item qty', style: TextStyle(color: Color(0xFF64748B))),
                     )
                   : Column(
                       children: _items.map((item) {

@@ -1,38 +1,67 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import '../../services/warehouse_internal_use_waste_service.dart';
-import '../../widgets/app_scaffold.dart';
-import '../../widgets/app_loading_indicator.dart';
 
+import '../../services/native_barcode_scanner.dart';
+import '../../services/warehouse_internal_use_waste_service.dart';
+import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/app_scaffold.dart';
+
+class _LineEntry {
+  int? itemId;
+  String itemName;
+  final TextEditingController qtyController;
+  final TextEditingController lineNotesController;
+  int? unitId;
+  List<Map<String, dynamic>> unitOptions;
+
+  _LineEntry()
+      : qtyController = TextEditingController(),
+        lineNotesController = TextEditingController(),
+        itemName = '',
+        unitOptions = [];
+
+  void dispose() {
+    qtyController.dispose();
+    lineNotesController.dispose();
+  }
+}
+
+/// Selaras web `InternalUseWaste/Create.vue` — satu dokumen, banyak baris item + catatan dokumen.
 class WarehouseInternalUseWasteCreateScreen extends StatefulWidget {
   const WarehouseInternalUseWasteCreateScreen({super.key});
 
   @override
-  State<WarehouseInternalUseWasteCreateScreen> createState() =>
-      _WarehouseInternalUseWasteCreateScreenState();
+  State<WarehouseInternalUseWasteCreateScreen> createState() => _WarehouseInternalUseWasteCreateScreenState();
 }
 
-class _WarehouseInternalUseWasteCreateScreenState
-    extends State<WarehouseInternalUseWasteCreateScreen> {
+class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInternalUseWasteCreateScreen> {
   final WarehouseInternalUseWasteService _service = WarehouseInternalUseWasteService();
   final TextEditingController _dateController = TextEditingController();
-  final TextEditingController _qtyController = TextEditingController(text: '1');
-  final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _docNotesController = TextEditingController();
 
   List<Map<String, dynamic>> _warehouses = [];
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _rukos = [];
-  List<Map<String, dynamic>> _units = [];
+
+  final List<_LineEntry> _lines = [_LineEntry()];
 
   bool _loadingCreateData = true;
   bool _saving = false;
-  String _type = 'internal_use';
+  String _type = '';
   int? _warehouseId;
   int? _rukoId;
-  int? _itemId;
-  String _itemName = '';
-  int? _unitId;
-  Map<String, dynamic>? _stockInfo;
+
+  bool _serialMode = false;
+  final TextEditingController _serialInputController = TextEditingController();
+  final FocusNode _serialFocusNode = FocusNode();
+  final List<Map<String, dynamic>> _scannedSerials = [];
+  bool _serialScanning = false;
+  String _serialFeedback = '';
+  bool _serialFeedbackSuccess = false;
+
+  static const Color _primaryGreen = Color(0xFF059669);
 
   int? _int(dynamic v) {
     if (v == null) return null;
@@ -50,8 +79,12 @@ class _WarehouseInternalUseWasteCreateScreenState
   @override
   void dispose() {
     _dateController.dispose();
-    _qtyController.dispose();
-    _notesController.dispose();
+    _docNotesController.dispose();
+    _serialInputController.dispose();
+    _serialFocusNode.dispose();
+    for (final l in _lines) {
+      l.dispose();
+    }
     super.dispose();
   }
 
@@ -96,7 +129,19 @@ class _WarehouseInternalUseWasteCreateScreenState
     }
   }
 
-  Future<void> _openItemPicker() async {
+  void _addRow() {
+    setState(() => _lines.add(_LineEntry()));
+  }
+
+  void _removeRow(int idx) {
+    if (_lines.length <= 1) return;
+    setState(() {
+      _lines[idx].dispose();
+      _lines.removeAt(idx);
+    });
+  }
+
+  Future<void> _openItemPicker(int lineIndex) async {
     if (_items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Data item tidak tersedia'), backgroundColor: Colors.orange),
@@ -113,16 +158,16 @@ class _WarehouseInternalUseWasteCreateScreenState
     final name = selected['name']?.toString() ?? selected['nama']?.toString() ?? '-';
     if (itemId == null) return;
 
+    final line = _lines[lineIndex];
     setState(() {
-      _itemId = itemId;
-      _itemName = name;
-      _unitId = null;
-      _units = [];
-      _stockInfo = null;
+      line.itemId = itemId;
+      line.itemName = name;
+      line.unitId = null;
+      line.unitOptions = [];
     });
+
     final units = await _service.getItemUnits(itemId);
     if (!mounted) return;
-    // Deduplicate by id so DropdownButton has exactly one item per value
     final seenIds = <int>{};
     final deduped = <Map<String, dynamic>>[];
     for (final u in units) {
@@ -133,24 +178,99 @@ class _WarehouseInternalUseWasteCreateScreenState
       }
     }
     setState(() {
-      _units = deduped;
-      if (_units.isNotEmpty && _unitId == null) {
-        final first = _int(_units.first['id']);
-        if (first != null) _unitId = first;
+      line.unitOptions = deduped;
+      if (line.unitOptions.isNotEmpty) {
+        line.unitId = _int(line.unitOptions.first['id']);
       }
     });
-    _refreshStock();
   }
 
-  Future<void> _refreshStock() async {
-    if (_warehouseId == null || _itemId == null) return;
-    final info = await _service.getStock(warehouseId: _warehouseId!, itemId: _itemId!);
-    if (mounted) setState(() => _stockInfo = info);
+  Future<void> _onSerialScan() async {
+    final input = _serialInputController.text.trim();
+    if (input.isEmpty) return;
+    if (_warehouseId == null) {
+      setState(() {
+        _serialFeedback = 'Pilih warehouse dulu';
+        _serialFeedbackSuccess = false;
+      });
+      return;
+    }
+    if (_scannedSerials.any((s) => s['serial_number'] == input)) {
+      setState(() {
+        _serialFeedback = 'Serial "$input" sudah discan';
+        _serialFeedbackSuccess = false;
+      });
+      _serialInputController.clear();
+      return;
+    }
+    setState(() => _serialScanning = true);
+    final result = await _service.validateSerialForIUW(
+      serialNumber: input,
+      warehouseId: _warehouseId!,
+    );
+    if (!mounted) return;
+    if (result['valid'] == true) {
+      final serial = result['serial'] as Map<String, dynamic>? ?? {};
+      setState(() {
+        _scannedSerials.add({
+          'serial_id': serial['id'],
+          'serial_number': serial['serial_number'] ?? input,
+          'item_id': serial['item_id'],
+          'item_name': serial['item_name'] ?? '-',
+          'unit_id': serial['unit_id'],
+          'unit_name': serial['unit_name'] ?? '-',
+          'qty': serial['qty'] ?? 1,
+          'qty_small': serial['qty_small'] ?? 1,
+        });
+        _serialFeedback = 'Serial "$input" valid';
+        _serialFeedbackSuccess = true;
+        _serialScanning = false;
+      });
+      HapticFeedback.mediumImpact();
+    } else {
+      setState(() {
+        _serialFeedback = result['message']?.toString() ?? 'Serial tidak valid';
+        _serialFeedbackSuccess = false;
+        _serialScanning = false;
+      });
+      HapticFeedback.heavyImpact();
+    }
+    _serialInputController.clear();
+    _serialFocusNode.requestFocus();
+  }
+
+  Future<void> _openCameraSerial() async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Scan kamera tersedia di aplikasi Android/iOS')),
+      );
+      return;
+    }
+    try {
+      final scanned = await NativeBarcodeScanner.scanBarcode();
+      if (!mounted) return;
+      if (scanned != null && scanned.isNotEmpty) {
+        _serialInputController.text = scanned;
+        await _onSerialScan();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal buka scanner: $e')));
+    }
+  }
+
+  void _removeSerial(int index) {
+    setState(() => _scannedSerials.removeAt(index));
   }
 
   Future<void> _submit() async {
     if (_saving) return;
     final date = _dateController.text.trim();
+    if (_type.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih tipe'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
     if (date.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tanggal wajib diisi'), backgroundColor: Colors.orange),
@@ -159,7 +279,7 @@ class _WarehouseInternalUseWasteCreateScreenState
     }
     if (_warehouseId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gudang wajib dipilih'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Warehouse wajib dipilih'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -169,49 +289,73 @@ class _WarehouseInternalUseWasteCreateScreenState
       );
       return;
     }
-    if (_itemId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Item wajib dipilih'), backgroundColor: Colors.orange),
-      );
-      return;
+
+    final payloadItems = <Map<String, dynamic>>[];
+    for (var i = 0; i < _lines.length; i++) {
+      final l = _lines[i];
+      if (l.itemId == null) continue;
+      if (l.unitId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lengkapi baris ${i + 1}: item dan unit wajib.'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+      final qty = double.tryParse(l.qtyController.text.replaceAll(',', '.')) ?? 0;
+      if (qty <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Baris ${i + 1}: qty harus lebih dari 0.'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+      final row = <String, dynamic>{
+        'item_id': l.itemId,
+        'qty': qty,
+        'unit_id': l.unitId,
+      };
+      final ln = l.lineNotesController.text.trim();
+      if (ln.isNotEmpty) row['notes'] = ln;
+      payloadItems.add(row);
     }
-    final qty = double.tryParse(_qtyController.text.replaceAll(',', '.')) ?? 0;
-    if (qty <= 0) {
+
+    if (payloadItems.isEmpty && _scannedSerials.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Qty harus lebih dari 0'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-    if (_unitId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unit wajib dipilih'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Minimal 1 baris item (qty) atau 1 nomor seri'), backgroundColor: Colors.orange),
       );
       return;
     }
 
+    final serialPayload = _scannedSerials.map((s) => {
+      'serial_id': s['serial_id'],
+      'serial_number': s['serial_number'],
+      'item_id': s['item_id'],
+      'unit_id': s['unit_id'],
+      'unit_name': s['unit_name'],
+      'qty': s['qty'],
+      'qty_small': s['qty_small'],
+    }).toList();
+
     setState(() => _saving = true);
-    final result = await _service.store(
+    final result = await _service.storeDocument(
       type: _type,
       date: date,
       warehouseId: _warehouseId!,
       rukoId: _type == 'internal_use' ? _rukoId : null,
-      itemId: _itemId!,
-      qty: qty,
-      unitId: _unitId!,
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+      notes: _docNotesController.text.trim().isEmpty ? null : _docNotesController.text.trim(),
+      items: payloadItems.isNotEmpty ? payloadItems : null,
+      serialItems: serialPayload.isNotEmpty ? serialPayload : null,
     );
     if (!mounted) return;
     setState(() => _saving = false);
 
     if (result != null && result['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message']?.toString() ?? 'Berhasil disimpan'), backgroundColor: Colors.green),
+        SnackBar(content: Text(result['message']?.toString() ?? 'Data berhasil disimpan!'), backgroundColor: Colors.green),
       );
       Navigator.pop(context, true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result?['message']?.toString() ?? 'Gagal menyimpan'),
+          content: Text(result?['message']?.toString() ?? 'Gagal menyimpan data.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -222,23 +366,28 @@ class _WarehouseInternalUseWasteCreateScreenState
   Widget build(BuildContext context) {
     if (_loadingCreateData) {
       return AppScaffold(
-        title: 'Tambah Internal Use & Waste',
+        title: 'Input Internal Use & Waste',
+        showDrawer: false,
         body: const Center(child: AppLoadingIndicator()),
       );
     }
 
-    const primaryGreen = Color(0xFF059669);
-
     return AppScaffold(
-      title: 'Tambah Internal Use & Waste',
+      title: 'Input Internal Use & Waste',
+      showDrawer: false,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(
+              'Satu dokumen bisa berisi banyak item. Tanggal, tipe, warehouse, dan ruko (jika internal use) sama untuk semua baris.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 16),
             _buildSectionCard(
-              title: 'Jenis & Waktu',
-              icon: Icons.category_outlined,
+              title: 'Dokumen',
+              icon: Icons.description_outlined,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -249,12 +398,16 @@ class _WarehouseInternalUseWasteCreateScreenState
                     isExpanded: true,
                     decoration: _inputDecoration(),
                     items: const [
+                      DropdownMenuItem(value: '', child: Text('Pilih Tipe')),
                       DropdownMenuItem(value: 'internal_use', child: Text('Internal Use')),
                       DropdownMenuItem(value: 'spoil', child: Text('Spoil')),
                       DropdownMenuItem(value: 'waste', child: Text('Waste')),
                     ],
                     onChanged: (v) {
-                      if (v != null) setState(() { _type = v; if (v != 'internal_use') _rukoId = null; });
+                      setState(() {
+                        _type = v ?? '';
+                        if (_type != 'internal_use') _rukoId = null;
+                      });
                     },
                   ),
                   const SizedBox(height: 16),
@@ -266,41 +419,31 @@ class _WarehouseInternalUseWasteCreateScreenState
                       decoration: _inputDecoration(),
                       child: Row(
                         children: [
-                          Expanded(child: Text(_dateController.text, style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis)),
+                          Expanded(
+                            child: Text(_dateController.text, style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis),
+                          ),
                           const SizedBox(width: 8),
-                          Icon(Icons.calendar_today, size: 20, color: primaryGreen),
+                          const Icon(Icons.calendar_today, size: 20, color: _primaryGreen),
                         ],
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              title: 'Lokasi',
-              icon: Icons.warehouse_outlined,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _label('Gudang'),
+                  const SizedBox(height: 16),
+                  _label('Warehouse'),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<int>(
                     value: _warehouseId,
                     isExpanded: true,
                     decoration: _inputDecoration(),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('-- Pilih Gudang --', overflow: TextOverflow.ellipsis)),
+                      const DropdownMenuItem(value: null, child: Text('-- Pilih Warehouse --', overflow: TextOverflow.ellipsis)),
                       ..._warehouses.map((w) {
                         final id = _int(w['id']);
                         final name = w['name']?.toString() ?? '-';
                         return DropdownMenuItem(value: id, child: Text(name, overflow: TextOverflow.ellipsis));
                       }),
                     ],
-                    onChanged: (v) {
-                      setState(() { _warehouseId = v; _stockInfo = null; });
-                      _refreshStock();
-                    },
+                    onChanged: (v) => setState(() => _warehouseId = v),
                   ),
                   if (_type == 'internal_use') ...[
                     const SizedBox(height: 16),
@@ -313,104 +456,264 @@ class _WarehouseInternalUseWasteCreateScreenState
                       items: [
                         const DropdownMenuItem(value: null, child: Text('-- Pilih Ruko --', overflow: TextOverflow.ellipsis)),
                         ..._rukos.map((r) {
-                          final id = _int(r['id']);
-                          final name = r['name']?.toString() ?? '-';
+                          final id = _int(r['id'] ?? r['id_ruko']);
+                          final name = r['name']?.toString() ?? r['nama_ruko']?.toString() ?? '-';
                           return DropdownMenuItem(value: id, child: Text(name, overflow: TextOverflow.ellipsis));
                         }),
                       ],
                       onChanged: (v) => setState(() => _rukoId = v),
                     ),
                   ],
+                  const SizedBox(height: 16),
+                  _label('Catatan dokumen'),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _docNotesController,
+                    maxLines: 2,
+                    decoration: _inputDecoration(hint: 'Opsional, berlaku untuk seluruh dokumen'),
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
+            _buildSerialModeCard(),
+            if (_serialMode) ...[
+              const SizedBox(height: 12),
+              _buildSerialScanCard(),
+            ],
+            const SizedBox(height: 16),
             _buildSectionCard(
-              title: 'Item & Jumlah',
+              title: 'Daftar item (qty)',
               icon: Icons.inventory_2_outlined,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _label('Item'),
-                  const SizedBox(height: 6),
-                  InkWell(
-                    onTap: _openItemPicker,
-                    child: InputDecorator(
-                      decoration: _inputDecoration(),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text(_itemName.isEmpty ? 'Pilih item' : _itemName, style: TextStyle(color: _itemName.isEmpty ? Colors.grey : null), overflow: TextOverflow.ellipsis)),
-                          const SizedBox(width: 8),
-                          Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade600),
-                        ],
-                      ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: _primaryGreen, foregroundColor: Colors.white),
+                      onPressed: _addRow,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Tambah item'),
                     ),
                   ),
-                  if (_stockInfo != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: primaryGreen.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
-                      child: Text(_formatStockInfo(), style: TextStyle(fontSize: 12, color: Colors.grey.shade800), maxLines: 2, overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  _label('Qty'),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _qtyController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: _inputDecoration(),
-                  ),
-                  const SizedBox(height: 16),
-                  _label('Unit'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<int>(
-                    value: _unitId != null && _units.any((u) => _int(u['id']) == _unitId) ? _unitId : null,
-                    isExpanded: true,
-                    decoration: _inputDecoration(),
-                    items: [
-                      const DropdownMenuItem<int>(value: null, child: Text('-- Pilih Unit --', overflow: TextOverflow.ellipsis)),
-                      ..._units.map((u) {
-                        final id = _int(u['id']);
-                        final name = u['name']?.toString() ?? '-';
-                        if (id == null) return null;
-                        return DropdownMenuItem<int>(value: id, child: Text(name, overflow: TextOverflow.ellipsis));
-                      }).whereType<DropdownMenuItem<int>>(),
-                    ],
-                    onChanged: (v) => setState(() => _unitId = v),
-                  ),
+                  const SizedBox(height: 12),
+                  ...List.generate(_lines.length, (idx) => _buildLineCard(idx)),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              title: 'Catatan',
-              icon: Icons.note_outlined,
-              child: TextFormField(
-                controller: _notesController,
-                maxLines: 2,
-                decoration: _inputDecoration(hint: 'Opsional'),
-              ),
-            ),
             const SizedBox(height: 24),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryGreen,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                    child: const Text('Batal'),
+                  ),
                 ),
-                child: _saving
-                    ? const SizedBox(height: 26, width: 26, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Simpan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _saving ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryGreen,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: _saving
+                          ? const SizedBox(height: 26, width: 26, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Simpan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSerialModeCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF6366F1)),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mode Nomor Seri', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Scan serial dari gudang terpilih', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+          ),
+          Switch(
+            value: _serialMode,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: (v) {
+              setState(() => _serialMode = v);
+              if (v) Future.delayed(const Duration(milliseconds: 100), () => _serialFocusNode.requestFocus());
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialScanCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Scan Nomor Seri', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+          if (_warehouseId == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Pilih warehouse terlebih dahulu', style: TextStyle(fontSize: 12, color: Colors.red)),
+            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _serialInputController,
+                  focusNode: _serialFocusNode,
+                  enabled: !_serialScanning && _warehouseId != null,
+                  onSubmitted: (_) => _onSerialScan(),
+                  decoration: const InputDecoration(
+                    hintText: 'Scan / ketik serial...',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              IconButton(onPressed: _serialScanning ? null : _openCameraSerial, icon: const Icon(Icons.camera_alt_outlined)),
+              IconButton(onPressed: _serialScanning ? null : _onSerialScan, icon: const Icon(Icons.check_circle_outline)),
+            ],
+          ),
+          if (_serialFeedback.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_serialFeedback, style: TextStyle(fontSize: 12, color: _serialFeedbackSuccess ? Colors.green : Colors.red)),
+            ),
+          if (_scannedSerials.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('${_scannedSerials.length} serial discan', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+            ...List.generate(_scannedSerials.length, (i) {
+              final s = _scannedSerials[i];
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(s['serial_number']?.toString() ?? '-', style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+                subtitle: Text('${s['item_name']} — ${s['qty']} ${s['unit_name']}'),
+                trailing: IconButton(icon: const Icon(Icons.close, color: Colors.red, size: 20), onPressed: () => _removeSerial(i)),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLineCard(int idx) {
+    final line = _lines[idx];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('Baris ${idx + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Spacer(),
+              if (_lines.length > 1)
+                IconButton(
+                  onPressed: () => _removeRow(idx),
+                  icon: const Icon(Icons.close, color: Colors.red),
+                  tooltip: 'Hapus baris',
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _label('Item'),
+          const SizedBox(height: 6),
+          InkWell(
+            onTap: () => _openItemPicker(idx),
+            child: InputDecorator(
+              decoration: _inputDecoration(),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      line.itemName.isEmpty ? 'Pilih item' : line.itemName,
+                      style: TextStyle(color: line.itemName.isEmpty ? Colors.grey : null),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade600),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _label('Qty'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: line.qtyController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: _inputDecoration(),
+          ),
+          const SizedBox(height: 12),
+          _label('Unit'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<int>(
+            value: line.unitId != null && line.unitOptions.any((u) => _int(u['id']) == line.unitId) ? line.unitId : null,
+            isExpanded: true,
+            decoration: _inputDecoration(),
+            items: [
+              const DropdownMenuItem<int>(value: null, child: Text('-- Pilih Unit --', overflow: TextOverflow.ellipsis)),
+              ...line.unitOptions.map((u) {
+                final id = _int(u['id']);
+                final name = u['name']?.toString() ?? '-';
+                if (id == null) return null;
+                return DropdownMenuItem<int>(value: id, child: Text(name, overflow: TextOverflow.ellipsis));
+              }).whereType<DropdownMenuItem<int>>(),
+            ],
+            onChanged: (v) => setState(() => line.unitId = v),
+          ),
+          const SizedBox(height: 12),
+          _label('Catatan baris'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: line.lineNotesController,
+            decoration: _inputDecoration(hint: 'Opsional'),
+          ),
+        ],
       ),
     );
   }
@@ -428,7 +731,7 @@ class _WarehouseInternalUseWasteCreateScreenState
         children: [
           Row(
             children: [
-              Icon(icon, size: 22, color: const Color(0xFF059669)),
+              Icon(icon, size: 22, color: _primaryGreen),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)), overflow: TextOverflow.ellipsis),
@@ -454,18 +757,6 @@ class _WarehouseInternalUseWasteCreateScreenState
       filled: true,
       fillColor: Colors.grey.shade50,
     );
-  }
-
-  String _formatStockInfo() {
-    if (_stockInfo == null) return '';
-    final s = _stockInfo!;
-    String part(dynamic q, dynamic u) {
-      if (q == null) return '0';
-      final n = q is num ? q.toDouble() : (double.tryParse(q.toString()) ?? 0);
-      final fmt = n == n.truncate() ? n.toInt().toString() : n.toString().replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-      return '$fmt ${(u ?? '').toString().trim()}';
-    }
-    return 'Stok: ${part(s['qty_small'], s['unit_small_name'])} / ${part(s['qty_medium'], s['unit_medium_name'])} / ${part(s['qty_large'], s['unit_large_name'])}';
   }
 }
 
@@ -498,8 +789,7 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
     }).toList();
   }
 
-  static String _itemName(Map<String, dynamic> item) =>
-      item['name']?.toString() ?? item['nama']?.toString() ?? '-';
+  static String _itemName(Map<String, dynamic> item) => item['name']?.toString() ?? item['nama']?.toString() ?? '-';
 
   @override
   Widget build(BuildContext context) {
@@ -528,7 +818,7 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
                 focusNode: _searchFocus,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  hintText: 'Cari nama item...',
+                  hintText: 'Ketik untuk mencari item...',
                   prefixIcon: const Icon(Icons.search),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

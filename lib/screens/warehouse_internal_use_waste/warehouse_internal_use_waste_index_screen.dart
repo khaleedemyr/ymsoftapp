@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../services/warehouse_internal_use_waste_service.dart';
-import '../../services/auth_service.dart';
-import '../../widgets/app_scaffold.dart';
-import '../../widgets/app_loading_indicator.dart';
-import 'warehouse_internal_use_waste_detail_screen.dart';
-import 'warehouse_internal_use_waste_create_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../services/auth_service.dart';
+import '../../services/warehouse_internal_use_waste_service.dart';
+import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/app_scaffold.dart';
+import 'warehouse_internal_use_waste_create_screen.dart';
+import 'warehouse_internal_use_waste_detail_screen.dart';
+
+/// Selaras web `InternalUseWaste/Index.vue` — filter, kolom, paginasi server, aksi.
 class WarehouseInternalUseWasteIndexScreen extends StatefulWidget {
   const WarehouseInternalUseWasteIndexScreen({super.key});
 
@@ -19,15 +22,22 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
   final WarehouseInternalUseWasteService _service = WarehouseInternalUseWasteService();
   final TextEditingController _dateFromController = TextEditingController();
   final TextEditingController _dateToController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+
   List<Map<String, dynamic>> _list = [];
   List<Map<String, dynamic>> _warehouses = [];
   bool _isLoading = true;
   bool _canDelete = false;
-  String _typeFilter = 'all';
+  String _typeFilter = '';
   int? _warehouseIdFilter;
   int _currentPage = 1;
   int _lastPage = 1;
+  int _perPage = 15;
+  int _total = 0;
   bool _filterExpanded = true;
+  int? _deletingDocId;
+
+  static const Color _green = Color(0xFF059669);
 
   @override
   void initState() {
@@ -39,6 +49,7 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
   void dispose() {
     _dateFromController.dispose();
     _dateToController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -47,7 +58,9 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
     if (mounted && result != null) {
       setState(() {
         _warehouses = result['warehouses'] != null && result['warehouses'] is List
-            ? List<Map<String, dynamic>>.from((result['warehouses'] as List).map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}))
+            ? List<Map<String, dynamic>>.from(
+                (result['warehouses'] as List).map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}),
+              )
             : [];
       });
     }
@@ -57,123 +70,229 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
   Future<void> _loadList() async {
     setState(() => _isLoading = true);
     final result = await _service.getList(
-      type: _typeFilter != 'all' ? _typeFilter : null,
+      type: _typeFilter.isNotEmpty ? _typeFilter : null,
       dateFrom: _dateFromController.text.trim().isNotEmpty ? _dateFromController.text.trim() : null,
       dateTo: _dateToController.text.trim().isNotEmpty ? _dateToController.text.trim() : null,
       warehouseId: _warehouseIdFilter,
+      search: _searchController.text.trim().isNotEmpty ? _searchController.text.trim() : null,
       page: _currentPage,
-      perPage: 20,
+      perPage: _perPage,
     );
     if (mounted && result != null) {
       final raw = result['data'] is List ? result['data'] as List : <dynamic>[];
-      final data = raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
-      final dataTyped = List<Map<String, dynamic>>.from(data);
+      final dataTyped = raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
       setState(() {
-        if (_currentPage == 1) {
-          _list = dataTyped;
-        } else {
-          _list = [..._list, ...dataTyped];
-        }
+        _list = dataTyped;
         _canDelete = result['can_delete'] == true;
-        _lastPage = (result['last_page'] is int) ? result['last_page'] as int : 1;
+        _lastPage = _parsePositiveInt(result['last_page'], fallback: 1);
+        _total = _parsePositiveInt(result['total'], fallback: dataTyped.length);
+        final cp = _parsePositiveInt(result['current_page'], fallback: _currentPage);
+        _currentPage = cp;
+        final pp = _parsePositiveInt(result['per_page'], fallback: _perPage);
+        if (pp > 0) _perPage = pp;
         _isLoading = false;
       });
       if (result['success'] != true && result['message'] != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'].toString()), backgroundColor: Colors.orange));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'].toString()), backgroundColor: Colors.orange),
+        );
       }
     } else if (mounted) {
       setState(() => _isLoading = false);
     }
   }
 
+  int _parsePositiveInt(dynamic v, {required int fallback}) {
+    if (v is int && v > 0) return v;
+    final p = int.tryParse(v?.toString() ?? '');
+    return (p != null && p > 0) ? p : fallback;
+  }
+
+  int? _documentId(Map<String, dynamic> row) {
+    final h = row['header_id'];
+    if (h != null) {
+      if (h is int) return h;
+      return int.tryParse(h.toString());
+    }
+    final id = row['id'];
+    if (id is int) return id;
+    return int.tryParse(id?.toString() ?? '');
+  }
+
+  String _lineNoteDisplay(Map<String, dynamic> row) {
+    final n = row['notes'];
+    if (n != null && n.toString().trim().isNotEmpty) return n.toString();
+    final hn = row['header_notes'];
+    if (hn != null && hn.toString().trim().isNotEmpty) return hn.toString();
+    return '-';
+  }
+
   String _formatDate(String? v) {
     if (v == null || v.isEmpty) return '-';
     try {
-      return DateFormat('dd MMM yyyy', 'id_ID').format(DateTime.parse(v));
+      return DateFormat.yMMMd('id_ID').format(DateTime.parse(v));
     } catch (_) {
-      return v ?? '-';
+      return v;
     }
   }
 
   String _typeLabel(String? type) {
-    if (type == null) return '-';
+    if (type == null || type.isEmpty) return '-';
     switch (type) {
-      case 'internal_use': return 'Internal Use';
-      case 'spoil': return 'Spoil';
-      case 'waste': return 'Waste';
-      default: return type;
+      case 'internal_use':
+        return 'Internal Use';
+      case 'spoil':
+        return 'Spoil';
+      case 'waste':
+        return 'Waste';
+      default:
+        return type;
     }
   }
 
-  /// Format qty: remove trailing zeros (1.0000 -> 1, 1.5 -> 1.5)
-  String _formatQty(dynamic qty, String? unitName) {
-    if (qty == null) {
-      final unit = (unitName ?? '').trim();
-      return unit.isNotEmpty ? '0 $unit' : '-';
+  String _formatNumber(dynamic val) {
+    if (val == null) return '-';
+    final n = val is num ? val.toDouble() : double.tryParse(val.toString());
+    if (n == null) return '-';
+    if (n == n.truncateToDouble()) return n.toInt().toString();
+    return NumberFormat.decimalPattern('id_ID').format(n);
+  }
+
+  int get _displayFrom {
+    if (_list.isEmpty || _total == 0) return 0;
+    return (_currentPage - 1) * _perPage + 1;
+  }
+
+  int get _displayTo {
+    if (_list.isEmpty) return 0;
+    return _displayFrom + _list.length - 1;
+  }
+
+  Future<void> _openUrl(String path) async {
+    final base = AuthService.baseUrl.replaceAll(RegExp(r'/$'), '');
+    final uri = Uri.parse('$base$path');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tidak bisa membuka browser')));
     }
-    final n = qty is num ? qty.toDouble() : (double.tryParse(qty.toString()) ?? 0);
-    final formatted = n == n.truncate() ? n.toInt().toString() : n.toString().replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    final unit = (unitName ?? '').trim();
-    return unit.isEmpty ? formatted : '$formatted $unit';
-  }
-
-  String? _getAvatarUrl(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    if (raw.startsWith('http')) return raw;
-    final normalized = raw.startsWith('/') ? raw.substring(1) : raw;
-    if (normalized.startsWith('storage/')) return '${AuthService.storageUrl}/$normalized';
-    return '${AuthService.storageUrl}/storage/$normalized';
-  }
-
-  String _getInitials(String name) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty || trimmed == '-') return '?';
-    final parts = trimmed.split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
-    return '${parts.first.characters.first.toUpperCase()}${parts.last.characters.first.toUpperCase()}';
   }
 
   Future<void> _openCreate() async {
-    final ok = await Navigator.push(context, MaterialPageRoute(builder: (context) => const WarehouseInternalUseWasteCreateScreen()));
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (context) => const WarehouseInternalUseWasteCreateScreen()),
+    );
     if (ok == true && mounted) _loadList();
   }
 
-  void _confirmDelete(Map<String, dynamic> item) async {
-    final id = item['id'];
-    if (id == null) return;
+  Future<void> _openEditWeb(int docId) async {
+    final base = AuthService.baseUrl.replaceAll(RegExp(r'/$'), '');
+    final uri = Uri.parse('$base/internal-use-waste/$docId/edit');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tidak bisa membuka browser')));
+    }
+  }
+
+  Future<void> _confirmDelete(int docId) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hapus data?'),
-        content: const Text('Stok akan di-rollback. Lanjutkan?'),
+        title: const Text('Yakin hapus dokumen ini?'),
+        content: const Text('Semua baris item terkait akan dihapus dan stok di-rollback.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus', style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya, hapus', style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
     if (confirm != true || !mounted) return;
-    final result = await _service.delete(id is int ? id : int.tryParse(id.toString()) ?? 0);
+    setState(() => _deletingDocId = docId);
+    final result = await _service.delete(docId);
     if (mounted) {
+      setState(() => _deletingDocId = null);
       if (result != null && result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data berhasil dihapus'), backgroundColor: Color(0xFF059669)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Data berhasil dihapus dan stok di-rollback.'), backgroundColor: _green),
+        );
         _loadList();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result?['message']?.toString() ?? 'Gagal hapus'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result?['message']?.toString() ?? 'Gagal hapus'), backgroundColor: Colors.red),
+        );
       }
     }
+  }
+
+  void _applyFilters() {
+    setState(() => _currentPage = 1);
+    _loadList();
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _typeFilter = '';
+      _warehouseIdFilter = null;
+      _dateFromController.clear();
+      _dateToController.clear();
+      _searchController.clear();
+      _perPage = 15;
+      _currentPage = 1;
+    });
+    _loadList();
+  }
+
+  void _goPage(int page) {
+    if (page < 1 || page > _lastPage) return;
+    setState(() => _currentPage = page);
+    _loadList();
   }
 
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
       title: 'Internal Use & Waste',
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openCreate,
+        backgroundColor: _green,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
+      ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade600, foregroundColor: Colors.white),
+                    onPressed: () => _openUrl('/internal-use-waste/report'),
+                    icon: const Icon(Icons.description_outlined, size: 18),
+                    label: const Text('Laporan Internal Use'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.white),
+                    onPressed: () => _openUrl('/internal-use-waste/report-waste-spoil'),
+                    icon: const Icon(Icons.description_outlined, size: 18),
+                    label: const Text('Laporan Spoil & Waste'),
+                  ),
+                ],
+              ),
+            ),
+          ),
           _buildFilterCard(),
           Expanded(
             child: _isLoading
-                ? const Center(child: AppLoadingIndicator(size: 32, color: Color(0xFF059669)))
+                ? const Center(child: AppLoadingIndicator(size: 32, color: _green))
                 : _list.isEmpty
                     ? Center(
                         child: Column(
@@ -181,49 +300,65 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                           children: [
                             Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade400),
                             const SizedBox(height: 16),
-                            Text('Belum ada data', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+                            Text('Tidak ada data.', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
                           ],
                         ),
                       )
                     : RefreshIndicator(
                         onRefresh: () async => _loadList(),
                         child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                          itemCount: _list.length + (_currentPage < _lastPage ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index >= _list.length) {
-                              return Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Center(
-                                  child: TextButton(
-                                    onPressed: () {
-                                      setState(() => _currentPage++);
-                                      _loadList();
-                                    },
-                                    child: const Text('Muat lebih banyak'),
-                                  ),
-                                ),
-                              );
-                            }
-                            final item = _list[index];
-                            return _buildCard(item);
-                          },
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                          itemCount: _list.length,
+                          itemBuilder: (context, index) => _buildRowCard(_list[index]),
                         ),
                       ),
           ),
+          if (!_isLoading && _lastPage > 1) _buildPaginationBar(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openCreate,
-        backgroundColor: const Color(0xFF059669),
-        child: const Icon(Icons.add, color: Colors.white),
+    );
+  }
+
+  Widget _buildPaginationBar() {
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Menampilkan $_displayFrom–$_displayTo dari $_total',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  OutlinedButton(
+                    onPressed: _currentPage <= 1 ? null : () => _goPage(_currentPage - 1),
+                    child: const Text('Sebelumnya'),
+                  ),
+                  Text('Halaman $_currentPage / $_lastPage', style: const TextStyle(fontSize: 13)),
+                  OutlinedButton(
+                    onPressed: _currentPage >= _lastPage ? null : () => _goPage(_currentPage + 1),
+                    child: const Text('Berikutnya'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildFilterCard() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -251,20 +386,28 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: _typeFilter,
-                    decoration: const InputDecoration(labelText: 'Tipe', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                    value: _typeFilter.isEmpty ? '' : _typeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipe',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
                     items: const [
-                      DropdownMenuItem(value: 'all', child: Text('Semua')),
+                      DropdownMenuItem(value: '', child: Text('Semua')),
                       DropdownMenuItem(value: 'internal_use', child: Text('Internal Use')),
                       DropdownMenuItem(value: 'spoil', child: Text('Spoil')),
                       DropdownMenuItem(value: 'waste', child: Text('Waste')),
                     ],
-                    onChanged: (v) => setState(() => _typeFilter = v ?? 'all'),
+                    onChanged: (v) => setState(() => _typeFilter = v ?? ''),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int?>(
                     value: _warehouseIdFilter,
-                    decoration: const InputDecoration(labelText: 'Gudang', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                    decoration: const InputDecoration(
+                      labelText: 'Warehouse',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
                     items: [
                       const DropdownMenuItem<int?>(value: null, child: Text('Semua')),
                       ..._warehouses.map((w) {
@@ -280,13 +423,23 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
-                            final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
+                            final d = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                            );
                             if (d != null) setState(() => _dateFromController.text = DateFormat('yyyy-MM-dd').format(d));
                           },
                           child: AbsorbPointer(
                             child: TextField(
                               controller: _dateFromController,
-                              decoration: const InputDecoration(labelText: 'Dari', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), suffixIcon: Icon(Icons.calendar_today)),
+                              decoration: const InputDecoration(
+                                labelText: 'Dari tanggal',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                suffixIcon: Icon(Icons.calendar_today),
+                              ),
                             ),
                           ),
                         ),
@@ -295,13 +448,23 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
-                            final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
+                            final d = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                            );
                             if (d != null) setState(() => _dateToController.text = DateFormat('yyyy-MM-dd').format(d));
                           },
                           child: AbsorbPointer(
                             child: TextField(
                               controller: _dateToController,
-                              decoration: const InputDecoration(labelText: 'Sampai', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), suffixIcon: Icon(Icons.calendar_today)),
+                              decoration: const InputDecoration(
+                                labelText: 'Sampai tanggal',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                suffixIcon: Icon(Icons.calendar_today),
+                              ),
                             ),
                           ),
                         ),
@@ -309,16 +472,62 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                     ],
                   ),
                   const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        setState(() => _currentPage = 1);
-                        _loadList();
-                      },
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
-                      child: const Text('Terapkan'),
+                  TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Cari item',
+                      hintText: 'Nama item',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _applyFilters(),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<int>(
+                          value: _perPage,
+                          decoration: const InputDecoration(
+                            labelText: 'Per halaman',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 10, child: Text('10')),
+                            DropdownMenuItem(value: 15, child: Text('15')),
+                            DropdownMenuItem(value: 25, child: Text('25')),
+                            DropdownMenuItem(value: 50, child: Text('50')),
+                            DropdownMenuItem(value: 100, child: Text('100')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => _perPage = v);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: _applyFilters,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _green,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Terapkan'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _resetFilters,
+                        child: const Text('Reset'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -329,38 +538,60 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
     );
   }
 
-  Widget _buildCard(Map<String, dynamic> item) {
-    final id = item['id'];
-    final idInt = id is int ? id : int.tryParse(id?.toString() ?? '');
-    final canTap = idInt != null && idInt > 0;
-    final creatorName = item['creator_name']?.toString() ?? '-';
-    final creatorAvatar = item['creator_avatar']?.toString();
-    final avatarUrl = _getAvatarUrl(creatorAvatar);
-    final initials = _getInitials(creatorName);
+  String? _documentModeLabel(String? mode) {
+    if (mode == 'serial') return 'Serial';
+    if (mode == 'mixed') return 'Campuran';
+    return null;
+  }
 
-    return GestureDetector(
-      onTap: canTap ? () => Navigator.push(context, MaterialPageRoute(builder: (context) => WarehouseInternalUseWasteDetailScreen(id: idInt!))).then((_) => _loadList()) : null,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 6)),
-          ],
+  Widget _buildDocumentModeChip(String? mode) {
+    final label = _documentModeLabel(mode);
+    if (label == null) return const SizedBox.shrink();
+    final isSerial = mode == 'serial';
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isSerial ? const Color(0xFFE0E7FF) : const Color(0xFFF3E8FF),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          color: isSerial ? const Color(0xFF4338CA) : const Color(0xFF7E22CE),
         ),
+      ),
+    );
+  }
+
+  bool _canEditRow(Map<String, dynamic> row) {
+    final mode = row['document_mode']?.toString();
+    return mode == null || mode.isEmpty || mode == 'normal';
+  }
+
+  Widget _buildRowCard(Map<String, dynamic> row) {
+    final docId = _documentId(row);
+    final busy = _deletingDocId != null && _deletingDocId == docId;
+    final docMode = row['document_mode']?.toString();
+    final creatorName = row['creator_name']?.toString() ?? '-';
+    final creatorAvatar = row['creator_avatar']?.toString();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 26,
-              backgroundColor: const Color(0xFFE5E7EB),
-              backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
-              child: avatarUrl == null
-                  ? Text(initials, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)))
-                  : null,
-            ),
+            _buildCreatorBlock(creatorName, creatorAvatar),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -369,37 +600,68 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          item['item_name']?.toString() ?? '-',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Dok ${docId ?? '-'}',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                            ),
+                            _buildDocumentModeChip(docMode),
+                          ],
                         ),
                       ),
-                      _buildTypeChip(item['type']?.toString()),
+                      _buildTypeChip(row['type']?.toString()),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  _kv('Tanggal', _formatDate(row['date']?.toString())),
+                  _kv('Warehouse', row['warehouse_name']?.toString() ?? '-'),
+                  _kv('Item', row['item_name']?.toString() ?? '-'),
+                  _kv('Qty', _formatNumber(row['qty'])),
+                  _kv('Unit', row['unit_name']?.toString() ?? '-'),
+                  _kv('Catatan', _lineNoteDisplay(row)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.end,
                     children: [
-                      Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade600),
-                      const SizedBox(width: 6),
-                      Text(_formatDate(item['date']?.toString()), style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                      TextButton.icon(
+                        onPressed: docId == null
+                            ? null
+                            : () {
+                                Navigator.push<bool>(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => WarehouseInternalUseWasteDetailScreen(id: docId)),
+                                ).then((_) => _loadList());
+                              },
+                        icon: const Icon(Icons.visibility_outlined, size: 18, color: _green),
+                        label: const Text('Detail', style: TextStyle(color: _green, fontWeight: FontWeight.w600)),
+                      ),
+                      if (_canEditRow(row))
+                        TextButton.icon(
+                          onPressed: docId == null ? null : () => _openEditWeb(docId),
+                          icon: Icon(Icons.edit_outlined, size: 18, color: Colors.blue.shade800),
+                          label: Text('Edit', style: TextStyle(color: Colors.blue.shade800, fontWeight: FontWeight.w600)),
+                        ),
+                      if (_canDelete)
+                        TextButton.icon(
+                          onPressed: docId == null || busy ? null : () => _confirmDelete(docId),
+                          icon: busy
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red.shade700),
+                                )
+                              : Icon(Icons.delete_outline, size: 18, color: Colors.red.shade700),
+                          label: Text(
+                            busy ? 'Menghapus...' : 'Hapus',
+                            style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600),
+                          ),
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  _infoRow('Gudang', item['warehouse_name']?.toString() ?? '-'),
-                  _infoRow('Qty', _formatQty(item['qty'], item['unit_name']?.toString())),
-                  _infoRow('Dibuat', creatorName),
-                  if (_canDelete) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () => _confirmDelete(item),
-                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                        label: const Text('Hapus', style: TextStyle(color: Colors.red, fontSize: 12)),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -409,10 +671,68 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
     );
   }
 
+  /// Avatar creator + nama di bawah (sama pola `OutletTransferIndexScreen`).
+  Widget _buildCreatorBlock(String name, String? avatarPath) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCreatorAvatar(name, avatarPath),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 52 * 2,
+          child: Text(
+            name,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCreatorAvatar(String name, String? avatarPath) {
+    final initials = _getInitials(name);
+    final avatarUrl = _getAvatarUrl(avatarPath);
+    return CircleAvatar(
+      radius: 26,
+      backgroundColor: const Color(0xFFE5E7EB),
+      backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
+      child: avatarUrl == null
+          ? Text(
+              initials,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+            )
+          : null,
+    );
+  }
+
+  String? _getAvatarUrl(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http')) return raw;
+    final normalized = raw.startsWith('/') ? raw.substring(1) : raw;
+    if (normalized.startsWith('storage/')) {
+      return '${AuthService.storageUrl}/$normalized';
+    }
+    return '${AuthService.storageUrl}/storage/$normalized';
+  }
+
+  String _getInitials(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == '-') return '?';
+    final parts = trimmed.split(RegExp(r'\s+'));
+    if (parts.length == 1) {
+      final p = parts.first;
+      return p.isEmpty ? '?' : p.substring(0, 1).toUpperCase();
+    }
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  }
+
   Widget _buildTypeChip(String? type) {
     final label = _typeLabel(type);
-    Color bg = const Color(0xFF059669).withOpacity(0.15);
-    Color fg = const Color(0xFF059669);
+    Color bg = _green.withOpacity(0.15);
+    Color fg = _green;
     if (type == 'spoil') {
       bg = Colors.orange.withOpacity(0.15);
       fg = Colors.orange.shade800;
@@ -427,13 +747,13 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget _kv(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 70, child: Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade600))),
+          SizedBox(width: 76, child: Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade600))),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w500))),
         ],
       ),

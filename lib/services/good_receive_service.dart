@@ -280,4 +280,127 @@ class GoodReceiveService {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
   }
+
+  /// Serial summary per barang GR (sama web `ModalDetailGoodReceive` → `/api/food-good-receive/{id}/serial-summary`).
+  Future<List<Map<String, dynamic>>> getSerialSummaryForGr(int goodReceiveId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/food-good-receive/$goodReceiveId/serial-summary'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getSerialUnitsForGrItem(int goodReceiveItemId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/food-good-receive-items/$goodReceiveItemId/serial-units'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> generateSerialsForGrItem(
+    int goodReceiveItemId, {
+    required int unitId,
+    int? repackUnitId,
+    double? repackQty,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No authentication token'};
+      final body = <String, dynamic>{'unit_id': unitId};
+      if (repackUnitId != null && repackQty != null && repackQty > 0) {
+        body['repack_unit_id'] = repackUnitId;
+        body['repack_qty'] = repackQty;
+      }
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/food-good-receive-items/$goodReceiveItemId/generate-serials'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final msg = decoded is Map<String, dynamic> ? decoded['message']?.toString() : null;
+        return {'success': true, 'message': msg ?? 'Serial berhasil dibuat'};
+      }
+      if (decoded is Map<String, dynamic>) {
+        return {'success': false, 'message': decoded['message']?.toString() ?? 'Gagal generate serial'};
+      }
+      return {'success': false, 'message': response.body};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSerialsForGrItem(int goodReceiveItemId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/food-good-receive-items/$goodReceiveItemId/serials'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> rollbackSerialsForGrItem(int goodReceiveItemId, {int? unitId}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No authentication token'};
+      final response = await http.delete(
+        Uri.parse('$baseUrl/api/approval-app/food-good-receive-items/$goodReceiveItemId/serials'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: unitId != null ? jsonEncode({'unit_id': unitId}) : jsonEncode({}),
+      );
+      if (response.body.isEmpty) {
+        return {'success': response.statusCode >= 200 && response.statusCode < 300};
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final ok = response.statusCode >= 200 && response.statusCode < 300 && decoded['success'] != false;
+        return {
+          'success': ok,
+          'message': decoded['message']?.toString(),
+        };
+      }
+      return {'success': response.statusCode >= 200 && response.statusCode < 300};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }

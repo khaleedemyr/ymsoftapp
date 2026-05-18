@@ -135,14 +135,50 @@ class WarehouseSaleService {
     return null;
   }
 
+  Future<Map<String, dynamic>> validateSerialForWHS({
+    required String serialNumber,
+    required int sourceWarehouseId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'valid': false, 'message': 'Unauthorized'};
+
+      final response = await http.post(
+        Uri.parse('$_base/validate-serial'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'serial_number': serialNumber,
+          'source_warehouse_id': sourceWarehouseId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'valid': false, 'message': 'Gagal validasi serial'};
+      }
+    } catch (e) {
+      return {'valid': false, 'message': e.toString()};
+    }
+  }
+
   /// Submit penjualan antar gudang.
   /// items: [{ item_id, qty, selected_unit, price, note? }]
+  /// serialItems: [{ serial_id, serial_number, item_id, unit_id, unit_name, qty, qty_small, price, subtotal }]
   Future<Map<String, dynamic>> store({
     required int sourceWarehouseId,
     required int targetWarehouseId,
     required String date,
     String? note,
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
   }) async {
     try {
       final token = await _getToken();
@@ -152,7 +188,8 @@ class WarehouseSaleService {
         'target_warehouse_id': targetWarehouseId,
         'date': date,
         if (note != null && note.isNotEmpty) 'note': note,
-        'items': items,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
       };
       final response = await http.post(
         Uri.parse(_base),

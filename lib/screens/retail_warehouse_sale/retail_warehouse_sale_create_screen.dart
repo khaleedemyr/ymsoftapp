@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../services/retail_warehouse_sale_service.dart';
+import '../../services/native_barcode_scanner.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -30,6 +33,19 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
   final List<_CartItem> _items = [];
   bool _saving = false;
 
+  final TextEditingController _barcodeController = TextEditingController();
+  final FocusNode _barcodeFocusNode = FocusNode();
+  bool _barcodeScanning = false;
+
+  bool _serialMode = false;
+  final TextEditingController _serialInputController = TextEditingController();
+  final FocusNode _serialFocusNode = FocusNode();
+  final List<Map<String, dynamic>> _scannedSerials = [];
+  final Map<int, TextEditingController> _serialPriceControllers = {};
+  bool _serialScanning = false;
+  String _serialFeedback = '';
+  bool _serialFeedbackSuccess = false;
+
   static const _primary = Color(0xFF2563EB);
   static const _primaryDark = Color(0xFF1D4ED8);
   static const _infoBg = Color(0xFFEFF6FF);
@@ -47,7 +63,14 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
   void dispose() {
     _dateController.dispose();
     _notesController.dispose();
+    _barcodeController.dispose();
+    _barcodeFocusNode.dispose();
+    _serialInputController.dispose();
+    _serialFocusNode.dispose();
     for (final item in _items) item.dispose();
+    for (final c in _serialPriceControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -92,8 +115,14 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     return int.tryParse(v.toString());
   }
 
-  double get _totalAmount =>
-      _items.fold(0.0, (sum, i) => sum + (i.qty * i.price));
+  double get _totalAmount {
+    final itemsTotal = _items.fold(0.0, (sum, i) => sum + (i.qty * i.price));
+    final serialTotal = _scannedSerials.fold<double>(
+      0.0,
+      (sum, s) => sum + ((s['subtotal'] as num?)?.toDouble() ?? 0),
+    );
+    return itemsTotal + serialTotal;
+  }
 
   String _warehouseNameById(int? id) {
     if (id == null) return '-';
@@ -150,6 +179,79 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     }
   }
 
+  void _addItemFromMap(Map<String, dynamic> item, {String? barcode}) {
+    final itemId = _int(item['item_id']);
+    if (itemId == null) return;
+    final unitMedium = item['unit_medium']?.toString() ?? '';
+    final price = (item['price'] is num)
+        ? (item['price'] as num).toDouble()
+        : double.tryParse(item['price']?.toString() ?? '') ?? 0;
+
+    final existingIdx = _items.indexWhere((i) => i.itemId == itemId);
+    if (existingIdx >= 0) {
+      setState(() {
+        _items[existingIdx].qty += 1;
+        _items[existingIdx].qtyController.text = _items[existingIdx].qty.toString();
+      });
+      return;
+    }
+
+    setState(() {
+      _items.add(_CartItem(
+        itemId: itemId,
+        itemName: item['item_name']?.toString() ?? '-',
+        barcode: barcode,
+        qty: 1,
+        unit: unitMedium,
+        price: price,
+        unitSmall: item['unit_small']?.toString(),
+        unitLarge: item['unit_large']?.toString(),
+      ));
+    });
+  }
+
+  Future<void> _scanBarcode() async {
+    final code = _barcodeController.text.trim();
+    if (code.isEmpty) return;
+    if (_warehouseId == null) {
+      _showSnack('Pilih gudang dulu', isError: true);
+      return;
+    }
+    setState(() => _barcodeScanning = true);
+    final result = await _service.searchItemByBarcode(
+      barcode: code,
+      warehouseId: _warehouseId!,
+    );
+    if (!mounted) return;
+    setState(() => _barcodeScanning = false);
+    if (result != null && result['success'] == true && result['item'] != null) {
+      _addItemFromMap(Map<String, dynamic>.from(result['item'] as Map), barcode: code);
+      HapticFeedback.mediumImpact();
+    } else {
+      _showSnack(result?['message']?.toString() ?? 'Item tidak ditemukan', isError: true);
+      HapticFeedback.heavyImpact();
+    }
+    _barcodeController.clear();
+    _barcodeFocusNode.requestFocus();
+  }
+
+  Future<void> _openCameraBarcode() async {
+    if (kIsWeb) {
+      _showSnack('Scan kamera tersedia di aplikasi Android/iOS', isError: true);
+      return;
+    }
+    try {
+      final scanned = await NativeBarcodeScanner.scanBarcode();
+      if (!mounted) return;
+      if (scanned != null && scanned.isNotEmpty) {
+        _barcodeController.text = scanned;
+        await _scanBarcode();
+      }
+    } catch (e) {
+      _showSnack('Gagal membuka scanner: $e', isError: true);
+    }
+  }
+
   Future<void> _addItem() async {
     if (_warehouseId == null) {
       _showSnack('Pilih gudang dulu', isError: true);
@@ -165,20 +267,28 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
       ),
     );
     if (item != null && mounted) {
-      setState(() {
-        final unitMedium = item['unit_medium']?.toString() ?? '';
-        final price = (item['price'] is num) ? (item['price'] as num).toDouble() : double.tryParse(item['price']?.toString() ?? '') ?? 0;
-        _items.add(_CartItem(
-          itemId: _int(item['item_id'])!,
-          itemName: item['item_name']?.toString() ?? '-',
-          qty: 1,
-          unit: unitMedium,
-          price: price,
-          unitSmall: item['unit_small']?.toString(),
-          unitLarge: item['unit_large']?.toString(),
-        ));
-      });
+      _addItemFromMap(item);
     }
+  }
+
+  Future<void> _refreshItemPrice(int index) async {
+    if (index >= _items.length) return;
+    final price = await _service.getItemPrice(_items[index].itemId);
+    if (!mounted || price == null) return;
+    setState(() {
+      _items[index].price = price;
+      _items[index].priceController.text = price.toString();
+    });
+  }
+
+  void _updateSerialPrice(int index, String value) {
+    if (index >= _scannedSerials.length) return;
+    final price = double.tryParse(value.replaceAll(',', '.')) ?? 0;
+    final qty = (_scannedSerials[index]['qty'] as num?)?.toDouble() ?? 1;
+    setState(() {
+      _scannedSerials[index]['price'] = price;
+      _scannedSerials[index]['subtotal'] = price * qty;
+    });
   }
 
   void _removeItem(int index) {
@@ -204,6 +314,102 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     );
   }
 
+  Future<void> _onSerialScan() async {
+    final input = _serialInputController.text.trim();
+    if (input.isEmpty) return;
+    if (_warehouseId == null) {
+      setState(() {
+        _serialFeedback = 'Pilih gudang dulu';
+        _serialFeedbackSuccess = false;
+      });
+      HapticFeedback.heavyImpact();
+      return;
+    }
+    if (_scannedSerials.any((s) => s['serial_number'] == input)) {
+      setState(() {
+        _serialFeedback = 'Serial "$input" sudah discan';
+        _serialFeedbackSuccess = false;
+      });
+      HapticFeedback.heavyImpact();
+      _serialInputController.clear();
+      return;
+    }
+    setState(() => _serialScanning = true);
+    final result = await _service.validateSerialForRWS(
+      serialNumber: input,
+      warehouseId: _warehouseId!,
+    );
+    if (!mounted) return;
+    if (result['valid'] == true) {
+      final serial = result['serial'] as Map<String, dynamic>? ?? {};
+      final price = (serial['price'] as num?)?.toDouble() ?? 0;
+      final idx = _scannedSerials.length;
+      setState(() {
+        _scannedSerials.add({
+          'serial_id': serial['id'],
+          'serial_number': serial['serial_number'] ?? input,
+          'item_id': serial['item_id'],
+          'item_name': serial['item_name'] ?? '-',
+          'unit_id': serial['unit_id'],
+          'unit_name': serial['unit_name'] ?? '-',
+          'qty': serial['qty'] ?? 1,
+          'qty_small': serial['qty_small'] ?? 1,
+          'price': price,
+          'subtotal': (serial['subtotal'] as num?)?.toDouble() ?? (price * ((serial['qty'] as num?)?.toDouble() ?? 1)),
+        });
+        _serialPriceControllers[idx] = TextEditingController(text: price > 0 ? price.toString() : '');
+        _serialFeedback = 'Serial "$input" valid';
+        _serialFeedbackSuccess = true;
+        _serialScanning = false;
+      });
+      HapticFeedback.mediumImpact();
+    } else {
+      setState(() {
+        _serialFeedback = result['message']?.toString() ?? 'Serial tidak valid';
+        _serialFeedbackSuccess = false;
+        _serialScanning = false;
+      });
+      HapticFeedback.heavyImpact();
+    }
+    _serialInputController.clear();
+    _serialFocusNode.requestFocus();
+  }
+
+  Future<void> _openCameraSerial() async {
+    if (kIsWeb) {
+      _showSnack('Scan kamera tersedia di aplikasi Android/iOS', isError: true);
+      return;
+    }
+    try {
+      final scanned = await NativeBarcodeScanner.scanBarcode();
+      if (!mounted) return;
+      if (scanned != null && scanned.isNotEmpty) {
+        _serialInputController.text = scanned;
+        await _onSerialScan();
+      }
+    } catch (e) {
+      _showSnack('Gagal membuka scanner: $e', isError: true);
+    }
+  }
+
+  void _rebuildSerialPriceControllers() {
+    for (final c in _serialPriceControllers.values) {
+      c.dispose();
+    }
+    _serialPriceControllers.clear();
+    for (int i = 0; i < _scannedSerials.length; i++) {
+      final price = (_scannedSerials[i]['price'] as num?)?.toDouble() ?? 0;
+      _serialPriceControllers[i] = TextEditingController(text: price > 0 ? price.toString() : '');
+    }
+  }
+
+  void _removeSerial(int index) {
+    setState(() {
+      _scannedSerials.removeAt(index);
+      _rebuildSerialPriceControllers();
+    });
+  }
+
   Future<void> _submit() async {
     if (_customerId == null) {
       _showSnack('Pilih customer', isError: true);
@@ -213,10 +419,28 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
       _showSnack('Pilih gudang', isError: true);
       return;
     }
-    if (_items.isEmpty) {
-      _showSnack('Tambahkan minimal 1 item', isError: true);
+    if (_items.isEmpty && _scannedSerials.isEmpty) {
+      _showSnack('Minimal 1 item (qty) atau 1 nomor seri', isError: true);
       return;
     }
+    if (_items.any((i) => i.price <= 0)) {
+      _showSnack('Semua item harus memiliki harga', isError: true);
+      return;
+    }
+    if (_scannedSerials.any((s) => ((s['price'] as num?)?.toDouble() ?? 0) <= 0)) {
+      _showSnack('Semua serial harus memiliki harga', isError: true);
+      return;
+    }
+
+    final previewSerials = _scannedSerials.map((s) => _PreviewSerialItem(
+      serialNumber: s['serial_number']?.toString() ?? '-',
+      itemName: s['item_name']?.toString() ?? '-',
+      qty: (s['qty'] as num?)?.toDouble() ?? 1,
+      unit: s['unit_name']?.toString() ?? '',
+      price: (s['price'] as num?)?.toDouble() ?? 0,
+      subtotal: (s['subtotal'] as num?)?.toDouble() ?? 0,
+    )).toList();
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => _PreviewSaleDialog(
@@ -226,6 +450,7 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
         divisionName: _divisionNameById(_divisionId),
         notes: _notesController.text.trim(),
         items: _items.map((i) => _PreviewSaleItem(name: i.itemName, qty: i.qty, unit: i.unit, price: i.price, subtotal: i.qty * i.price)).toList(),
+        serialItems: previewSerials,
         totalAmount: _totalAmount,
       ),
     );
@@ -234,10 +459,23 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     setState(() => _saving = true);
     final itemsPayload = _items.map((i) => {
       'item_id': i.itemId,
+      if (i.barcode != null && i.barcode!.isNotEmpty) 'barcode': i.barcode,
       'qty': i.qty,
       'unit': i.unit,
       'price': i.price,
       'subtotal': i.qty * i.price,
+    }).toList();
+
+    final serialPayload = _scannedSerials.map((s) => {
+      'serial_id': s['serial_id'],
+      'serial_number': s['serial_number'],
+      'item_id': s['item_id'],
+      'unit_id': s['unit_id'],
+      'unit_name': s['unit_name'],
+      'qty': s['qty'],
+      'qty_small': s['qty_small'],
+      'price': s['price'],
+      'subtotal': s['subtotal'],
     }).toList();
 
     final result = await _service.store(
@@ -246,7 +484,8 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
       warehouseId: _warehouseId!,
       warehouseDivisionId: _divisionId,
       notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      items: itemsPayload,
+      items: itemsPayload.isNotEmpty ? itemsPayload : null,
+      serialItems: serialPayload.isNotEmpty ? serialPayload : null,
       totalAmount: _totalAmount,
     );
 
@@ -363,16 +602,66 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
                 ],
               ),
               const SizedBox(height: 20),
+              _buildSerialModeCard(),
+              if (_serialMode) ...[
+                const SizedBox(height: 16),
+                _buildSerialScanCard(),
+              ],
+              const SizedBox(height: 20),
               _buildSection(
                 title: 'Item',
                 icon: Icons.shopping_cart_outlined,
                 iconBg: _itemsBg,
                 iconColor: const Color(0xFF7C3AED),
                 children: [
+                  const Text('Scan Barcode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _barcodeController,
+                          focusNode: _barcodeFocusNode,
+                          enabled: !_barcodeScanning && _warehouseId != null,
+                          textInputAction: TextInputAction.go,
+                          onSubmitted: (_) => _scanBarcode(),
+                          decoration: InputDecoration(
+                            hintText: 'Scan barcode item...',
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            prefixIcon: const Icon(Icons.barcode_reader, size: 20),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: (!_barcodeScanning && _warehouseId != null) ? _openCameraBarcode : null,
+                        icon: const Icon(Icons.camera_alt_outlined),
+                        color: _primary,
+                        style: IconButton.styleFrom(backgroundColor: _infoBg),
+                      ),
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: (!_barcodeScanning && _warehouseId != null) ? _scanBarcode : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF16A34A),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: _barcodeScanning
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.search, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
                   OutlinedButton.icon(
                     onPressed: _addItem,
                     icon: const Icon(Icons.add_rounded, size: 20),
-                    label: const Text('Tambah Item'),
+                    label: const Text('Cari Nama Barang'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _primary,
                       side: const BorderSide(color: _primary, width: 1.5),
@@ -381,7 +670,7 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
                     ),
                   ),
                   const SizedBox(height: 14),
-                  if (_items.isEmpty)
+                  if (_items.isEmpty && _scannedSerials.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
@@ -391,14 +680,14 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
                             const SizedBox(height: 8),
                             Text('Belum ada item', style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
                             const SizedBox(height: 4),
-                            Text('Tap "Tambah Item" lalu pilih gudang', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                            Text('Tambah item qty atau scan nomor seri', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                           ],
                         ),
                       ),
                     )
                   else
                     ...List.generate(_items.length, (i) => _buildCartRow(i)),
-                  if (_items.isNotEmpty) ...[
+                  if (_items.isNotEmpty || _scannedSerials.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -446,6 +735,220 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSerialModeCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 6))],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF6366F1), size: 22),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mode Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text('Scan serial dari gudang penjualan', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              ],
+            ),
+          ),
+          Switch(
+            value: _serialMode,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: (v) {
+              setState(() => _serialMode = v);
+              if (v) {
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  if (mounted) _serialFocusNode.requestFocus();
+                });
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialScanCard() {
+    final canScan = _warehouseId != null;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 6))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Scan Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+          if (!canScan) ...[
+            const SizedBox(height: 8),
+            const Text('Pilih gudang terlebih dahulu', style: TextStyle(fontSize: 12, color: Color(0xFFEF4444))),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _serialInputController,
+                  focusNode: _serialFocusNode,
+                  enabled: !_serialScanning && canScan,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted: (_) => _onSerialScan(),
+                  decoration: InputDecoration(
+                    hintText: 'Scan atau ketik nomor seri...',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    prefixIcon: const Icon(Icons.qr_code, size: 20),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: (!_serialScanning && canScan) ? _openCameraSerial : null,
+                icon: const Icon(Icons.camera_alt_outlined),
+                color: const Color(0xFF6366F1),
+                style: IconButton.styleFrom(backgroundColor: const Color(0xFFEEF2FF)),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: (!_serialScanning && canScan) ? _onSerialScan : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6366F1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _serialScanning
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.search, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          if (_serialFeedback.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _serialFeedbackSuccess ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _serialFeedbackSuccess ? Icons.check_circle : Icons.error,
+                    size: 16,
+                    color: _serialFeedbackSuccess ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _serialFeedback,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _serialFeedbackSuccess ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_scannedSerials.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${_scannedSerials.length} serial discan',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6366F1)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(_scannedSerials.length, (i) {
+              final s = _scannedSerials[i];
+              _serialPriceControllers.putIfAbsent(
+                i,
+                () => TextEditingController(
+                  text: ((s['price'] as num?)?.toDouble() ?? 0) > 0 ? '${s['price']}' : '',
+                ),
+              );
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(s['serial_number']?.toString() ?? '-',
+                                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13, fontWeight: FontWeight.w600)),
+                              Text(s['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              Text('${s['qty']} ${s['unit_name']}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                            ],
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => _removeSerial(i),
+                          child: const Icon(Icons.close, size: 18, color: Color(0xFFEF4444)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'Harga',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            ),
+                            controller: _serialPriceControllers[i],
+                            onChanged: (v) => _updateSerialPrice(i, v),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Rp ${NumberFormat('#,##0', 'id_ID').format((s['subtotal'] as num?) ?? 0)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6366F1), fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
       ),
     );
   }
@@ -580,9 +1083,22 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                'Rp ${NumberFormat('#,##0', 'id_ID').format(item.price)}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Harga', isDense: true),
+                  controller: item.priceController,
+                  onChanged: (v) {
+                    final p = double.tryParse(v.replaceAll(',', '.'));
+                    if (p != null && p >= 0) setState(() => item.price = p);
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 20, color: Color(0xFF2563EB)),
+                onPressed: () => _refreshItemPrice(index),
+                tooltip: 'Refresh harga',
               ),
             ],
           ),
@@ -613,6 +1129,24 @@ class _PreviewSaleItem {
   });
 }
 
+class _PreviewSerialItem {
+  final String serialNumber;
+  final String itemName;
+  final double qty;
+  final String unit;
+  final double price;
+  final double subtotal;
+
+  const _PreviewSerialItem({
+    required this.serialNumber,
+    required this.itemName,
+    required this.qty,
+    required this.unit,
+    required this.price,
+    required this.subtotal,
+  });
+}
+
 class _PreviewSaleDialog extends StatelessWidget {
   static const _primary = Color(0xFF2563EB);
   static const _primaryDark = Color(0xFF1D4ED8);
@@ -623,6 +1157,7 @@ class _PreviewSaleDialog extends StatelessWidget {
   final String divisionName;
   final String notes;
   final List<_PreviewSaleItem> items;
+  final List<_PreviewSerialItem> serialItems;
   final double totalAmount;
 
   const _PreviewSaleDialog({
@@ -632,6 +1167,7 @@ class _PreviewSaleDialog extends StatelessWidget {
     required this.divisionName,
     required this.notes,
     required this.items,
+    this.serialItems = const [],
     required this.totalAmount,
   });
 
@@ -683,9 +1219,40 @@ class _PreviewSaleDialog extends StatelessWidget {
                       const SizedBox(height: 10),
                       _row(Icons.note_alt_outlined, 'Catatan', notes),
                     ],
-                    const SizedBox(height: 16),
-                    const Text('Detail Item', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                    const SizedBox(height: 8),
+                    if (serialItems.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text('Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+                      const SizedBox(height: 8),
+                      ...serialItems.map((s) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF2FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(s.serialNumber, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(s.itemName, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Text('${s.qty} ${s.unit} x Rp ${NumberFormat('#,##0', 'id_ID').format(s.price)}', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                                const Spacer(),
+                                Text('Rp ${NumberFormat('#,##0', 'id_ID').format(s.subtotal)}', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF6366F1), fontSize: 13)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      )),
+                    ],
+                    if (items.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text('Detail Item (Qty)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                      const SizedBox(height: 8),
+                    ],
                     ...items.map((item) => Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.all(12),
@@ -791,24 +1358,32 @@ class _PreviewSaleDialog extends StatelessWidget {
 class _CartItem {
   final int itemId;
   final String itemName;
+  final String? barcode;
   double qty;
   String unit;
-  final double price;
+  double price;
   final String? unitSmall;
   final String? unitLarge;
   final TextEditingController qtyController;
+  late final TextEditingController priceController;
 
   _CartItem({
     required this.itemId,
     required this.itemName,
+    this.barcode,
     required this.qty,
     required this.unit,
     required this.price,
     this.unitSmall,
     this.unitLarge,
-  }) : qtyController = TextEditingController(text: qty.toString());
+  })  : qtyController = TextEditingController(text: qty.toString()) {
+    priceController = TextEditingController(text: price.toString());
+  }
 
-  void dispose() => qtyController.dispose();
+  void dispose() {
+    qtyController.dispose();
+    priceController.dispose();
+  }
 }
 
 class _CustomerSheet extends StatefulWidget {

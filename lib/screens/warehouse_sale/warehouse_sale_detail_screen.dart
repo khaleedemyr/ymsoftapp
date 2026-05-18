@@ -18,6 +18,7 @@ class WarehouseSaleDetailScreen extends StatefulWidget {
 class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
   final WarehouseSaleService _service = WarehouseSaleService();
   Map<String, dynamic>? _sale;
+  List<Map<String, dynamic>> _serialItems = [];
   bool _isLoading = true;
   bool _canDelete = false;
 
@@ -31,8 +32,12 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
     setState(() => _isLoading = true);
     final result = await _service.getDetail(widget.saleId);
     if (mounted) {
+      final rawSerial = result?['serial_items'];
       setState(() {
         _sale = result?['sale'];
+        _serialItems = rawSerial is List
+            ? rawSerial.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+            : [];
         _canDelete = result?['can_delete'] == true;
         _isLoading = false;
       });
@@ -130,6 +135,7 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
     final creatorName = creator?['nama_lengkap']?.toString() ?? creator?['name']?.toString() ?? '-';
     final creatorAvatar = creator?['avatar']?.toString();
     final notes = s['note']?.toString();
+    final saleMode = s['sale_mode']?.toString();
     final itemsRaw = s['items'];
     final items = (itemsRaw is List) ? itemsRaw.map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
     double totalValue = 0;
@@ -138,13 +144,18 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
       if (t is num) totalValue += t.toDouble();
       else if (t != null) totalValue += double.tryParse(t.toString()) ?? 0;
     }
+    for (final si in _serialItems) {
+      final st = si['subtotal'];
+      if (st is num) totalValue += st.toDouble();
+      else if (st != null) totalValue += double.tryParse(st.toString()) ?? 0;
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeaderCard(number, dateText),
+          _buildHeaderCard(number, dateText, saleMode),
           const SizedBox(height: 16),
           _buildInfoCard(
             title: 'Informasi Gudang',
@@ -159,7 +170,7 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+              const Text('Detail', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
               if (_canDelete)
                 TextButton.icon(
                   onPressed: _confirmDelete,
@@ -168,8 +179,23 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 10),
-          ...items.map(_buildItemCard),
+          if (_serialItems.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text('Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF6366F1))),
+            const SizedBox(height: 8),
+            ..._serialItems.map(_buildSerialCard),
+          ],
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Item (qty)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+            const SizedBox(height: 8),
+            ...items.map(_buildItemCard),
+          ],
+          if (items.isEmpty && _serialItems.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('Tidak ada detail item', style: TextStyle(color: Color(0xFF64748B))),
+            ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
@@ -191,7 +217,28 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
     );
   }
 
-  Widget _buildHeaderCard(String number, String date) {
+  Widget? _buildSaleModeChip(String? mode) {
+    if (mode == null || mode == 'normal') return null;
+    final isSerial = mode == 'serial';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isSerial ? const Color(0xFFE0E7FF) : const Color(0xFFF3E8FF),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        isSerial ? 'Serial' : 'Campuran',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: isSerial ? const Color(0xFF4338CA) : const Color(0xFF7E22CE),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard(String number, String date, String? saleMode) {
+    final modeChip = _buildSaleModeChip(saleMode);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -202,7 +249,12 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(number, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+          Row(
+            children: [
+              Expanded(child: Text(number, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)))),
+              if (modeChip != null) modeChip,
+            ],
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -263,6 +315,35 @@ class _WarehouseSaleDetailScreenState extends State<WarehouseSaleDetailScreen> {
                   ],
                 ),
               )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialCard(Map<String, dynamic> s) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC7D2FE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(s['serial_number']?.toString() ?? '-', style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 13)),
+          Text(s['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('${s['qty']} ${s['unit_name'] ?? ''}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              Text(_formatMoney(s['price']), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('Subtotal: ${_formatMoney(s['subtotal'])}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF6366F1))),
         ],
       ),
     );

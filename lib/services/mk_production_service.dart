@@ -178,4 +178,100 @@ class MKProductionService {
       return {'success': false, 'message': e.toString()};
     }
   }
+
+  Future<Map<String, int>> getSerialSummaryCounts(int productionId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'total': 0, 'in_use': 0};
+      final response = await http.get(
+        Uri.parse('$_base/$productionId/serial-summary'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return {'total': 0, 'in_use': 0};
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return {
+          'total': int.tryParse(decoded['total']?.toString() ?? '') ?? 0,
+          'in_use': int.tryParse(decoded['in_use']?.toString() ?? '') ?? 0,
+        };
+      }
+      return {'total': 0, 'in_use': 0};
+    } catch (_) {
+      return {'total': 0, 'in_use': 0};
+    }
+  }
+
+  Future<Map<String, dynamic>> generateSerials(int productionId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No auth token'};
+      final response = await http.post(
+        Uri.parse('$_base/$productionId/generate-serials'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return {'success': true, 'message': decoded['message']?.toString() ?? 'Serial berhasil digenerate'};
+        }
+        return {'success': false, 'message': decoded['message']?.toString() ?? 'Gagal generate serial'};
+      }
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {'success': true, 'message': 'Serial berhasil digenerate'};
+      }
+      return {'success': false, 'message': response.body};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSerialList(int productionId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+      final response = await http.get(
+        Uri.parse('$_base/$productionId/serials'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return [];
+      final decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> rollbackSerials(int productionId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No auth token'};
+      final response = await http.delete(
+        Uri.parse('$_base/$productionId/serials'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+      final ok = response.statusCode >= 200 && response.statusCode < 300;
+      if (response.body.isEmpty) {
+        return {'success': ok, 'message': ok ? null : 'Gagal rollback serial'};
+      }
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final success = ok && decoded['success'] != false;
+          return {
+            'success': success,
+            'message': decoded['message']?.toString() ?? (success ? 'Rollback berhasil' : 'Gagal rollback serial'),
+          };
+        }
+      } catch (_) {}
+      return {'success': ok, 'message': ok ? 'Rollback berhasil' : response.body};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }

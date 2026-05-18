@@ -20,6 +20,8 @@ class _RetailWarehouseFoodDetailScreenState extends State<RetailWarehouseFoodDet
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   String? _error;
+  final Map<int, int> _serialCountByItemId = {};
+  final Map<int, int> _serialInUseByItemId = {};
 
   @override
   void initState() {
@@ -58,8 +60,8 @@ class _RetailWarehouseFoodDetailScreenState extends State<RetailWarehouseFoodDet
     }
     final data = Map<String, dynamic>.from(raw);
     final itemsRaw = data['items'];
-    final items = itemsRaw is List
-        ? (itemsRaw as List).map((e) => Map<String, dynamic>.from(e)).toList()
+    final List<Map<String, dynamic>> items = itemsRaw is List
+        ? itemsRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
         : <Map<String, dynamic>>[];
     setState(() {
       _data = data;
@@ -67,6 +69,193 @@ class _RetailWarehouseFoodDetailScreenState extends State<RetailWarehouseFoodDet
       _loading = false;
       _error = null;
     });
+    await _refreshSerialSummary();
+  }
+
+  Future<void> _refreshSerialSummary() async {
+    final rows = await _service.getSerialSummaryForRwf(widget.id);
+    if (!mounted) return;
+    final map = <int, int>{};
+    final inUse = <int, int>{};
+    for (final r in rows) {
+      final id = int.tryParse(r['retail_warehouse_food_item_id']?.toString() ?? '');
+      final t = int.tryParse(r['total']?.toString() ?? '0') ?? 0;
+      final u = int.tryParse(r['in_use']?.toString() ?? '0') ?? 0;
+      if (id != null) {
+        map[id] = t;
+        inUse[id] = u;
+      }
+    }
+    setState(() {
+      _serialCountByItemId
+        ..clear()
+        ..addAll(map);
+      _serialInUseByItemId
+        ..clear()
+        ..addAll(inUse);
+    });
+  }
+
+  int _serialCountFor(Map<String, dynamic> item) {
+    final id = int.tryParse(item['id']?.toString() ?? '');
+    if (id == null) return 0;
+    return _serialCountByItemId[id] ?? 0;
+  }
+
+  int _serialInUseFor(Map<String, dynamic> item) {
+    final id = int.tryParse(item['id']?.toString() ?? '');
+    if (id == null) return 0;
+    return _serialInUseByItemId[id] ?? 0;
+  }
+
+  Future<void> _generateSerialForItem(Map<String, dynamic> item) async {
+    final itemId = int.tryParse(item['id']?.toString() ?? '') ?? 0;
+    if (itemId == 0) return;
+    final data = await _service.getSerialUnitsForRwfItem(itemId);
+    if (!mounted) return;
+    if (data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal memuat unit serial'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final units = (data['units'] as List<dynamic>?) ?? [];
+    if (units.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unit konversi item tidak ditemukan.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    final name = item['item_name']?.toString() ?? '-';
+    final qtyLabel = '${data['qty_received']} ${data['received_unit_name'] ?? ''}';
+
+    int? selectedUnitId = int.tryParse(units.first['unit_id']?.toString() ?? '');
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Generate Serial — $name'),
+        content: StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Qty: $qtyLabel', style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey(selectedUnitId),
+                  initialValue: selectedUnitId,
+                  decoration: const InputDecoration(labelText: 'Unit serial', border: OutlineInputBorder()),
+                  items: units.map((u) {
+                    final id = int.tryParse(u['unit_id']?.toString() ?? '') ?? 0;
+                    final uname = u['unit_name']?.toString() ?? '';
+                    final cq = u['converted_qty'];
+                    return DropdownMenuItem(
+                      value: id,
+                      child: Text('$uname (qty: $cq)'),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setLocal(() => selectedUnitId = v),
+                ),
+              ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, selectedUnitId), child: const Text('Generate')),
+        ],
+      ),
+    );
+    if (picked == null || picked == 0) return;
+
+    final res = await _service.generateSerialsForRwfItem(itemId, unitId: picked);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (res['success'] == true ? 'OK' : 'Gagal')),
+        backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    await _refreshSerialSummary();
+  }
+
+  Future<void> _showSerialsForItem(Map<String, dynamic> item) async {
+    final itemId = int.tryParse(item['id']?.toString() ?? '') ?? 0;
+    if (itemId == 0) return;
+    final name = item['item_name']?.toString() ?? '-';
+    final rows = await _service.getSerialsForRwfItem(itemId);
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Belum ada serial untuk item ini.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        maxChildSize: 0.9,
+        builder: (_, scroll) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Serial — $name', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: scroll,
+                itemCount: rows.length > 200 ? 200 : rows.length,
+                itemBuilder: (_, i) {
+                  final r = rows[i];
+                  return ListTile(
+                    dense: true,
+                    title: Text(r['serial_number']?.toString() ?? '-', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      '${r['unit_name'] ?? '-'} · RWF ${r['gr_number'] ?? '-'}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _rollbackSerialForItem(Map<String, dynamic> item) async {
+    final itemId = int.tryParse(item['id']?.toString() ?? '') ?? 0;
+    if (itemId == 0) return;
+    final name = item['item_name']?.toString() ?? '-';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rollback serial?'),
+        content: Text('Hapus semua serial untuk "$name" pada transaksi ini?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Rollback', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final res = await _service.rollbackSerialsForRwfItem(itemId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (res['success'] == true ? 'Rollback berhasil' : 'Gagal')),
+        backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    await _refreshSerialSummary();
   }
 
   String _formatDate(String? v) {
@@ -279,32 +468,77 @@ class _RetailWarehouseFoodDetailScreenState extends State<RetailWarehouseFoodDet
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
-                          child: Row(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(name,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF0F172A),
-                                            fontSize: 14)),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '$qty $unit x ${_formatMoney(price)}',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF0F172A),
+                                                fontSize: 14)),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '$qty $unit x ${_formatMoney(price)}',
+                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  Text(
+                                    _formatMoney(subtotal),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF16A34A),
+                                        fontSize: 13),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                _formatMoney(subtotal),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF16A34A),
-                                    fontSize: 13),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton(
+                                    onPressed: () => _generateSerialForItem(item),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF1D4ED8),
+                                      side: const BorderSide(color: Color(0xFFBFDBFE)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text('Generate serial', style: TextStyle(fontSize: 12)),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: () => _showSerialsForItem(item),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF334155),
+                                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text('Lihat (${_serialCountFor(item)})', style: const TextStyle(fontSize: 12)),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: _serialInUseFor(item) > 0 ? null : () => _rollbackSerialForItem(item),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFFB91C1C),
+                                      side: const BorderSide(color: Color(0xFFFECACA)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text('Rollback', style: TextStyle(fontSize: 12)),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

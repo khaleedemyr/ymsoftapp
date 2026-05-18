@@ -266,6 +266,7 @@ class _WarehouseSaleIndexScreenState extends State<WarehouseSaleIndexScreen> {
   Widget _buildCard(Map<String, dynamic> sale) {
     final id = int.tryParse(sale['id']?.toString() ?? '') ?? 0;
     final number = sale['number']?.toString() ?? '-';
+    final saleMode = sale['sale_mode']?.toString();
     final date = sale['date']?.toString();
     final sourceName = sale['source_warehouse'] is Map
         ? (sale['source_warehouse'] as Map)['name']?.toString() ?? '-'
@@ -318,6 +319,24 @@ class _WarehouseSaleIndexScreenState extends State<WarehouseSaleIndexScreen> {
                         number,
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                       ),
+                      if (saleMode != null && saleMode != 'normal') ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: saleMode == 'serial' ? const Color(0xFFE0E7FF) : const Color(0xFFF3E8FF),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            saleMode == 'serial' ? 'Serial' : 'Campuran',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: saleMode == 'serial' ? const Color(0xFF4338CA) : const Color(0xFF7E22CE),
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 6),
                       Row(
                         children: [

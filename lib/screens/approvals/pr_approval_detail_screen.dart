@@ -36,6 +36,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
   final TextEditingController _commentController = TextEditingController();
   final TextEditingController _rejectReasonController = TextEditingController();
   final TextEditingController _newCommentController = TextEditingController();
+  final TextEditingController _kasbonApproveAmountController = TextEditingController();
+  final TextEditingController _kasbonApproveTerminController = TextEditingController();
   late AnimationController _animationController;
   bool _isInternalComment = false;
   bool _isAddingComment = false;
@@ -55,6 +57,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
     _commentController.dispose();
     _rejectReasonController.dispose();
     _newCommentController.dispose();
+    _kasbonApproveAmountController.dispose();
+    _kasbonApproveTerminController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -97,6 +101,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
         print('Budget Info: ${_approvalData?['budget_info']}');
         print('Items Budget Info: ${_approvalData?['items_budget_info']}');
         print('PR Items count: ${(_approvalData?['items'] as List<dynamic>? ?? []).length}');
+
+        _fillKasbonApproveControllers();
         
         // Debug: Print attachments info
         if (_approvalData != null) {
@@ -155,6 +161,29 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
       print('Error formatting date: $e');
       return '-';
     }
+  }
+
+  int? _parseIntDigitsOnly(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    final s = value.toString().replaceAll(RegExp(r'[^\d]'), '');
+    if (s.isEmpty) return null;
+    return int.tryParse(s);
+  }
+
+  void _fillKasbonApproveControllers() {
+    final pr = _approvalData;
+    if (pr == null) return;
+    if (pr['mode']?.toString().toLowerCase() != 'kasbon') return;
+    final msd = pr['mode_specific_data'];
+    if (msd is! Map) return;
+    final map = Map<String, dynamic>.from(msd);
+    final amt = _parseIntDigitsOnly(map['kasbon_amount']);
+    _kasbonApproveAmountController.text = amt != null && amt > 0 ? '$amt' : '';
+    final term = _parseIntDigitsOnly(map['kasbon_termin']) ?? 1;
+    final t = term < 1 ? 1 : term;
+    _kasbonApproveTerminController.text = '$t';
   }
 
   Color _darkenColor(Color color, double amount) {
@@ -251,6 +280,90 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
       return; // User cancelled
     }
 
+    final pr = _approvalData!;
+    final mode = pr['mode']?.toString().toLowerCase() ?? '';
+    final st = pr['status']?.toString().toLowerCase() ?? '';
+    const settled = {'approved', 'rejected', 'processed', 'completed'};
+    final kasbonEditable =
+        mode == 'kasbon' && pr['mode_specific_data'] != null && !settled.contains(st);
+
+    int? kasbonAmtToSend;
+    int? kasbonTermToSend;
+    if (kasbonEditable) {
+      final amtStr = _kasbonApproveAmountController.text.replaceAll(RegExp(r'[^\d]'), '');
+      final termStr = _kasbonApproveTerminController.text.replaceAll(RegExp(r'[^\d]'), '');
+      if (amtStr.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Masukkan nominal kasbon (angka).'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      final amt = int.tryParse(amtStr);
+      if (amt == null || amt < 1) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nominal kasbon tidak valid (minimal Rp 1).'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      if (amt > 999999999999) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nominal kasbon melebihi batas yang diizinkan.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      if (termStr.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Masukkan jumlah termin potong gaji.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      final term = int.tryParse(termStr);
+      if (term == null || term < 1) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Termin tidak valid (minimal 1).'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      if (term > 255) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Termin maksimal 255 (batas sistem).'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      kasbonAmtToSend = amt;
+      kasbonTermToSend = term;
+    }
+
     setState(() {
       _isProcessing = true;
     });
@@ -261,6 +374,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
         comment: _commentController.text.trim().isEmpty
             ? null
             : _commentController.text.trim(),
+        kasbonAmount: kasbonAmtToSend,
+        kasbonTermin: kasbonTermToSend,
       );
 
       if (mounted) {
@@ -654,6 +769,12 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
                       if (modeLower == 'kasbon' && pr['mode_specific_data'] != null) ...[
                         _buildKasbonInfoSection(
                           Map<String, dynamic>.from(pr['mode_specific_data'] as Map),
+                          editable: !const {
+                            'approved',
+                            'rejected',
+                            'processed',
+                            'completed',
+                          }.contains(status),
                         ),
                       ],
 
@@ -939,14 +1060,32 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
     );
   }
 
-  /// Blok Informasi Kasbon — sama konsep dengan `Home.vue` (modal approval PR).
-  Widget _buildKasbonInfoSection(Map<String, dynamic> msd) {
+  /// Blok Informasi Kasbon — selaras `Home.vue` ERP: approver isi nominal & termin bebas (teks).
+  Widget _buildKasbonInfoSection(Map<String, dynamic> msd, {required bool editable}) {
     final amount = _parseDouble(msd['kasbon_amount']) ?? 0.0;
     final reason = msd['kasbon_reason']?.toString() ?? '';
     final terminRaw = msd['kasbon_termin'];
     final termin = terminRaw is int
         ? terminRaw
         : (terminRaw is num ? terminRaw.toInt() : int.tryParse(terminRaw?.toString() ?? '') ?? 1);
+
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade400),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade400),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.orange.shade600, width: 1.5),
+      ),
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -973,42 +1112,94 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Nilai Kasbon',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade600,
+          if (editable) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Anda dapat mengetik nilai kasbon dan termin sebelum menyetujui (tidak terbatas pada pilihan pengaju). Perubahan disimpan saat Anda tap Setujui.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.35),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _formatCurrency(amount),
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade900,
+            const SizedBox(height: 16),
+            Text(
+              'Nilai Kasbon (Rp)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Termin',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade600,
+            const SizedBox(height: 6),
+            TextField(
+              controller: _kasbonApproveAmountController,
+              keyboardType: TextInputType.number,
+              decoration: inputDecoration.copyWith(
+                hintText: 'contoh: 2750000',
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${termin}x Termin',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade900,
+            const SizedBox(height: 4),
+            Text(
+              'Angka saja; pemisah ribuan (titik/koma) boleh, akan diabaikan.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
-          ),
+            const SizedBox(height: 16),
+            Text(
+              'Termin potong gaji',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _kasbonApproveTerminController,
+              keyboardType: TextInputType.number,
+              decoration: inputDecoration.copyWith(
+                hintText: 'contoh: 4',
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Jumlah kali potong gaji (1–255).',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ] else ...[
+            const SizedBox(height: 16),
+            Text(
+              'Nilai Kasbon',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _formatCurrency(amount),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade900,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Termin',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${termin}x Termin',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade900,
+              ),
+            ),
+          ],
           if (reason.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(

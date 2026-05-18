@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../services/outlet_serial_receive_service.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_scaffold.dart';
@@ -268,16 +269,28 @@ class _OutletSerialReceiveListScreenState extends State<OutletSerialReceiveListS
                 children: [
                   const Icon(Icons.filter_alt_rounded, size: 20, color: Color(0xFF4F46E5)),
                   const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('Filter', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                  ),
-                  if (_activeFilterCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(color: const Color(0xFF4F46E5), borderRadius: BorderRadius.circular(999)),
-                      child: Text('$_activeFilterCount', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Filter',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (_activeFilterCount > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(color: const Color(0xFF4F46E5), borderRadius: BorderRadius.circular(999)),
+                            child: Text('$_activeFilterCount', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ],
+                      ],
                     ),
+                  ),
                   Icon(_filterExpanded ? Icons.expand_less : Icons.expand_more, color: Colors.grey),
                 ],
               ),
@@ -378,19 +391,45 @@ class _OutletSerialReceiveListScreenState extends State<OutletSerialReceiveListS
   Widget _buildDropdownFilter() {
     return DropdownButtonFormField<String>(
       value: _outletFilter,
+      isExpanded: true,
+      isDense: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 22),
       decoration: InputDecoration(
         hintText: 'Semua Outlet',
-        prefixIcon: const Icon(Icons.store, size: 20),
+        prefixIcon: const Icon(Icons.store_outlined, size: 20),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         isDense: true,
       ),
+      selectedItemBuilder: (context) => [
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text('Semua Outlet', maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        ..._outlets.map(
+          (o) => Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              o['name']?.toString() ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
       items: [
-        const DropdownMenuItem(value: null, child: Text('Semua Outlet')),
+        const DropdownMenuItem(
+          value: null,
+          child: Text('Semua Outlet', maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
         ..._outlets.map((o) => DropdownMenuItem(
-          value: o['id']?.toString(),
-          child: Text(o['name'] ?? '', overflow: TextOverflow.ellipsis),
-        )),
+              value: o['id']?.toString(),
+              child: Text(
+                o['name']?.toString() ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            )),
       ],
       onChanged: (v) => setState(() => _outletFilter = v),
     );
@@ -423,103 +462,99 @@ class _OutletSerialReceiveListScreenState extends State<OutletSerialReceiveListS
       }
     }
 
+    final creatorName = (item['created_by_name'] ?? '-').toString();
+    final avatarPath = item['created_by_avatar']?.toString();
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 3))],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           onTap: () => _navigateToDetail(item['id']),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.receipt_long_rounded, size: 20, color: Color(0xFF4F46E5)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
+                _buildCreatorBlock(creatorName, avatarPath),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            item['number'] ?? '-',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                          Expanded(
+                            child: Text(
+                              item['number'] ?? '-',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            formattedDate,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFECFDF5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$totalSerials serial',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
+                            ),
                           ),
+                          if (_canDelete) ...[
+                            const SizedBox(width: 6),
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                              icon: const Icon(Icons.delete_outline_rounded, size: 22, color: Color(0xFFDC2626)),
+                              tooltip: 'Hapus',
+                              onPressed: () => _deleteItem(item),
+                            ),
+                          ],
                         ],
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFECFDF5),
-                        borderRadius: BorderRadius.circular(8),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today, size: 14, color: Color(0xFF94A3B8)),
+                          const SizedBox(width: 6),
+                          Text(formattedDate, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                        ],
                       ),
-                      child: Text(
-                        '$totalSerials serial',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    if (_isHQ && item['outlet_name'] != null) ...[
-                      Icon(Icons.store_rounded, size: 14, color: Colors.grey.shade500),
-                      const SizedBox(width: 4),
-                      Text(item['outlet_name'], style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                      const SizedBox(width: 16),
-                    ],
-                    Icon(Icons.person_rounded, size: 14, color: Colors.grey.shade500),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        item['created_by_name'] ?? '-',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (_canDelete)
-                      InkWell(
-                        onTap: () => _deleteItem(item),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEF2F2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFDC2626)),
-                              SizedBox(width: 4),
-                              Text('Hapus', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFDC2626))),
-                            ],
-                          ),
+                      if (_isHQ && item['outlet_name'] != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 2),
+                              child: Icon(Icons.store_rounded, size: 16, color: Color(0xFF6366F1)),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                item['outlet_name'].toString(),
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                  ],
+                      ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -527,5 +562,59 @@ class _OutletSerialReceiveListScreenState extends State<OutletSerialReceiveListS
         ),
       ),
     );
+  }
+
+  Widget _buildCreatorBlock(String name, String? avatarPath) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCreatorAvatar(name, avatarPath),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 52 * 2,
+          child: Text(
+            name,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCreatorAvatar(String name, String? avatarPath) {
+    final initials = _getInitials(name);
+    final avatarUrl = _getAvatarUrl(avatarPath);
+    return CircleAvatar(
+      radius: 26,
+      backgroundColor: const Color(0xFFE5E7EB),
+      backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
+      child: avatarUrl == null
+          ? Text(
+              initials,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+            )
+          : null,
+    );
+  }
+
+  String? _getAvatarUrl(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('http')) return raw;
+    final normalized = raw.startsWith('/') ? raw.substring(1) : raw;
+    if (normalized.startsWith('storage/')) {
+      return '${AuthService.storageUrl}/$normalized';
+    }
+    return '${AuthService.storageUrl}/storage/$normalized';
+  }
+
+  String _getInitials(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == '-') return '?';
+    final parts = trimmed.split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 }

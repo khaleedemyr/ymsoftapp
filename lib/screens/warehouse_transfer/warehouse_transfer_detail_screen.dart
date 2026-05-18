@@ -18,6 +18,7 @@ class WarehouseTransferDetailScreen extends StatefulWidget {
 class _WarehouseTransferDetailScreenState extends State<WarehouseTransferDetailScreen> {
   final WarehouseTransferService _service = WarehouseTransferService();
   Map<String, dynamic>? _transfer;
+  List<Map<String, dynamic>> _serialItems = [];
   bool _isLoading = true;
 
   @override
@@ -35,6 +36,13 @@ class _WarehouseTransferDetailScreenState extends State<WarehouseTransferDetailS
     if (mounted) {
       setState(() {
         _transfer = result?['transfer'] ?? result;
+        if (result?['serial_items'] != null) {
+          _serialItems = (result!['serial_items'] as List)
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+        } else {
+          _serialItems = [];
+        }
         _isLoading = false;
       });
     }
@@ -64,6 +72,7 @@ class _WarehouseTransferDetailScreenState extends State<WarehouseTransferDetailS
     final creatorAvatar = transfer['creator']?['avatar']?.toString();
     final notes = transfer['notes']?.toString();
     final items = (transfer['items'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+    final transferMode = (transfer['transfer_mode'] ?? 'normal').toString();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -71,6 +80,10 @@ class _WarehouseTransferDetailScreenState extends State<WarehouseTransferDetailS
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeaderCard(transferNumber, dateText, status),
+          if (transferMode != 'normal') ...[
+            const SizedBox(height: 12),
+            _buildModeBadge(transferMode),
+          ],
           const SizedBox(height: 16),
           _buildInfoCard(
             title: 'Informasi Gudang',
@@ -81,13 +94,100 @@ class _WarehouseTransferDetailScreenState extends State<WarehouseTransferDetailS
               _InfoRow(label: 'Keterangan', value: notes?.isNotEmpty == true ? notes! : '-'),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Detail Item',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade800),
+          if (items.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Detail Item (Mode Qty)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade800),
+            ),
+            const SizedBox(height: 10),
+            ...items.map(_buildItemCard),
+          ],
+          if (_serialItems.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Detail Nomor Seri',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+            ),
+            const SizedBox(height: 10),
+            ..._serialItems.map(_buildSerialItemCard),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeBadge(String mode) {
+    final isSerial = mode == 'serial';
+    final isMixed = mode == 'mixed';
+    final label = isSerial ? 'Mode Nomor Seri' : (isMixed ? 'Mode Qty + Seri' : 'Mode Qty');
+    final color = isSerial ? const Color(0xFF6366F1) : const Color(0xFF9333EA);
+    final bg = isSerial ? const Color(0xFFEEF2FF) : const Color(0xFFF3E8FF);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.qr_code_scanner_rounded, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialItemCard(Map<String, dynamic> item) {
+    final serialNumber = item['serial_number']?.toString() ?? '-';
+    final name = item['item_name']?.toString() ?? '-';
+    final qty = item['qty']?.toString() ?? '0';
+    final unit = item['unit_name']?.toString() ?? '-';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
-          const SizedBox(height: 10),
-          ...items.map(_buildItemCard).toList(),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.qr_code, size: 16, color: Color(0xFF6366F1)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  serialNumber,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(name, style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '$qty $unit',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );

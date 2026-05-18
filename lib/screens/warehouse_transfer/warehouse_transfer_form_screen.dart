@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import '../../services/warehouse_transfer_service.dart';
+import '../../services/native_barcode_scanner.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -25,6 +28,14 @@ class _WarehouseTransferFormScreenState extends State<WarehouseTransferFormScree
 
   final List<_TransferItemInput> _items = [];
 
+  bool _serialMode = false;
+  final TextEditingController _serialInputController = TextEditingController();
+  final FocusNode _serialFocusNode = FocusNode();
+  final List<Map<String, dynamic>> _scannedSerials = [];
+  bool _serialScanning = false;
+  String _serialFeedback = '';
+  bool _serialFeedbackSuccess = false;
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +48,8 @@ class _WarehouseTransferFormScreenState extends State<WarehouseTransferFormScree
   void dispose() {
     _dateController.dispose();
     _notesController.dispose();
+    _serialInputController.dispose();
+    _serialFocusNode.dispose();
     for (final item in _items) {
       item.dispose();
     }
@@ -157,6 +170,92 @@ class _WarehouseTransferFormScreenState extends State<WarehouseTransferFormScree
     }
   }
 
+  Future<void> _onSerialScan() async {
+    final input = _serialInputController.text.trim();
+    if (input.isEmpty) return;
+
+    if (_warehouseFromId == null) {
+      setState(() {
+        _serialFeedback = 'Pilih gudang asal dulu';
+        _serialFeedbackSuccess = false;
+      });
+      HapticFeedback.heavyImpact();
+      return;
+    }
+
+    if (_scannedSerials.any((s) => s['serial_number'] == input)) {
+      setState(() {
+        _serialFeedback = 'Serial "$input" sudah discan';
+        _serialFeedbackSuccess = false;
+      });
+      HapticFeedback.heavyImpact();
+      _serialInputController.clear();
+      return;
+    }
+
+    setState(() => _serialScanning = true);
+
+    final result = await _service.validateSerialForWT(
+      serialNumber: input,
+      warehouseFromId: _warehouseFromId!,
+    );
+
+    if (!mounted) return;
+
+    if (result['valid'] == true) {
+      final serial = result['serial'] as Map<String, dynamic>? ?? {};
+      setState(() {
+        _scannedSerials.add({
+          'serial_id': serial['id'],
+          'serial_number': serial['serial_number'] ?? input,
+          'item_id': serial['item_id'],
+          'item_name': serial['item_name'] ?? '-',
+          'unit_id': serial['unit_id'],
+          'unit_name': serial['unit_name'] ?? '-',
+          'qty': serial['qty'] ?? 1,
+          'qty_small': serial['qty_small'] ?? 1,
+        });
+        _serialFeedback = 'Serial "$input" valid';
+        _serialFeedbackSuccess = true;
+        _serialScanning = false;
+      });
+      HapticFeedback.mediumImpact();
+    } else {
+      setState(() {
+        _serialFeedback = result['message']?.toString() ?? 'Serial tidak valid';
+        _serialFeedbackSuccess = false;
+        _serialScanning = false;
+      });
+      HapticFeedback.heavyImpact();
+    }
+
+    _serialInputController.clear();
+    _serialFocusNode.requestFocus();
+  }
+
+  Future<void> _openCameraSerial() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      _showMessage('Scan kamera tersedia di aplikasi Android/iOS. Di web gunakan scanner HID.');
+      return;
+    }
+    try {
+      final scanned = await NativeBarcodeScanner.scanBarcode();
+      if (!mounted) return;
+      if (scanned != null && scanned.isNotEmpty) {
+        _serialInputController.text = scanned;
+        await _onSerialScan();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage('Gagal membuka scanner: $e');
+    }
+  }
+
+  void _removeSerial(int index) {
+    setState(() => _scannedSerials.removeAt(index));
+  }
+
   Future<void> _submit() async {
     if (_warehouseFromId == null || _warehouseToId == null) {
       _showMessage('Pilih gudang asal dan tujuan');
@@ -168,27 +267,45 @@ class _WarehouseTransferFormScreenState extends State<WarehouseTransferFormScree
     }
 
     final itemsPayload = <Map<String, dynamic>>[];
+    final hasNormalItems = _items.any((i) => i.itemId != null);
 
-    for (final item in _items) {
-      final qty = double.tryParse(item.qtyController.text.replaceAll(',', '')) ?? 0;
-      if (item.itemId == null || qty <= 0 || (item.unit == null || item.unit!.isEmpty)) {
-        _showMessage('Lengkapi semua item dengan qty & unit');
-        return;
+    if (hasNormalItems) {
+      for (final item in _items) {
+        if (item.itemId == null) continue;
+        final qty = double.tryParse(item.qtyController.text.replaceAll(',', '')) ?? 0;
+        if (qty <= 0 || (item.unit == null || item.unit!.isEmpty)) {
+          _showMessage('Lengkapi semua item dengan qty & unit');
+          return;
+        }
+
+        final availableStock = _getAvailableStock(item);
+        if (availableStock != null && qty > availableStock) {
+          _showMessage('Qty melebihi stok tersedia (${availableStock.toStringAsFixed(2)})');
+          return;
+        }
+
+        itemsPayload.add({
+          'item_id': item.itemId,
+          'qty': qty,
+          'unit': item.unit,
+          if (item.noteController.text.isNotEmpty) 'note': item.noteController.text,
+        });
       }
-
-      final availableStock = _getAvailableStock(item);
-      if (availableStock != null && qty > availableStock) {
-        _showMessage('Qty melebihi stok tersedia (${availableStock.toStringAsFixed(2)})');
-        return;
-      }
-
-      itemsPayload.add({
-        'item_id': item.itemId,
-        'qty': qty,
-        'unit': item.unit,
-        if (item.noteController.text.isNotEmpty) 'note': item.noteController.text,
-      });
     }
+
+    if (itemsPayload.isEmpty && _scannedSerials.isEmpty) {
+      _showMessage('Minimal harus ada 1 item (mode qty) atau 1 nomor seri (mode serial)');
+      return;
+    }
+
+    final serialItemsPayload = _scannedSerials.map((s) => {
+      'serial_id': s['serial_id'],
+      'serial_number': s['serial_number'],
+      'item_id': s['item_id'],
+      'unit_id': s['unit_id'],
+      'qty': s['qty'],
+      'qty_small': s['qty_small'],
+    }).toList();
 
     setState(() {
       _isLoading = true;
@@ -199,7 +316,8 @@ class _WarehouseTransferFormScreenState extends State<WarehouseTransferFormScree
       warehouseFromId: _warehouseFromId!,
       warehouseToId: _warehouseToId!,
       notes: _notesController.text,
-      items: itemsPayload,
+      items: itemsPayload.isNotEmpty ? itemsPayload : null,
+      serialItems: serialItemsPayload.isNotEmpty ? serialItemsPayload : null,
     );
 
     if (mounted) {
@@ -253,11 +371,230 @@ class _WarehouseTransferFormScreenState extends State<WarehouseTransferFormScree
             const SizedBox(height: 16),
             _buildWarehouseCard(),
             const SizedBox(height: 16),
+            _buildSerialModeCard(),
+            if (_serialMode) ...[
+              const SizedBox(height: 16),
+              _buildSerialScanCard(),
+            ],
+            const SizedBox(height: 16),
             _buildItemsCard(),
             const SizedBox(height: 20),
             _buildSubmitButton(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSerialModeCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF6366F1), size: 22),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mode Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text('Scan serial dari gudang asal (bisa dikombinasi qty)', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              ],
+            ),
+          ),
+          Switch(
+            value: _serialMode,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: (v) => setState(() => _serialMode = v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialScanCard() {
+    final canScan = _warehouseFromId != null &&
+        _warehouseToId != null &&
+        _warehouseFromId != _warehouseToId;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Scan Nomor Seri',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+          ),
+          if (!canScan) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Pilih gudang asal & tujuan terlebih dahulu',
+              style: TextStyle(fontSize: 12, color: Color(0xFFEF4444)),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _serialInputController,
+                  focusNode: _serialFocusNode,
+                  enabled: !_serialScanning && canScan,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted: (_) => _onSerialScan(),
+                  decoration: InputDecoration(
+                    hintText: 'Scan atau ketik nomor seri...',
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    prefixIcon: const Icon(Icons.qr_code, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: (!_serialScanning && canScan) ? _openCameraSerial : null,
+                icon: const Icon(Icons.camera_alt_outlined),
+                color: const Color(0xFF6366F1),
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFFEEF2FF),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: (!_serialScanning && canScan) ? _onSerialScan : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6366F1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _serialScanning
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.search, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          if (_serialFeedback.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _serialFeedbackSuccess ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _serialFeedbackSuccess ? Icons.check_circle : Icons.error,
+                    size: 16,
+                    color: _serialFeedbackSuccess ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _serialFeedback,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _serialFeedbackSuccess ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_scannedSerials.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${_scannedSerials.length} serial discan',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6366F1)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(_scannedSerials.length, (i) {
+              final s = _scannedSerials[i];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            s['serial_number']?.toString() ?? '',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${s['item_name']} — ${s['qty']} ${s['unit_name']}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _removeSerial(i),
+                      child: const Icon(Icons.close, size: 18, color: Color(0xFFEF4444)),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
       ),
     );
   }

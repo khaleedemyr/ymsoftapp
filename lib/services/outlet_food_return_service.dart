@@ -202,13 +202,46 @@ class OutletFoodReturnService {
     }
   }
 
+  Future<Map<String, dynamic>?> validateSerial({
+    required String serialNumber,
+    required int outletId,
+    required int warehouseOutletId,
+    int? outletFoodGoodReceiveId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/outlet-food-return/validate-serial'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'serial_number': serialNumber,
+          'outlet_id': outletId,
+          'warehouse_outlet_id': warehouseOutletId,
+          if (outletFoodGoodReceiveId != null) 'outlet_food_good_receive_id': outletFoodGoodReceiveId,
+        }),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('Error validateSerial outlet food return: $e');
+    }
+    return null;
+  }
+
   /// Submit return
   Future<Map<String, dynamic>> store({
     required int outletFoodGoodReceiveId,
     required int outletId,
     required int warehouseOutletId,
     required String returnDate,
-    required List<Map<String, dynamic>> items,
+    List<Map<String, dynamic>>? items,
+    List<Map<String, dynamic>>? serialItems,
     String? notes,
   }) async {
     try {
@@ -222,7 +255,8 @@ class OutletFoodReturnService {
         'outlet_id': outletId,
         'warehouse_outlet_id': warehouseOutletId,
         'return_date': returnDate,
-        'items': items,
+        if (items != null && items.isNotEmpty) 'items': items,
+        if (serialItems != null && serialItems.isNotEmpty) 'serial_items': serialItems,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
       };
 

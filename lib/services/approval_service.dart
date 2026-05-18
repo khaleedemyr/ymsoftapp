@@ -333,11 +333,27 @@ class ApprovalService {
   }
 
   // Approve Purchase Requisition
-  Future<Map<String, dynamic>> approvePr(int prId, {String? comment}) async {
+  Future<Map<String, dynamic>> approvePr(
+    int prId, {
+    String? comment,
+    int? kasbonAmount,
+    int? kasbonTermin,
+  }) async {
     try {
       final token = await _getToken();
       if (token == null) {
         return {'success': false, 'message': 'No token found'};
+      }
+
+      final body = <String, dynamic>{};
+      if (comment != null && comment.trim().isNotEmpty) {
+        body['comment'] = comment.trim();
+      }
+      if (kasbonAmount != null) {
+        body['kasbon_amount'] = kasbonAmount;
+      }
+      if (kasbonTermin != null) {
+        body['kasbon_termin'] = kasbonTermin;
       }
 
       final response = await http.post(
@@ -347,7 +363,7 @@ class ApprovalService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: comment != null ? jsonEncode({'comment': comment}) : null,
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200) {
@@ -2737,6 +2753,109 @@ class ApprovalService {
     } catch (e) {
       print('Error loading Asset Disposal approvals: $e');
       return [];
+    }
+  }
+
+  Future<List<PosVoidItemApproval>> getPendingPosVoidItemApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/pos-void-items/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['headers'] != null) {
+          final List<dynamic> approvalsJson = data['headers'];
+          _rawJsonCache['pos_void_item'] = approvalsJson;
+          return approvalsJson
+              .map((json) => PosVoidItemApproval.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading POS Void Item approvals: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> approvePosVoidItem(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final url = '$baseUrl/api/approval-app/pos-void-items/$id/approve';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+      final body = response.body;
+      if (body.isEmpty) {
+        return {'success': false, 'message': 'Respons kosong'};
+      }
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': data['message'] ?? 'Void item disetujui.'};
+      }
+      return {
+        'success': false,
+        'message': data['message']?.toString() ?? 'Gagal menyetujui',
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> rejectPosVoidItem(int id, {String? note}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final url = '$baseUrl/api/approval-app/pos-void-items/$id/reject';
+      final payload = <String, dynamic>{};
+      final n = note?.trim();
+      if (n != null && n.isNotEmpty) {
+        payload['rejection_reason'] = n;
+      }
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(payload),
+      );
+      final body = response.body;
+      if (body.isEmpty) {
+        return {'success': false, 'message': 'Respons kosong'};
+      }
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': data['message'] ?? 'Permintaan ditolak.'};
+      }
+      return {
+        'success': false,
+        'message': data['message']?.toString() ?? 'Gagal menolak',
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
     }
   }
 

@@ -20,6 +20,8 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
   FoodGoodReceive? _goodReceive;
   bool _isLoading = true;
   bool _isDeleting = false;
+  final Map<int, int> _serialCountByItemId = {};
+  final Map<int, int> _serialInUseByItemId = {};
 
   @override
   void initState() {
@@ -40,6 +42,7 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
           _goodReceive = FoodGoodReceive.fromJson(result);
           _isLoading = false;
         });
+        await _refreshSerialSummary();
       } else {
         if (mounted) {
           setState(() {
@@ -138,6 +141,14 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
   Widget build(BuildContext context) {
     return AppScaffold(
       title: 'Detail Good Receive',
+      actions: [
+        if (!_isLoading && _goodReceive != null)
+          IconButton(
+            tooltip: 'Hapus Good Receive',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _isDeleting ? null : _deleteGoodReceive,
+          ),
+      ],
       body: _isLoading
           ? const AppLoadingIndicator()
           : _goodReceive == null
@@ -172,7 +183,7 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
                     ),
                     if (_isDeleting)
                       Container(
-                        color: Colors.black.withOpacity(0.5),
+                        color: Colors.black.withValues(alpha: 0.5),
                         child: const Center(
                           child: CircularProgressIndicator(),
                         ),
@@ -297,7 +308,7 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
                 Icon(Icons.list_alt, color: Colors.orange.shade600, size: 20),
                 const SizedBox(width: 8),
                 const Text(
-                  'Detail Item',
+                  'Detail Item & Serial',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -311,6 +322,170 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _refreshSerialSummary() async {
+    if (_goodReceive == null) return;
+    final rows = await _service.getSerialSummaryForGr(_goodReceive!.id);
+    if (!mounted) return;
+    final map = <int, int>{};
+    final inUse = <int, int>{};
+    for (final r in rows) {
+      final id = int.tryParse(r['good_receive_item_id']?.toString() ?? '');
+      final t = int.tryParse(r['total']?.toString() ?? '0') ?? 0;
+      final u = int.tryParse(r['in_use']?.toString() ?? '0') ?? 0;
+      if (id != null) {
+        map[id] = t;
+        inUse[id] = u;
+      }
+    }
+    setState(() {
+      _serialCountByItemId
+        ..clear()
+        ..addAll(map);
+      _serialInUseByItemId
+        ..clear()
+        ..addAll(inUse);
+    });
+  }
+
+  int _serialCountFor(FoodGoodReceiveItem item) => _serialCountByItemId[item.id] ?? 0;
+
+  int _serialInUseFor(FoodGoodReceiveItem item) => _serialInUseByItemId[item.id] ?? 0;
+
+  Future<void> _generateSerialForItem(FoodGoodReceiveItem item) async {
+    final data = await _service.getSerialUnitsForGrItem(item.id);
+    if (!mounted) return;
+    if (data == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal memuat unit serial'), backgroundColor: Colors.red));
+      return;
+    }
+    final units = (data['units'] as List<dynamic>?) ?? [];
+    if (units.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unit konversi item tidak ditemukan.'), backgroundColor: Colors.orange));
+      return;
+    }
+    final qtyLabel = '${data['qty_received']} ${data['received_unit_name'] ?? ''}';
+
+    int? selectedUnitId = int.tryParse(units.first['unit_id']?.toString() ?? '');
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Generate Serial — ${item.itemName}'),
+        content: StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Qty diterima: $qtyLabel', style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey(selectedUnitId),
+                  initialValue: selectedUnitId,
+                  decoration: const InputDecoration(labelText: 'Unit serial', border: OutlineInputBorder()),
+                  items: units.map((u) {
+                    final id = int.tryParse(u['unit_id']?.toString() ?? '') ?? 0;
+                    final name = u['unit_name']?.toString() ?? '';
+                    final cq = u['converted_qty'];
+                    return DropdownMenuItem(
+                      value: id,
+                      child: Text('$name (qty: $cq)'),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setLocal(() => selectedUnitId = v),
+                ),
+              ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, selectedUnitId), child: const Text('Generate')),
+        ],
+      ),
+    );
+    if (picked == null || picked == 0) return;
+
+    final res = await _service.generateSerialsForGrItem(item.id, unitId: picked);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (res['success'] == true ? 'OK' : 'Gagal')),
+        backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    await _refreshSerialSummary();
+  }
+
+  Future<void> _showSerialsForItem(FoodGoodReceiveItem item) async {
+    final rows = await _service.getSerialsForGrItem(item.id);
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Belum ada serial untuk item ini.'), backgroundColor: Colors.orange));
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        maxChildSize: 0.9,
+        builder: (_, scroll) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Serial — ${item.itemName}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: scroll,
+                itemCount: rows.length > 200 ? 200 : rows.length,
+                itemBuilder: (_, i) {
+                  final r = rows[i];
+                  return ListTile(
+                    dense: true,
+                    title: Text(r['serial_number']?.toString() ?? '-', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      '${r['unit_name'] ?? '-'} · PO ${r['po_number'] ?? '-'} · GR ${r['gr_number'] ?? '-'}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _rollbackSerialForItem(FoodGoodReceiveItem item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rollback serial?'),
+        content: Text('Hapus semua serial untuk "${item.itemName}" pada GR ini?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Rollback', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final res = await _service.rollbackSerialsForGrItem(item.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res['message']?.toString() ?? (res['success'] == true ? 'Rollback berhasil' : 'Gagal')),
+        backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    await _refreshSerialSummary();
   }
 
   Widget _buildItemTile(FoodGoodReceiveItem item, int index) {
@@ -395,6 +570,37 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
                   ),
                 ],
               ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text('Serial', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              OutlinedButton(
+                onPressed: () => _generateSerialForItem(item),
+                child: const Text('Generate Serial'),
+              ),
+              OutlinedButton(
+                onPressed: () => _showSerialsForItem(item),
+                child: Text('Lihat Serial (${_serialCountFor(item)})'),
+              ),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                onPressed: (_serialCountFor(item) <= 0 || _serialInUseFor(item) > 0)
+                    ? null
+                    : () => _rollbackSerialForItem(item),
+                child: const Text('Rollback Serial'),
+              ),
+            ],
+          ),
+          if (_serialInUseFor(item) > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Rollback dinonaktifkan: ada serial yang sudah digunakan.',
+              style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
             ),
           ],
         ],

@@ -1103,3 +1103,66 @@ class AssetDisposalApproval {
   }
 }
 
+/// Pending approval void item POS (header dari ERP).
+class PosVoidItemApproval {
+  final int id;
+  final String? number;
+  final String? orderNomor;
+  final String? orderId;
+  final String? orderItemId;
+  final String? itemName;
+  final String? outletName;
+  /// qr_code outlet (sama dengan kode_outlet POS), untuk tampilan sekunder
+  final String? outletCode;
+  final String? creatorName;
+  final String? reason;
+  final String? date;
+
+  PosVoidItemApproval({
+    required this.id,
+    this.number,
+    this.orderNomor,
+    this.orderId,
+    this.orderItemId,
+    this.itemName,
+    this.outletName,
+    this.outletCode,
+    this.creatorName,
+    this.reason,
+    this.date,
+  });
+
+  factory PosVoidItemApproval.fromJson(Map<String, dynamic> json) {
+    return PosVoidItemApproval(
+      id: json['id'] ?? 0,
+      number: json['number']?.toString(),
+      orderNomor: json['order_nomor']?.toString(),
+      orderId: json['order_id']?.toString(),
+      orderItemId: json['order_item_id']?.toString(),
+      itemName: json['item_name']?.toString(),
+      outletName: json['outlet_name']?.toString(),
+      outletCode: json['outlet_code']?.toString(),
+      creatorName: json['creator_name']?.toString(),
+      reason: json['reason']?.toString(),
+      date: _formatPosVoidDate(json['date']),
+    );
+  }
+
+  static String? _formatPosVoidDate(dynamic v) {
+    if (v == null) return null;
+    if (v is String) {
+      try {
+        final dt = DateTime.parse(v.replaceFirst(' ', 'T'));
+        final dd = dt.day.toString().padLeft(2, '0');
+        final mm = dt.month.toString().padLeft(2, '0');
+        final hh = dt.hour.toString().padLeft(2, '0');
+        final min = dt.minute.toString().padLeft(2, '0');
+        return '$dd/$mm/${dt.year} $hh:$min';
+      } catch (_) {
+        return v;
+      }
+    }
+    return v.toString();
+  }
+}
+

@@ -4,6 +4,53 @@ import '../../services/outlet_rejection_service.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
+class _SerialLine {
+  int serialId;
+  String serialNumber;
+  int itemId;
+  String itemName;
+  int unitId;
+  String unitName;
+  double qty;
+  String itemCondition;
+  String? rejectionReason;
+  String? conditionNotes;
+  TextEditingController reasonController = TextEditingController();
+  TextEditingController conditionNotesController = TextEditingController();
+
+  _SerialLine({
+    required this.serialId,
+    required this.serialNumber,
+    required this.itemId,
+    required this.itemName,
+    required this.unitId,
+    required this.unitName,
+    required this.qty,
+    required this.itemCondition,
+    this.rejectionReason,
+    this.conditionNotes,
+  }) {
+    reasonController.text = rejectionReason ?? '';
+    conditionNotesController.text = conditionNotes ?? '';
+  }
+
+  void dispose() {
+    reasonController.dispose();
+    conditionNotesController.dispose();
+  }
+
+  Map<String, dynamic> toPayload() => {
+        'serial_id': serialId,
+        'serial_number': serialNumber,
+        'item_id': itemId,
+        'unit_id': unitId,
+        'qty': qty,
+        'rejection_reason': reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
+        'item_condition': itemCondition,
+        'condition_notes': conditionNotesController.text.trim().isEmpty ? null : conditionNotesController.text.trim(),
+      };
+}
+
 class _LineItem {
   int itemId;
   int unitId;
@@ -74,6 +121,10 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
   int? _deliveryOrderId;
   String _rejectionDate = '';
   final List<_LineItem> _items = [];
+  final List<_SerialLine> _serials = [];
+  bool _serialMode = false;
+  bool _serialScanning = false;
+  final TextEditingController _serialInputController = TextEditingController();
   bool _saving = false;
   bool _loadingDo = false;
 
@@ -105,6 +156,8 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
     _dateController.dispose();
     _notesController.dispose();
     for (final i in _items) i.dispose();
+    for (final s in _serials) s.dispose();
+    _serialInputController.dispose();
     super.dispose();
   }
 
@@ -163,6 +216,25 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
             itemCondition: it['item_condition']?.toString() ?? 'good',
             rejectionReason: it['rejection_reason']?.toString(),
             conditionNotes: it['condition_notes']?.toString(),
+          ));
+        }
+      }
+      final serialList = r['serialItems'] ?? r['serial_items'];
+      if (serialList is List && serialList.isNotEmpty) {
+        _serialMode = true;
+        for (final si in serialList) {
+          final m = Map<String, dynamic>.from(si as Map);
+          _serials.add(_SerialLine(
+            serialId: _int(m['serial_id']) ?? 0,
+            serialNumber: m['serial_number']?.toString() ?? '',
+            itemId: _int(m['item_id']) ?? 0,
+            itemName: m['item_name']?.toString() ?? '-',
+            unitId: _int(m['unit_id']) ?? 0,
+            unitName: m['unit_name']?.toString() ?? '',
+            qty: (m['qty_rejected'] is num) ? (m['qty_rejected'] as num).toDouble() : 1,
+            itemCondition: m['item_condition']?.toString() ?? 'good',
+            rejectionReason: m['rejection_reason']?.toString(),
+            conditionNotes: m['condition_notes']?.toString(),
           ));
         }
       }
@@ -279,13 +351,49 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
     );
   }
 
+  Future<void> _scanSerial() async {
+    final sn = _serialInputController.text.trim();
+    if (sn.isEmpty || _outletId == null || _warehouseId == null) return;
+    if (_serials.any((s) => s.serialNumber == sn)) {
+      _showSnack('Serial sudah discan', isError: true);
+      return;
+    }
+    setState(() => _serialScanning = true);
+    final res = await _service.validateSerial(
+      serialNumber: sn,
+      outletId: _outletId!,
+      warehouseId: _warehouseId!,
+      deliveryOrderId: _deliveryOrderId,
+    );
+    if (!mounted) return;
+    setState(() => _serialScanning = false);
+    if (res == null || res['valid'] != true) {
+      _showSnack(res?['message']?.toString() ?? 'Serial tidak valid', isError: true);
+      return;
+    }
+    final s = res['serial'] as Map<String, dynamic>;
+    setState(() {
+      _serials.add(_SerialLine(
+        serialId: _int(s['id']) ?? 0,
+        serialNumber: s['serial_number']?.toString() ?? sn,
+        itemId: _int(s['item_id']) ?? 0,
+        itemName: s['item_name']?.toString() ?? '-',
+        unitId: _int(s['unit_id']) ?? 0,
+        unitName: s['unit_name']?.toString() ?? '',
+        qty: (s['qty'] is num) ? (s['qty'] as num).toDouble() : double.tryParse(s['qty']?.toString() ?? '1') ?? 1,
+        itemCondition: 'good',
+      ));
+      _serialInputController.clear();
+    });
+  }
+
   bool _validateForm() {
     if (_outletId == null || _warehouseId == null) {
       _showSnack('Pilih outlet dan gudang', isError: true);
       return false;
     }
-    if (_items.isEmpty) {
-      _showSnack('Tambahkan minimal 1 item', isError: true);
+    if (_items.isEmpty && _serials.isEmpty) {
+      _showSnack('Tambahkan minimal 1 item atau scan serial', isError: true);
       return false;
     }
     for (final item in _items) {
@@ -301,6 +409,7 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
   Future<void> _saveDraft() async {
     if (!_validateForm()) return;
     final payloadItems = _items.map((e) => e.toPayload()).toList();
+    final payloadSerials = _serials.map((e) => e.toPayload()).toList();
     if (widget.editId != null) {
       final result = await _service.update(
         id: widget.editId!,
@@ -309,7 +418,8 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
         warehouseId: _warehouseId!,
         deliveryOrderId: _deliveryOrderId,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        items: payloadItems,
+        items: payloadItems.isEmpty ? null : payloadItems,
+        serialItems: payloadSerials.isEmpty ? null : payloadSerials,
       );
       if (!mounted) return;
       if (result['success'] == true) {
@@ -327,7 +437,8 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
       warehouseId: _warehouseId!,
       deliveryOrderId: _deliveryOrderId,
       notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      items: payloadItems,
+      items: payloadItems.isEmpty ? null : payloadItems,
+      serialItems: payloadSerials.isEmpty ? null : payloadSerials,
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -342,6 +453,7 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
   Future<void> _submitForApproval() async {
     if (!_validateForm()) return;
     final payloadItems = _items.map((e) => e.toPayload()).toList();
+    final payloadSerials = _serials.map((e) => e.toPayload()).toList();
     setState(() => _saving = true);
     if (widget.editId != null) {
       final updateResult = await _service.update(
@@ -351,7 +463,8 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
         warehouseId: _warehouseId!,
         deliveryOrderId: _deliveryOrderId,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        items: payloadItems,
+        items: payloadItems.isEmpty ? null : payloadItems,
+        serialItems: payloadSerials.isEmpty ? null : payloadSerials,
       );
       if (!mounted) return;
       if (updateResult['success'] != true) {
@@ -376,7 +489,8 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
       warehouseId: _warehouseId!,
       deliveryOrderId: _deliveryOrderId,
       notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      items: payloadItems,
+      items: payloadItems.isEmpty ? null : payloadItems,
+      serialItems: payloadSerials.isEmpty ? null : payloadSerials,
     );
     if (!mounted) return;
     if (storeResult['success'] != true) {
@@ -502,6 +616,37 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
               decoration: _inputDec('Catatan (opsional)'),
             ),
             const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Mode Nomor Seri', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('Scan serial di outlet untuk rejection'),
+              value: _serialMode,
+              activeColor: _primary,
+              onChanged: (v) => setState(() => _serialMode = v),
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_serialMode) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _serialInputController,
+                      decoration: _inputDec('Scan / ketik serial'),
+                      onSubmitted: (_) => _scanSerial(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _serialScanning ? null : _scanSerial,
+                    icon: _serialScanning
+                        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.qr_code_scanner, color: _primary),
+                  ),
+                ],
+              ),
+              if (_serials.isNotEmpty)
+                ...List.generate(_serials.length, (i) => _buildSerialRow(i)),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 const Text('Item Rejection', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -573,6 +718,45 @@ class _OutletRejectionCreateScreenState extends State<OutletRejectionCreateScree
 
   static const _conditions = ['good', 'damaged', 'expired', 'other'];
   static const _conditionLabels = {'good': 'Baik', 'damaged': 'Rusak', 'expired': 'Kadaluarsa', 'other': 'Lainnya'};
+
+  Widget _buildSerialRow(int index) {
+    final s = _serials[index];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE0F2FE),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF7DD3FC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('${s.serialNumber}\n${s.itemName} — ${s.qty} ${s.unitName}',
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                onPressed: () => setState(() {
+                  _serials[index].dispose();
+                  _serials.removeAt(index);
+                }),
+              ),
+            ],
+          ),
+          DropdownButtonFormField<String>(
+            value: s.itemCondition,
+            decoration: _inputDec('Kondisi'),
+            items: _conditions.map((c) => DropdownMenuItem(value: c, child: Text(_conditionLabels[c] ?? c))).toList(),
+            onChanged: (v) => setState(() => s.itemCondition = v ?? 'good'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildItemRow(int index) {
     final item = _items[index];

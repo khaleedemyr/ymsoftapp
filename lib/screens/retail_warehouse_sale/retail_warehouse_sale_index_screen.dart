@@ -394,6 +394,7 @@ class _RetailWarehouseSaleIndexScreenState extends State<RetailWarehouseSaleInde
   Widget _buildCard(Map<String, dynamic> sale) {
     final id = int.tryParse(sale['id']?.toString() ?? '') ?? 0;
     final number = sale['number']?.toString() ?? '-';
+    final saleMode = sale['sale_mode']?.toString();
     final customerName = sale['customer_name']?.toString() ?? '-';
     final customerCode = sale['customer_code']?.toString();
     final warehouseName = sale['warehouse_name']?.toString() ?? '-';
@@ -431,13 +432,35 @@ class _RetailWarehouseSaleIndexScreenState extends State<RetailWarehouseSaleInde
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          number,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF0F172A),
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              number,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            if (saleMode != null && saleMode != 'normal')
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: saleMode == 'serial' ? const Color(0xFFE0E7FF) : const Color(0xFFF3E8FF),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  saleMode == 'serial' ? 'Serial' : 'Campuran',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: saleMode == 'serial' ? const Color(0xFF4338CA) : const Color(0xFF7E22CE),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       _buildStatusChip(status),

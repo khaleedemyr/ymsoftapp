@@ -144,6 +144,7 @@ class OutletDeliveryOrderInfo {
   final String? packingReason;
   final String? floorOrderNumber;
   final String? floorOrderDate;
+  final String? floorOrderDesc;
   final String? warehouseOutletName;
   final String? outletName;
   final String? roGrNumber;
@@ -157,6 +158,7 @@ class OutletDeliveryOrderInfo {
     this.packingReason,
     this.floorOrderNumber,
     this.floorOrderDate,
+    this.floorOrderDesc,
     this.warehouseOutletName,
     this.outletName,
     this.roGrNumber,
@@ -172,6 +174,7 @@ class OutletDeliveryOrderInfo {
       packingReason: json['packing_reason']?.toString(),
       floorOrderNumber: json['floor_order_number']?.toString(),
       floorOrderDate: json['floor_order_date']?.toString(),
+      floorOrderDesc: json['floor_order_desc']?.toString(),
       warehouseOutletName: json['warehouse_outlet_name']?.toString(),
       outletName: json['outlet_name']?.toString(),
       roGrNumber: json['ro_gr_number']?.toString(),

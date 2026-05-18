@@ -164,6 +164,9 @@ class _OutletRejectionDetailScreenState extends State<OutletRejectionDetailScree
     final notes = r['notes']?.toString();
     final itemsRaw = r['items'];
     final items = (itemsRaw is List) ? itemsRaw.map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
+    final serialRaw = r['serialItems'] ?? r['serial_items'];
+    final serials = (serialRaw is List) ? serialRaw.map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
+    final rejectionMode = r['rejection_mode']?.toString();
     final canCancel = status == 'draft' || status == 'submitted';
     final isDraft = status == 'draft';
 
@@ -226,9 +229,25 @@ class _OutletRejectionDetailScreenState extends State<OutletRejectionDetailScree
             ),
           ),
           const SizedBox(height: 16),
-          const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          ...items.map(_buildItemCard),
+          if (rejectionMode != null && rejectionMode != 'normal')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Chip(
+                label: Text(rejectionMode == 'serial' ? 'Mode Serial' : 'Mode Campuran'),
+                backgroundColor: const Color(0xFFE0F2FE),
+              ),
+            ),
+          if (serials.isNotEmpty) ...[
+            const Text('Nomor Seri', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            ...serials.map(_buildSerialCard),
+            const SizedBox(height: 12),
+          ],
+          if (items.isNotEmpty) ...[
+            const Text('Detail Item (Qty)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            ...items.map(_buildItemCard),
+          ],
           const SizedBox(height: 16),
           if (canCancel || (isDraft && _canDelete) || isDraft)
             Wrap(
@@ -278,6 +297,32 @@ class _OutletRejectionDetailScreenState extends State<OutletRejectionDetailScree
         children: [
           SizedBox(width: 100, child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)))),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Color(0xFF334155)))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialCard(Map<String, dynamic> si) {
+    final sn = si['serial_number']?.toString() ?? '-';
+    final name = si['item_name']?.toString() ?? '-';
+    final unit = si['unit_name']?.toString() ?? '';
+    final qty = si['qty_rejected']?.toString() ?? '1';
+    final condition = si['item_condition']?.toString() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE0F2FE),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF7DD3FC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(sn, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+          Text(name, style: const TextStyle(fontSize: 13)),
+          Text('Qty: $qty $unit · $condition', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
         ],
       ),
     );

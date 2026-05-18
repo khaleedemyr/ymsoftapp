@@ -387,6 +387,7 @@ class _HeadOfficeReturnIndexScreenState extends State<HeadOfficeReturnIndexScree
     final createdByName = (item['created_by_name'] ?? '-').toString();
     final approvedByName = item['approved_by_name']?.toString();
     final rejectionByName = item['rejection_by_name']?.toString();
+    final returnMode = item['return_mode']?.toString();
     final isPending = status == 'pending';
 
     return Card(
@@ -418,6 +419,21 @@ class _HeadOfficeReturnIndexScreenState extends State<HeadOfficeReturnIndexScree
                 ],
               ),
               const SizedBox(height: 8),
+              if (returnMode != null && returnMode != 'normal')
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      returnMode == 'serial' ? 'Serial' : 'Campuran',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _orange),
+                    ),
+                  ),
+                ),
               Text('Outlet: $outletName', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
               if (warehouseName.isNotEmpty) Text('Gudang: $warehouseName', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
               Text('GR: $grNumber', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
