@@ -440,6 +440,8 @@ class _CategoryCostApprovalDetailScreenState extends State<CategoryCostApprovalD
 
     final header = _approvalData!['header'] ?? _approvalData!;
     final details = _approvalData!['details'] as List<dynamic>? ?? [];
+    final headerType = header['type']?.toString() ?? '';
+    final isUsageType = headerType == 'usage' || headerType == 'stock_cut';
     final approvalFlows = _approvalData!['approval_flows'] as List<dynamic>? ?? [];
 
     // Get status color
@@ -664,28 +666,57 @@ class _CategoryCostApprovalDetailScreenState extends State<CategoryCostApprovalD
                           ],
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildItemDetail(
-                                'Quantity', 
-                                detail['qty'] != null 
-                                  ? (detail['qty'] is num 
-                                      ? detail['qty'].toString() 
-                                      : detail['qty'].toString())
-                                  : (detail['quantity'] != null 
-                                      ? (detail['quantity'] is num 
-                                          ? detail['quantity'].toString() 
-                                          : detail['quantity'].toString())
-                                      : '-'), 
-                                Icons.inventory_2
+                        if (isUsageType) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildItemDetail(
+                                  'Stock On Hand',
+                                  detail['stock_on_hand']?.toString() ?? '-',
+                                  Icons.inventory,
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              child: _buildItemDetail('Unit', detail['unit_name'] ?? detail['unit'] ?? '-', Icons.scale),
-                            ),
-                          ],
-                        ),
+                              Expanded(
+                                child: _buildItemDetail(
+                                  'Stock Fisik',
+                                  detail['physical_qty']?.toString() ?? '-',
+                                  Icons.edit_note,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildItemDetail(
+                                  'Qty Usage',
+                                  detail['qty']?.toString() ?? '-',
+                                  Icons.inventory_2,
+                                ),
+                              ),
+                              Expanded(
+                                child: _buildItemDetail('Unit', detail['unit_name'] ?? detail['unit'] ?? '-', Icons.scale),
+                              ),
+                            ],
+                          ),
+                        ] else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildItemDetail(
+                                  'Quantity',
+                                  detail['qty'] != null
+                                      ? detail['qty'].toString()
+                                      : (detail['quantity']?.toString() ?? '-'),
+                                  Icons.inventory_2,
+                                ),
+                              ),
+                              Expanded(
+                                child: _buildItemDetail('Unit', detail['unit_name'] ?? detail['unit'] ?? '-', Icons.scale),
+                              ),
+                            ],
+                          ),
                         if (detail['notes'] != null && detail['notes'].toString().isNotEmpty) ...[
                           const SizedBox(height: 12),
                           _buildItemDetail('Notes', detail['notes'] ?? '-', Icons.note),

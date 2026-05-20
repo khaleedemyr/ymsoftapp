@@ -223,14 +223,14 @@ class RetailWarehouseSaleService {
     return null;
   }
 
-  Future<double?> getItemPrice(int itemId) async {
+  Future<double?> getItemPrice(int itemId, {int? unitId}) async {
     try {
       final token = await _getToken();
       if (token == null) return null;
+      final q = <String, String>{'item_id': itemId.toString()};
+      if (unitId != null) q['unit_id'] = unitId.toString();
       final response = await http.get(
-        Uri.parse('$_base/item-price').replace(
-          queryParameters: {'item_id': itemId.toString()},
-        ),
+        Uri.parse('$_base/item-price').replace(queryParameters: q),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',

@@ -5,6 +5,7 @@ import '../../services/native_barcode_scanner.dart';
 import '../../models/good_receive_models.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../utils/date_format_util.dart';
 
 class GoodReceiveFormScreen extends StatefulWidget {
   final Map<String, dynamic>? editData;
@@ -377,9 +378,7 @@ class _GoodReceiveFormScreenState extends State<GoodReceiveFormScreen> {
               onTap: () async {
                 final picked = await showDatePicker(
                   context: context,
-                  initialDate: _receiveDateController.text.isNotEmpty
-                      ? DateTime.parse(_receiveDateController.text)
-                      : DateTime.now(),
+                  initialDate: tryParseApiDate(_receiveDateController.text) ?? DateTime.now(),
                   firstDate: DateTime(2020),
                   lastDate: DateTime(2100),
                 );
@@ -459,9 +458,10 @@ class _GoodReceiveFormScreenState extends State<GoodReceiveFormScreen> {
                     const Divider(),
                     _buildInfoRow('PO Number', _purchaseOrder!.number),
                     _buildInfoRow('Supplier', _purchaseOrder!.supplierName),
-                    _buildInfoRow('Order Date', DateFormat('dd MMM yyyy').format(DateTime.parse(_purchaseOrder!.orderDate))),
-                    if (_purchaseOrder!.deliveryDate != null)
-                      _buildInfoRow('Delivery Date', DateFormat('dd MMM yyyy').format(DateTime.parse(_purchaseOrder!.deliveryDate!))),
+                    _buildInfoRow('Order Date', formatApiDate(_purchaseOrder!.orderDate)),
+                    if (_purchaseOrder!.deliveryDate != null &&
+                        _purchaseOrder!.deliveryDate!.trim().isNotEmpty)
+                      _buildInfoRow('Delivery Date', formatApiDate(_purchaseOrder!.deliveryDate)),
                   ],
                 ),
               ),

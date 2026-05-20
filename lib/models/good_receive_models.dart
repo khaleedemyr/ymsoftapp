@@ -155,13 +155,17 @@ class PurchaseOrderFood {
   });
 
   factory PurchaseOrderFood.fromJson(Map<String, dynamic> json) {
+    final orderDateRaw = json['order_date'] ?? json['date'];
+    final deliveryDateRaw = json['delivery_date'] ?? json['arrival_date'];
     return PurchaseOrderFood(
       id: int.tryParse(json['id'].toString()) ?? 0,
       number: json['number']?.toString() ?? '',
       supplierId: int.tryParse(json['supplier_id'].toString()) ?? 0,
-      supplierName: json['supplier_name']?.toString() ?? '',
-      orderDate: json['order_date']?.toString() ?? '',
-      deliveryDate: json['delivery_date']?.toString(),
+      supplierName: json['supplier_name']?.toString() ??
+          json['supplier']?['name']?.toString() ??
+          '',
+      orderDate: orderDateRaw?.toString() ?? '',
+      deliveryDate: deliveryDateRaw?.toString(),
       sourceType: json['source_type']?.toString(),
       items: (json['items'] as List<dynamic>?)
               ?.map((item) => POFoodItem.fromJson(item as Map<String, dynamic>))

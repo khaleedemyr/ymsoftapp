@@ -6,6 +6,7 @@ import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 import 'good_receive_detail_screen.dart';
 import 'good_receive_form_screen.dart';
+import '../../utils/date_format_util.dart';
 
 class GoodReceiveIndexScreen extends StatefulWidget {
   const GoodReceiveIndexScreen({super.key});
@@ -384,7 +385,7 @@ class _GoodReceiveIndexScreenState extends State<GoodReceiveIndexScreen> {
                       border: Border.all(color: Colors.green.shade200),
                     ),
                     child: Text(
-                      DateFormat('dd MMM yyyy').format(DateTime.parse(goodReceive.receiveDate)),
+                      formatApiDate(goodReceive.receiveDate),
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.green.shade700,

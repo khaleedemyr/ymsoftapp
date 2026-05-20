@@ -1,10 +1,12 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
+import 'dart:async';
 
-import '../../services/native_barcode_scanner.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+
 import '../../services/warehouse_internal_use_waste_service.dart';
+import '../../utils/inline_scan_kit.dart';
 import '../../widgets/app_loading_indicator.dart';
 import '../../widgets/app_scaffold.dart';
 
@@ -38,6 +40,7 @@ class WarehouseInternalUseWasteCreateScreen extends StatefulWidget {
 
 class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInternalUseWasteCreateScreen> {
   final WarehouseInternalUseWasteService _service = WarehouseInternalUseWasteService();
+  final InlineScanSound _scanSound = InlineScanSound();
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _docNotesController = TextEditingController();
 
@@ -60,8 +63,12 @@ class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInterna
   bool _serialScanning = false;
   String _serialFeedback = '';
   bool _serialFeedbackSuccess = false;
+  bool _cameraMode = false;
+  bool _cameraProcessing = false;
+  MobileScannerController? _cameraController;
 
   static const Color _primaryGreen = Color(0xFF059669);
+  static const Color _serialAccent = Color(0xFF6366F1);
 
   int? _int(dynamic v) {
     if (v == null) return null;
@@ -82,10 +89,53 @@ class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInterna
     _docNotesController.dispose();
     _serialInputController.dispose();
     _serialFocusNode.dispose();
+    _cameraController?.dispose();
+    _scanSound.dispose();
     for (final l in _lines) {
       l.dispose();
     }
     super.dispose();
+  }
+
+  void _toggleCameraMode() {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mode kamera tersedia di aplikasi Android/iOS. Di web gunakan scanner bluetooth / input manual.')),
+      );
+      return;
+    }
+    setState(() {
+      _cameraMode = !_cameraMode;
+      if (_cameraMode) {
+        _cameraController = MobileScannerController(
+          detectionSpeed: DetectionSpeed.normal,
+          facing: CameraFacing.back,
+        );
+      } else {
+        _cameraController?.dispose();
+        _cameraController = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _serialFocusNode.requestFocus();
+        });
+      }
+    });
+  }
+
+  Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
+    if (_cameraProcessing || _serialScanning) return;
+    final barcode = capture.barcodes.firstOrNull;
+    if (barcode == null || barcode.rawValue == null || barcode.rawValue!.isEmpty) return;
+
+    final value = barcode.rawValue!.trim();
+    if (!mounted) return;
+    setState(() => _cameraProcessing = true);
+
+    try {
+      await _onSerialScan(value, fromCamera: true);
+    } finally {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) setState(() => _cameraProcessing = false);
+    }
   }
 
   Future<void> _loadCreateData() async {
@@ -185,14 +235,20 @@ class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInterna
     });
   }
 
-  Future<void> _onSerialScan() async {
-    final input = _serialInputController.text.trim();
+  Future<void> _onSerialScan(String? raw, {bool fromCamera = false}) async {
+    final input = (raw ?? _serialInputController.text).trim();
     if (input.isEmpty) return;
     if (_warehouseId == null) {
       setState(() {
         _serialFeedback = 'Pilih warehouse dulu';
         _serialFeedbackSuccess = false;
       });
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Pilih warehouse terlebih dahulu.',
+        scannedValue: input,
+      );
       return;
     }
     if (_scannedSerials.any((s) => s['serial_number'] == input)) {
@@ -200,62 +256,82 @@ class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInterna
         _serialFeedback = 'Serial "$input" sudah discan';
         _serialFeedbackSuccess = false;
       });
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Nomor seri ini sudah ada di daftar scan.',
+        scannedValue: input,
+      );
       _serialInputController.clear();
       return;
     }
-    setState(() => _serialScanning = true);
-    final result = await _service.validateSerialForIUW(
-      serialNumber: input,
-      warehouseId: _warehouseId!,
-    );
-    if (!mounted) return;
-    if (result['valid'] == true) {
-      final serial = result['serial'] as Map<String, dynamic>? ?? {};
+
+    if (mounted && !fromCamera) {
+      setState(() => _serialScanning = true);
+    } else if (mounted && fromCamera) {
       setState(() {
-        _scannedSerials.add({
-          'serial_id': serial['id'],
-          'serial_number': serial['serial_number'] ?? input,
-          'item_id': serial['item_id'],
-          'item_name': serial['item_name'] ?? '-',
-          'unit_id': serial['unit_id'],
-          'unit_name': serial['unit_name'] ?? '-',
-          'qty': serial['qty'] ?? 1,
-          'qty_small': serial['qty_small'] ?? 1,
-        });
-        _serialFeedback = 'Serial "$input" valid';
-        _serialFeedbackSuccess = true;
-        _serialScanning = false;
+        _serialFeedback = 'Memvalidasi...';
+        _serialFeedbackSuccess = false;
       });
-      HapticFeedback.mediumImpact();
-    } else {
+    }
+
+    try {
+      final result = await _service.validateSerialForIUW(
+        serialNumber: input,
+        warehouseId: _warehouseId!,
+      );
+      if (!mounted) return;
+
+      if (result['valid'] == true) {
+        final serial = result['serial'] as Map<String, dynamic>? ?? {};
+        final itemName = serial['item_name']?.toString() ?? '';
+        setState(() {
+          _scannedSerials.add({
+            'serial_id': serial['id'],
+            'serial_number': serial['serial_number'] ?? input,
+            'item_id': serial['item_id'],
+            'item_name': itemName.isNotEmpty ? itemName : '-',
+            'unit_id': serial['unit_id'],
+            'unit_name': serial['unit_name'] ?? '-',
+            'qty': serial['qty'] ?? 1,
+            'qty_small': serial['qty_small'] ?? 1,
+          });
+          _serialFeedback = itemName.isNotEmpty ? '✓ $itemName' : '✓ Berhasil';
+          _serialFeedbackSuccess = true;
+          _serialScanning = false;
+        });
+        unawaited(_scanSound.playSuccess());
+      } else {
+        final msg = result['message']?.toString() ?? 'Nomor seri tidak ditemukan atau tidak valid.';
+        setState(() {
+          _serialFeedback = msg;
+          _serialFeedbackSuccess = false;
+          _serialScanning = false;
+        });
+        await _scanSound.playError();
+        await showInlineScanFailureDialog(context, message: msg, scannedValue: input);
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _serialFeedback = result['message']?.toString() ?? 'Serial tidak valid';
+        _serialFeedback = 'Gagal memvalidasi serial.';
         _serialFeedbackSuccess = false;
         _serialScanning = false;
       });
-      HapticFeedback.heavyImpact();
-    }
-    _serialInputController.clear();
-    _serialFocusNode.requestFocus();
-  }
-
-  Future<void> _openCameraSerial() async {
-    if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Scan kamera tersedia di aplikasi Android/iOS')),
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Tidak dapat memvalidasi nomor seri. Periksa koneksi internet lalu coba lagi.',
+        scannedValue: input,
       );
-      return;
-    }
-    try {
-      final scanned = await NativeBarcodeScanner.scanBarcode();
-      if (!mounted) return;
-      if (scanned != null && scanned.isNotEmpty) {
-        _serialInputController.text = scanned;
-        await _onSerialScan();
+    } finally {
+      if (mounted && !fromCamera) {
+        setState(() => _serialScanning = false);
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal buka scanner: $e')));
     }
+
+    _serialInputController.clear();
+    if (!fromCamera) _serialFocusNode.requestFocus();
   }
 
   void _removeSerial(int index) {
@@ -574,46 +650,100 @@ class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInterna
   }
 
   Widget _buildSerialScanCard() {
+    final canScan = _warehouseId != null;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+        border: Border.all(color: _serialAccent.withOpacity(0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Scan Nomor Seri', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
-          if (_warehouseId == null)
+          const Text('Scan Nomor Seri', style: TextStyle(fontWeight: FontWeight.bold, color: _serialAccent)),
+          if (!canScan)
             const Padding(
               padding: EdgeInsets.only(top: 8),
               child: Text('Pilih warehouse terlebih dahulu', style: TextStyle(fontSize: 12, color: Colors.red)),
             ),
+          const SizedBox(height: 8),
+          Text(
+            _cameraMode ? 'Arahkan kamera ke barcode nomor seri' : 'Gunakan scanner bluetooth atau ketik manual',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          if (!kIsWeb) ...[
+            const SizedBox(height: 10),
+            buildInlineScanModeToggle(
+              cameraMode: _cameraMode,
+              accent: _serialAccent,
+              onScannerTap: _toggleCameraMode,
+              onCameraTap: _toggleCameraMode,
+            ),
+          ],
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _serialInputController,
-                  focusNode: _serialFocusNode,
-                  enabled: !_serialScanning && _warehouseId != null,
-                  onSubmitted: (_) => _onSerialScan(),
-                  decoration: const InputDecoration(
-                    hintText: 'Scan / ketik serial...',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+          if (_cameraMode)
+            buildInlineCameraPreview(
+              controller: _cameraController,
+              accent: _serialAccent,
+              processing: _cameraProcessing,
+              onDetect: _onBarcodeDetected,
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _serialInputController,
+                    focusNode: _serialFocusNode,
+                    enabled: !_serialScanning && canScan,
+                    textInputAction: TextInputAction.go,
+                    onSubmitted: (_) => _onSerialScan(null),
+                    decoration: InputDecoration(
+                      hintText: 'Scan / ketik serial...',
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      prefixIcon: const Icon(Icons.qr_code, size: 20, color: _serialAccent),
+                      suffixIcon: _serialScanning
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      isDense: true,
+                    ),
                   ),
                 ),
-              ),
-              IconButton(onPressed: _serialScanning ? null : _openCameraSerial, icon: const Icon(Icons.camera_alt_outlined)),
-              IconButton(onPressed: _serialScanning ? null : _onSerialScan, icon: const Icon(Icons.check_circle_outline)),
-            ],
-          ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: (!_serialScanning && canScan) ? () => _onSerialScan(null) : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _serialAccent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Icon(Icons.check_rounded, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
           if (_serialFeedback.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(_serialFeedback, style: TextStyle(fontSize: 12, color: _serialFeedbackSuccess ? Colors.green : Colors.red)),
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                _serialFeedback,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _serialFeedbackSuccess ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                ),
+              ),
             ),
           if (_scannedSerials.isNotEmpty) ...[
             const SizedBox(height: 10),

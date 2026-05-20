@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/delivery_order_service.dart';
-import '../../services/native_barcode_scanner.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -16,6 +21,7 @@ class DeliveryOrderCreateScreen extends StatefulWidget {
 
 class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
   final DeliveryOrderService _service = DeliveryOrderService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   static const Color _accent = Color(0xFF6366F1);
   final FocusNode _barcodeFocus = FocusNode();
@@ -38,10 +44,16 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
   String _scanFeedback = '';
   Color _scanFeedbackColor = Colors.transparent;
 
+  bool _cameraMode = false;
+  bool _cameraProcessing = false;
+  MobileScannerController? _cameraController;
+
   /// item_id → daftar serial yang sudah di-scan (sama struktur ringkas web)
   final Map<int, List<Map<String, dynamic>>> _scannedSerials = {};
 
   bool _submitting = false;
+
+  Color get _scanAccent => _scanMode == 'barcode' ? _accent : Colors.deepPurple;
 
   static const List<String> _reasonOptions = [
     'Stok kurang',
@@ -62,7 +74,134 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     _serialFocus.dispose();
     _barcodeCtrl.dispose();
     _serialCtrl.dispose();
+    _cameraController?.dispose();
+    _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _playTone(double frequency, int durationMs, {double volume = 0.5}) async {
+    try {
+      final bytes = _generateToneWav(frequency: frequency, durationMs: durationMs, volume: volume);
+      await _audioPlayer.play(BytesSource(bytes));
+      await Future.delayed(Duration(milliseconds: durationMs + 40));
+    } catch (_) {}
+  }
+
+  Future<void> _playSuccessSound() async {
+    HapticFeedback.lightImpact();
+    await _playTone(1568, 90, volume: 0.55);
+    await Future.delayed(const Duration(milliseconds: 60));
+    await _playTone(2093, 130, volume: 0.55);
+  }
+
+  Future<void> _playErrorSound() async {
+    HapticFeedback.heavyImpact();
+    await _playTone(440, 130, volume: 0.65);
+    await Future.delayed(const Duration(milliseconds: 45));
+    await _playTone(330, 150, volume: 0.65);
+    await Future.delayed(const Duration(milliseconds: 45));
+    await _playTone(220, 220, volume: 0.7);
+  }
+
+  Uint8List _generateToneWav({required double frequency, required int durationMs, double volume = 0.5}) {
+    const sampleRate = 22050;
+    final numSamples = (sampleRate * durationMs / 1000).round();
+    final samples = Int16List(numSamples);
+
+    for (int i = 0; i < numSamples; i++) {
+      final t = i / sampleRate;
+      final envelope = i < numSamples * 0.1
+          ? i / (numSamples * 0.1)
+          : (numSamples - i) / (numSamples * 0.3);
+      final amp = (sin(2 * pi * frequency * t) * volume * envelope.clamp(0.0, 1.0) * 32767).round();
+      samples[i] = amp.clamp(-32768, 32767);
+    }
+
+    final dataSize = numSamples * 2;
+    final fileSize = 44 + dataSize;
+    final header = ByteData(44);
+
+    header.setUint8(0, 0x52);
+    header.setUint8(1, 0x49);
+    header.setUint8(2, 0x46);
+    header.setUint8(3, 0x46);
+    header.setUint32(4, fileSize - 8, Endian.little);
+    header.setUint8(8, 0x57);
+    header.setUint8(9, 0x41);
+    header.setUint8(10, 0x56);
+    header.setUint8(11, 0x45);
+    header.setUint8(12, 0x66);
+    header.setUint8(13, 0x6D);
+    header.setUint8(14, 0x74);
+    header.setUint8(15, 0x20);
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, 1, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, sampleRate * 2, Endian.little);
+    header.setUint16(32, 2, Endian.little);
+    header.setUint16(34, 16, Endian.little);
+    header.setUint8(36, 0x64);
+    header.setUint8(37, 0x61);
+    header.setUint8(38, 0x74);
+    header.setUint8(39, 0x61);
+    header.setUint32(40, dataSize, Endian.little);
+
+    final result = Uint8List(fileSize);
+    result.setAll(0, header.buffer.asUint8List());
+    result.setAll(44, samples.buffer.asUint8List());
+    return result;
+  }
+
+  void _toggleCameraMode() {
+    if (kIsWeb) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mode kamera tersedia di aplikasi Android/iOS. Di web gunakan scanner bluetooth / input manual.')),
+      );
+      return;
+    }
+    setState(() {
+      _cameraMode = !_cameraMode;
+      if (_cameraMode) {
+        _cameraController = MobileScannerController(
+          detectionSpeed: DetectionSpeed.normal,
+          facing: CameraFacing.back,
+        );
+      } else {
+        _cameraController?.dispose();
+        _cameraController = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_scanMode == 'barcode') {
+            _barcodeFocus.requestFocus();
+          } else {
+            _serialFocus.requestFocus();
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
+    if (_cameraProcessing || _items.isEmpty) return;
+    final barcode = capture.barcodes.firstOrNull;
+    if (barcode == null || barcode.rawValue == null || barcode.rawValue!.isEmpty) return;
+
+    final value = barcode.rawValue!.trim();
+    if (!mounted) return;
+    setState(() => _cameraProcessing = true);
+
+    try {
+      if (_scanMode == 'barcode') {
+        await _onScanBarcode(value);
+      } else {
+        await _onScanSerial(value);
+      }
+    } finally {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) setState(() => _cameraProcessing = false);
+    }
   }
 
   Future<void> _loadMeta() async {
@@ -165,11 +304,13 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     return null;
   }
 
-  void _setFeedback(String msg, Color color) {
+  void _setFeedback(String msg, Color color, {bool? scanSound}) {
     setState(() {
       _scanFeedback = msg;
       _scanFeedbackColor = color;
     });
+    if (scanSound == true) unawaited(_playSuccessSound());
+    if (scanSound == false) unawaited(_playErrorSound());
   }
 
   void _onDivisionChanged(String? v) {
@@ -228,52 +369,6 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     });
   }
 
-  Future<void> _openCameraBarcode() async {
-    if (kIsWeb) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Scan kamera tersedia di aplikasi Android/iOS. Di web gunakan input manual / scanner HID.')),
-      );
-      return;
-    }
-    try {
-      final scanned = await NativeBarcodeScanner.scanBarcode();
-      if (!mounted) return;
-      if (scanned != null && scanned.isNotEmpty) {
-        _barcodeCtrl.text = scanned;
-        await _onScanBarcode(scanned);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal membuka scanner: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _openCameraSerial() async {
-    if (kIsWeb) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Scan kamera tersedia di aplikasi Android/iOS. Di web gunakan input manual / scanner HID.')),
-      );
-      return;
-    }
-    try {
-      final scanned = await NativeBarcodeScanner.scanBarcode();
-      if (!mounted) return;
-      if (scanned != null && scanned.isNotEmpty) {
-        _serialCtrl.text = scanned;
-        await _onScanSerial(scanned);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal membuka scanner: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
   Future<void> _onScanBarcode([String? raw]) async {
     final input = (raw ?? _barcodeCtrl.text).trim();
     if (input.isEmpty) return;
@@ -287,7 +382,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
 
     final item = _findItemByBarcode(code);
     if (item == null) {
-      _setFeedback('Barcode tidak ditemukan di Packing List!', Colors.red);
+      _setFeedback('Barcode tidak ditemukan di Packing List!', Colors.red, scanSound: false);
       _barcodeCtrl.clear();
       return;
     }
@@ -297,7 +392,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     final stock = _stockAvailable(item);
 
     if (stock <= 0) {
-      _setFeedback('Stok tidak tersedia', Colors.red);
+      _setFeedback('Stok tidak tersedia', Colors.red, scanSound: false);
       _barcodeCtrl.clear();
       return;
     }
@@ -305,25 +400,25 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     final addQty = qty ?? 0.0;
     if (qty != null) {
       if (currentScan + addQty > maxQty) {
-        _setFeedback('Qty scan tidak boleh lebih dari $maxQty (sisa: ${maxQty - currentScan})', Colors.red);
+        _setFeedback('Qty scan tidak boleh lebih dari $maxQty (sisa: ${maxQty - currentScan})', Colors.red, scanSound: false);
         _barcodeCtrl.clear();
         return;
       }
       if (currentScan + addQty > stock) {
-        _setFeedback('Qty scan tidak boleh melebihi stock ($stock)', Colors.red);
+        _setFeedback('Qty scan tidak boleh melebihi stock ($stock)', Colors.red, scanSound: false);
         _barcodeCtrl.clear();
         return;
       }
       setState(() {
         item['qty_scan'] = currentScan + addQty;
       });
-      _setFeedback('Berhasil scan $addQty ${item['unit']}', Colors.green.shade700);
+      _setFeedback('Berhasil scan $addQty ${item['unit']}', Colors.green.shade700, scanSound: true);
       _barcodeCtrl.clear();
       return;
     }
 
     if (currentScan + 0.01 > stock) {
-      _setFeedback('Qty scan tidak boleh melebihi stock ($stock)', Colors.red);
+      _setFeedback('Qty scan tidak boleh melebihi stock ($stock)', Colors.red, scanSound: false);
       _barcodeCtrl.clear();
       return;
     }
@@ -364,16 +459,16 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     final inputQty = double.tryParse(ctrl.text.replaceAll(',', '.')) ?? 0;
     ctrl.dispose();
     if (inputQty <= 0) {
-      _setFeedback('Qty tidak valid', Colors.red);
+      _setFeedback('Qty tidak valid', Colors.red, scanSound: false);
       return;
     }
 
     if (stock < currentScan + inputQty) {
-      _setFeedback('Qty scan tidak boleh melebihi stock (sisa: ${stock - currentScan})', Colors.red);
+      _setFeedback('Qty scan tidak boleh melebihi stock (sisa: ${stock - currentScan})', Colors.red, scanSound: false);
       return;
     }
     if (currentScan + inputQty > maxQty) {
-      _setFeedback('Qty scan tidak boleh lebih dari $maxQty (sisa: ${maxQty - currentScan})', Colors.red);
+      _setFeedback('Qty scan tidak boleh lebih dari $maxQty (sisa: ${maxQty - currentScan})', Colors.red, scanSound: false);
       return;
     }
 
@@ -408,7 +503,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     setState(() {
       item['qty_scan'] = inputQty;
     });
-    _setFeedback('${item['name']} ($inputQty/$maxQty)', Colors.green.shade700);
+    _setFeedback('${item['name']} ($inputQty/$maxQty)', Colors.green.shade700, scanSound: true);
   }
 
   String _trimDecimal(double v) {
@@ -423,7 +518,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     for (final list in _scannedSerials.values) {
       for (final s in list) {
         if (s['serial_number']?.toString() == input) {
-          _setFeedback('Nomor seri sudah di-scan sebelumnya!', Colors.red);
+          _setFeedback('Nomor seri sudah di-scan sebelumnya!', Colors.red, scanSound: false);
           _serialCtrl.clear();
           return;
         }
@@ -444,13 +539,13 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     _serialCtrl.clear();
 
     if (res['valid'] != true) {
-      _setFeedback(res['message']?.toString() ?? 'Serial tidak valid', Colors.red);
+      _setFeedback(res['message']?.toString() ?? 'Serial tidak valid', Colors.red, scanSound: false);
       return;
     }
 
     final serial = res['serial'];
     if (serial is! Map) {
-      _setFeedback('Response serial tidak valid', Colors.red);
+      _setFeedback('Response serial tidak valid', Colors.red, scanSound: false);
       return;
     }
     final sm = Map<String, dynamic>.from(serial);
@@ -464,7 +559,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       }
     }
     if (matched == null) {
-      _setFeedback('Item tidak ditemukan di Packing List!', Colors.red);
+      _setFeedback('Item tidak ditemukan di Packing List!', Colors.red, scanSound: false);
       return;
     }
     final hit = matched;
@@ -483,7 +578,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       final conv = sm['repack_unit_name'] != null
           ? ' (1 ${sm['repack_unit_name']} = ${_fmtQty4(sm['repack_qty'])} ${sm['unit_name']})'
           : '';
-      _setFeedback('${sm['item_name'] ?? ''} - $input$conv (+$effectiveQty)', Colors.green.shade700);
+      _setFeedback('${sm['item_name'] ?? ''} - $input$conv (+$effectiveQty)', Colors.green.shade700, scanSound: true);
     });
   }
 
@@ -884,24 +979,30 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _scanMode == 'barcode'
-                            ? 'Gunakan scanner bluetooth (fokus di kolom) atau tombol kamera.'
-                            : 'Scanner atau kamera — satu nomor per entri.',
+                        _cameraMode
+                            ? (_scanMode == 'barcode'
+                                ? 'Arahkan kamera ke barcode barang.'
+                                : 'Arahkan kamera ke barcode nomor seri.')
+                            : (_scanMode == 'barcode'
+                                ? 'Gunakan scanner bluetooth (fokus di kolom) atau "KODE 2.5" untuk qty.'
+                                : 'Gunakan scanner bluetooth — satu nomor seri per scan.'),
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                       ),
+                      if (!kIsWeb) ...[
+                        const SizedBox(height: 10),
+                        _buildInputModeToggle(),
+                      ],
                       const SizedBox(height: 10),
-                      if (_scanMode == 'barcode')
+                      if (_cameraMode) ...[
+                        _buildCameraPreview(),
+                        const SizedBox(height: 8),
+                      ] else if (_scanMode == 'barcode')
                         TextField(
                           controller: _barcodeCtrl,
                           focusNode: _barcodeFocus,
                           decoration: InputDecoration(
                             hintText: 'Tap di sini lalu scan — atau "KODE 2.5" untuk qty',
                             prefixIcon: const Icon(Icons.qr_code_rounded, color: _accent),
-                            suffixIcon: IconButton(
-                              tooltip: 'Scan pakai kamera',
-                              icon: const Icon(Icons.camera_alt_rounded, color: _accent),
-                              onPressed: _openCameraBarcode,
-                            ),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -916,11 +1017,6 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
                           decoration: InputDecoration(
                             hintText: 'Tap di sini lalu scan serial',
                             prefixIcon: const Icon(Icons.tag_rounded, color: Colors.deepPurple),
-                            suffixIcon: IconButton(
-                              tooltip: 'Scan pakai kamera',
-                              icon: const Icon(Icons.camera_alt_rounded, color: Colors.deepPurple),
-                              onPressed: _openCameraSerial,
-                            ),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -1019,6 +1115,136 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildInputModeToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: _cameraMode ? _toggleCameraMode : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: !_cameraMode ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: !_cameraMode
+                      ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 1))]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.keyboard_rounded, size: 18, color: !_cameraMode ? _scanAccent : Colors.grey.shade500),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Scanner',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: !_cameraMode ? FontWeight.w700 : FontWeight.w500,
+                        color: !_cameraMode ? _scanAccent : Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: !_cameraMode ? _toggleCameraMode : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _cameraMode ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _cameraMode
+                      ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 1))]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.camera_alt_rounded, size: 18, color: _cameraMode ? _scanAccent : Colors.grey.shade500),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Kamera',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _cameraMode ? FontWeight.w700 : FontWeight.w500,
+                        color: _cameraMode ? _scanAccent : Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCameraPreview() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        height: 220,
+        width: double.infinity,
+        child: _cameraController != null
+            ? Stack(
+                children: [
+                  MobileScanner(
+                    controller: _cameraController!,
+                    onDetect: _onBarcodeDetected,
+                  ),
+                  Center(
+                    child: Container(
+                      width: 200,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: _scanAccent.withOpacity(0.6), width: 2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  if (_cameraProcessing)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            ),
+                            SizedBox(width: 8),
+                            Text('Memproses...', style: TextStyle(color: Colors.white, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              )
+            : const Center(child: CircularProgressIndicator()),
       ),
     );
   }

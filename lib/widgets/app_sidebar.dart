@@ -185,13 +185,13 @@ class _AppSidebarState extends State<AppSidebar> {
               final drawerWidth =
                   screenWidth * 0.8; // Drawer is typically 80% of screen width
 
-              // Logo size: batasi agar header tidak overflow (content = padding + logo + version)
-              final logoSize = (drawerWidth * 0.6).clamp(140.0, 200.0);
-              final headerHeight =
-                  56 + logoSize + 8 + 20; // padding + logo + gap + version text
+              // Logo sedikit lebih kecil jika ada label versi agar tidak overflow di header
+              final hasVersion = _appVersion.isNotEmpty;
+              final logoSize = (drawerWidth * (hasVersion ? 0.52 : 0.6))
+                  .clamp(hasVersion ? 120.0 : 140.0, hasVersion ? 170.0 : 200.0);
 
               return Container(
-                height: headerHeight.clamp(200.0, 284.0),
+                width: double.infinity,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
@@ -205,55 +205,57 @@ class _AppSidebarState extends State<AppSidebar> {
                 child: SafeArea(
                   top: true,
                   bottom: false,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(
-                            'assets/images/logo.png',
-                            height: logoSize,
-                            width: logoSize,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: logoSize,
-                                height: logoSize,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFF6366F1),
-                                      Color(0xFF8B5CF6),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/images/logo.png',
+                          height: logoSize,
+                          width: logoSize,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: logoSize,
+                              height: logoSize,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF6366F1),
+                                    Color(0xFF8B5CF6),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                                child: Icon(
-                                  Icons.business,
-                                  color: Colors.white,
-                                  size: logoSize * 0.5,
-                                ),
-                              );
-                            },
-                          ),
-                          if (_appVersion.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              'Versi $_appVersion',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w500,
+                                borderRadius: BorderRadius.circular(16),
                               ),
+                              child: Icon(
+                                Icons.business,
+                                color: Colors.white,
+                                size: logoSize * 0.5,
+                              ),
+                            );
+                          },
+                        ),
+                        if (hasVersion) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Versi $_appVersion',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
                             ),
-                          ],
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),

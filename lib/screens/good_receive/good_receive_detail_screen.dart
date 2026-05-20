@@ -4,6 +4,7 @@ import '../../services/good_receive_service.dart';
 import '../../models/good_receive_models.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../utils/date_format_util.dart';
 
 class GoodReceiveDetailScreen extends StatefulWidget {
   final int goodReceiveId;
@@ -216,7 +217,7 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
             ),
             const Divider(height: 24),
             _buildInfoRow('GR Number', _goodReceive!.grNumber, Icons.receipt_long),
-            _buildInfoRow('Tanggal Terima', DateFormat('dd MMMM yyyy').format(DateTime.parse(_goodReceive!.receiveDate)), Icons.calendar_today),
+            _buildInfoRow('Tanggal Terima', formatApiDate(_goodReceive!.receiveDate, pattern: 'dd MMMM yyyy'), Icons.calendar_today),
             if (_goodReceive!.poNumber != null)
               _buildInfoRow('PO Number', _goodReceive!.poNumber!, Icons.shopping_cart),
             _buildInfoRow('Supplier', _goodReceive!.supplierName, Icons.business),

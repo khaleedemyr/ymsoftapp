@@ -1,9 +1,11 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/retail_warehouse_sale_service.dart';
-import '../../services/native_barcode_scanner.dart';
+import '../../utils/inline_scan_kit.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -15,8 +17,11 @@ class RetailWarehouseSaleCreateScreen extends StatefulWidget {
       _RetailWarehouseSaleCreateScreenState();
 }
 
+enum _CameraScanTarget { none, barcode, serial }
+
 class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCreateScreen> {
   final RetailWarehouseSaleService _service = RetailWarehouseSaleService();
+  final InlineScanSound _scanSound = InlineScanSound();
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -46,7 +51,12 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
   String _serialFeedback = '';
   bool _serialFeedbackSuccess = false;
 
+  _CameraScanTarget _cameraTarget = _CameraScanTarget.none;
+  bool _cameraProcessing = false;
+  MobileScannerController? _cameraController;
+
   static const _primary = Color(0xFF2563EB);
+  static const _serialAccent = Color(0xFF6366F1);
   static const _primaryDark = Color(0xFF1D4ED8);
   static const _infoBg = Color(0xFFEFF6FF);
   static const _itemsBg = Color(0xFFF5F3FF);
@@ -71,7 +81,67 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     for (final c in _serialPriceControllers.values) {
       c.dispose();
     }
+    _cameraController?.dispose();
+    _scanSound.dispose();
     super.dispose();
+  }
+
+  bool get _barcodeCameraMode => _cameraTarget == _CameraScanTarget.barcode;
+  bool get _serialCameraMode => _cameraTarget == _CameraScanTarget.serial;
+
+  void _toggleCameraMode(_CameraScanTarget target) {
+    if (kIsWeb) {
+      _showSnack('Mode kamera tersedia di aplikasi Android/iOS', isError: true);
+      return;
+    }
+    setState(() {
+      if (_cameraTarget == target) {
+        _cameraController?.dispose();
+        _cameraController = null;
+        _cameraTarget = _CameraScanTarget.none;
+      } else {
+        _cameraController?.dispose();
+        _cameraTarget = target;
+        _cameraController = MobileScannerController(
+          detectionSpeed: DetectionSpeed.normal,
+          facing: CameraFacing.back,
+        );
+      }
+    });
+    if (_cameraTarget == _CameraScanTarget.none) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_serialMode) {
+          _serialFocusNode.requestFocus();
+        } else {
+          _barcodeFocusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
+    if (_cameraProcessing) return;
+    if (_cameraTarget == _CameraScanTarget.serial && _serialScanning) return;
+    if (_cameraTarget == _CameraScanTarget.barcode && _barcodeScanning) return;
+
+    final barcode = capture.barcodes.firstOrNull;
+    if (barcode == null || barcode.rawValue == null || barcode.rawValue!.isEmpty) return;
+
+    final value = barcode.rawValue!.trim();
+    if (!mounted) return;
+    setState(() => _cameraProcessing = true);
+
+    try {
+      if (_cameraTarget == _CameraScanTarget.serial) {
+        await _onSerialScan(value, fromCamera: true);
+      } else if (_cameraTarget == _CameraScanTarget.barcode) {
+        await _scanBarcode(value, fromCamera: true);
+      }
+    } finally {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) setState(() => _cameraProcessing = false);
+    }
   }
 
   Future<void> _loadCreateData() async {
@@ -114,6 +184,15 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     if (v is int) return v;
     return int.tryParse(v.toString());
   }
+
+  double _parsePrice(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().replaceAll(',', '.')) ?? 0;
+  }
+
+  bool _jsonTruthy(dynamic v) =>
+      v == true || v == 1 || v == '1' || v == 'true';
 
   double get _totalAmount {
     final itemsTotal = _items.fold(0.0, (sum, i) => sum + (i.qty * i.price));
@@ -210,46 +289,52 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     });
   }
 
-  Future<void> _scanBarcode() async {
-    final code = _barcodeController.text.trim();
+  Future<void> _scanBarcode(String? raw, {bool fromCamera = false}) async {
+    final code = (raw ?? _barcodeController.text).trim();
     if (code.isEmpty) return;
     if (_warehouseId == null) {
-      _showSnack('Pilih gudang dulu', isError: true);
+      if (mounted) {
+        await _scanSound.playError();
+        await showInlineScanFailureDialog(
+          context,
+          message: 'Pilih gudang terlebih dahulu.',
+          scannedValue: code,
+        );
+      }
       return;
     }
-    setState(() => _barcodeScanning = true);
-    final result = await _service.searchItemByBarcode(
-      barcode: code,
-      warehouseId: _warehouseId!,
-    );
-    if (!mounted) return;
-    setState(() => _barcodeScanning = false);
-    if (result != null && result['success'] == true && result['item'] != null) {
-      _addItemFromMap(Map<String, dynamic>.from(result['item'] as Map), barcode: code);
-      HapticFeedback.mediumImpact();
-    } else {
-      _showSnack(result?['message']?.toString() ?? 'Item tidak ditemukan', isError: true);
-      HapticFeedback.heavyImpact();
-    }
-    _barcodeController.clear();
-    _barcodeFocusNode.requestFocus();
-  }
 
-  Future<void> _openCameraBarcode() async {
-    if (kIsWeb) {
-      _showSnack('Scan kamera tersedia di aplikasi Android/iOS', isError: true);
-      return;
-    }
+    if (mounted && !fromCamera) setState(() => _barcodeScanning = true);
+
     try {
-      final scanned = await NativeBarcodeScanner.scanBarcode();
+      final result = await _service.searchItemByBarcode(
+        barcode: code,
+        warehouseId: _warehouseId!,
+      );
       if (!mounted) return;
-      if (scanned != null && scanned.isNotEmpty) {
-        _barcodeController.text = scanned;
-        await _scanBarcode();
+
+      if (result != null && result['success'] == true && result['item'] != null) {
+        _addItemFromMap(Map<String, dynamic>.from(result['item'] as Map), barcode: code);
+        unawaited(_scanSound.playSuccess());
+      } else {
+        final msg = result?['message']?.toString() ?? 'Barcode tidak ditemukan.';
+        await _scanSound.playError();
+        await showInlineScanFailureDialog(context, message: msg, scannedValue: code);
       }
     } catch (e) {
-      _showSnack('Gagal membuka scanner: $e', isError: true);
+      if (!mounted) return;
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Gagal memvalidasi barcode. Periksa koneksi internet lalu coba lagi.',
+        scannedValue: code,
+      );
+    } finally {
+      if (mounted && !fromCamera) setState(() => _barcodeScanning = false);
     }
+
+    _barcodeController.clear();
+    if (!fromCamera) _barcodeFocusNode.requestFocus();
   }
 
   Future<void> _addItem() async {
@@ -314,15 +399,20 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     );
   }
 
-  Future<void> _onSerialScan() async {
-    final input = _serialInputController.text.trim();
+  Future<void> _onSerialScan(String? raw, {bool fromCamera = false}) async {
+    final input = (raw ?? _serialInputController.text).trim();
     if (input.isEmpty) return;
     if (_warehouseId == null) {
       setState(() {
         _serialFeedback = 'Pilih gudang dulu';
         _serialFeedbackSuccess = false;
       });
-      HapticFeedback.heavyImpact();
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Pilih gudang terlebih dahulu.',
+        scannedValue: input,
+      );
       return;
     }
     if (_scannedSerials.any((s) => s['serial_number'] == input)) {
@@ -330,66 +420,96 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
         _serialFeedback = 'Serial "$input" sudah discan';
         _serialFeedbackSuccess = false;
       });
-      HapticFeedback.heavyImpact();
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Nomor seri ini sudah ada di daftar scan.',
+        scannedValue: input,
+      );
       _serialInputController.clear();
       return;
     }
-    setState(() => _serialScanning = true);
-    final result = await _service.validateSerialForRWS(
-      serialNumber: input,
-      warehouseId: _warehouseId!,
-    );
-    if (!mounted) return;
-    if (result['valid'] == true) {
-      final serial = result['serial'] as Map<String, dynamic>? ?? {};
-      final price = (serial['price'] as num?)?.toDouble() ?? 0;
-      final idx = _scannedSerials.length;
+
+    if (mounted && !fromCamera) {
+      setState(() => _serialScanning = true);
+    } else if (mounted && fromCamera) {
       setState(() {
-        _scannedSerials.add({
-          'serial_id': serial['id'],
-          'serial_number': serial['serial_number'] ?? input,
-          'item_id': serial['item_id'],
-          'item_name': serial['item_name'] ?? '-',
-          'unit_id': serial['unit_id'],
-          'unit_name': serial['unit_name'] ?? '-',
-          'qty': serial['qty'] ?? 1,
-          'qty_small': serial['qty_small'] ?? 1,
-          'price': price,
-          'subtotal': (serial['subtotal'] as num?)?.toDouble() ?? (price * ((serial['qty'] as num?)?.toDouble() ?? 1)),
-        });
-        _serialPriceControllers[idx] = TextEditingController(text: price > 0 ? price.toString() : '');
-        _serialFeedback = 'Serial "$input" valid';
-        _serialFeedbackSuccess = true;
-        _serialScanning = false;
+        _serialFeedback = 'Memvalidasi...';
+        _serialFeedbackSuccess = false;
       });
-      HapticFeedback.mediumImpact();
-    } else {
+    }
+
+    try {
+      final result = await _service.validateSerialForRWS(
+        serialNumber: input,
+        warehouseId: _warehouseId!,
+      );
+      if (!mounted) return;
+
+      if (_jsonTruthy(result['valid'])) {
+        final serial = result['serial'] is Map
+            ? Map<String, dynamic>.from(result['serial'] as Map)
+            : <String, dynamic>{};
+        final itemId = _int(serial['item_id']);
+        final unitId = _int(serial['unit_id']);
+        var price = _parsePrice(serial['price']);
+        final qty = _parsePrice(serial['qty']);
+        if (price <= 0 && itemId != null) {
+          final fetched = await _service.getItemPrice(itemId, unitId: unitId);
+          if (fetched != null && fetched > 0) price = fetched;
+        }
+        if (!mounted) return;
+        final idx = _scannedSerials.length;
+        final subtotal = price * (qty > 0 ? qty : 1);
+        final itemName = serial['item_name']?.toString() ?? '';
+        setState(() {
+          _scannedSerials.add({
+            'serial_id': serial['id'],
+            'serial_number': serial['serial_number'] ?? input,
+            'item_id': serial['item_id'],
+            'item_name': itemName.isNotEmpty ? itemName : '-',
+            'unit_id': serial['unit_id'],
+            'unit_name': serial['unit_name'] ?? '-',
+            'qty': serial['qty'] ?? 1,
+            'qty_small': serial['qty_small'] ?? 1,
+            'price': price,
+            'subtotal': subtotal,
+          });
+          _serialPriceControllers[idx] = TextEditingController(text: price > 0 ? price.toString() : '');
+          _serialFeedback = itemName.isNotEmpty ? '✓ $itemName' : '✓ Berhasil';
+          _serialFeedbackSuccess = true;
+          _serialScanning = false;
+        });
+        unawaited(_scanSound.playSuccess());
+      } else {
+        final msg = result['message']?.toString() ?? 'Nomor seri tidak ditemukan atau tidak valid.';
+        setState(() {
+          _serialFeedback = msg;
+          _serialFeedbackSuccess = false;
+          _serialScanning = false;
+        });
+        await _scanSound.playError();
+        await showInlineScanFailureDialog(context, message: msg, scannedValue: input);
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _serialFeedback = result['message']?.toString() ?? 'Serial tidak valid';
+        _serialFeedback = 'Gagal memvalidasi serial.';
         _serialFeedbackSuccess = false;
         _serialScanning = false;
       });
-      HapticFeedback.heavyImpact();
+      await _scanSound.playError();
+      await showInlineScanFailureDialog(
+        context,
+        message: 'Tidak dapat memvalidasi nomor seri. Periksa koneksi internet lalu coba lagi.',
+        scannedValue: input,
+      );
+    } finally {
+      if (mounted && !fromCamera) setState(() => _serialScanning = false);
     }
-    _serialInputController.clear();
-    _serialFocusNode.requestFocus();
-  }
 
-  Future<void> _openCameraSerial() async {
-    if (kIsWeb) {
-      _showSnack('Scan kamera tersedia di aplikasi Android/iOS', isError: true);
-      return;
-    }
-    try {
-      final scanned = await NativeBarcodeScanner.scanBarcode();
-      if (!mounted) return;
-      if (scanned != null && scanned.isNotEmpty) {
-        _serialInputController.text = scanned;
-        await _onSerialScan();
-      }
-    } catch (e) {
-      _showSnack('Gagal membuka scanner: $e', isError: true);
-    }
+    _serialInputController.clear();
+    if (!fromCamera) _serialFocusNode.requestFocus();
   }
 
   void _rebuildSerialPriceControllers() {
@@ -398,7 +518,7 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
     }
     _serialPriceControllers.clear();
     for (int i = 0; i < _scannedSerials.length; i++) {
-      final price = (_scannedSerials[i]['price'] as num?)?.toDouble() ?? 0;
+      final price = _parsePrice(_scannedSerials[i]['price']);
       _serialPriceControllers[i] = TextEditingController(text: price > 0 ? price.toString() : '');
     }
   }
@@ -427,7 +547,7 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
       _showSnack('Semua item harus memiliki harga', isError: true);
       return;
     }
-    if (_scannedSerials.any((s) => ((s['price'] as num?)?.toDouble() ?? 0) <= 0)) {
+    if (_scannedSerials.any((s) => _parsePrice(s['price']) <= 0)) {
       _showSnack('Semua serial harus memiliki harga', isError: true);
       return;
     }
@@ -437,7 +557,7 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
       itemName: s['item_name']?.toString() ?? '-',
       qty: (s['qty'] as num?)?.toDouble() ?? 1,
       unit: s['unit_name']?.toString() ?? '',
-      price: (s['price'] as num?)?.toDouble() ?? 0,
+      price: _parsePrice(s['price']),
       subtotal: (s['subtotal'] as num?)?.toDouble() ?? 0,
     )).toList();
 
@@ -615,48 +735,68 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
                 iconColor: const Color(0xFF7C3AED),
                 children: [
                   const Text('Scan Barcode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _barcodeController,
-                          focusNode: _barcodeFocusNode,
-                          enabled: !_barcodeScanning && _warehouseId != null,
-                          textInputAction: TextInputAction.go,
-                          onSubmitted: (_) => _scanBarcode(),
-                          decoration: InputDecoration(
-                            hintText: 'Scan barcode item...',
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            prefixIcon: const Icon(Icons.barcode_reader, size: 20),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: (!_barcodeScanning && _warehouseId != null) ? _openCameraBarcode : null,
-                        icon: const Icon(Icons.camera_alt_outlined),
-                        color: _primary,
-                        style: IconButton.styleFrom(backgroundColor: _infoBg),
-                      ),
-                      SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: (!_barcodeScanning && _warehouseId != null) ? _scanBarcode : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF16A34A),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: _barcodeScanning
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : const Icon(Icons.search, color: Colors.white),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 4),
+                  Text(
+                    _barcodeCameraMode ? 'Arahkan kamera ke barcode item' : 'Gunakan scanner bluetooth atau ketik manual',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
+                  if (!kIsWeb) ...[
+                    const SizedBox(height: 8),
+                    buildInlineScanModeToggle(
+                      cameraMode: _barcodeCameraMode,
+                      accent: _primary,
+                      onScannerTap: () => _toggleCameraMode(_CameraScanTarget.barcode),
+                      onCameraTap: () => _toggleCameraMode(_CameraScanTarget.barcode),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  if (_barcodeCameraMode)
+                    buildInlineCameraPreview(
+                      controller: _cameraController,
+                      accent: _primary,
+                      processing: _cameraProcessing,
+                      onDetect: _onBarcodeDetected,
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _barcodeController,
+                            focusNode: _barcodeFocusNode,
+                            enabled: !_barcodeScanning && _warehouseId != null,
+                            textInputAction: TextInputAction.go,
+                            onSubmitted: (_) => _scanBarcode(null),
+                            decoration: InputDecoration(
+                              hintText: 'Scan barcode item...',
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              prefixIcon: const Icon(Icons.barcode_reader, size: 20, color: _primary),
+                              suffixIcon: _barcodeScanning
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                                    )
+                                  : null,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: (!_barcodeScanning && _warehouseId != null) ? () => _scanBarcode(null) : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF16A34A),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Icon(Icons.check_rounded, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 14),
                   OutlinedButton.icon(
                     onPressed: _addItem,
@@ -764,7 +904,14 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
             value: _serialMode,
             activeColor: const Color(0xFF6366F1),
             onChanged: (v) {
-              setState(() => _serialMode = v);
+              setState(() {
+                _serialMode = v;
+                if (v && _cameraTarget == _CameraScanTarget.barcode) {
+                  _cameraController?.dispose();
+                  _cameraController = null;
+                  _cameraTarget = _CameraScanTarget.none;
+                }
+              });
               if (v) {
                 Future.delayed(const Duration(milliseconds: 100), () {
                   if (mounted) _serialFocusNode.requestFocus();
@@ -790,82 +937,82 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Scan Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))),
+          const Text('Scan Nomor Seri', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _serialAccent)),
           if (!canScan) ...[
             const SizedBox(height: 8),
             const Text('Pilih gudang terlebih dahulu', style: TextStyle(fontSize: 12, color: Color(0xFFEF4444))),
           ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _serialInputController,
-                  focusNode: _serialFocusNode,
-                  enabled: !_serialScanning && canScan,
-                  textInputAction: TextInputAction.go,
-                  onSubmitted: (_) => _onSerialScan(),
-                  decoration: InputDecoration(
-                    hintText: 'Scan atau ketik nomor seri...',
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    prefixIcon: const Icon(Icons.qr_code, size: 20),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: (!_serialScanning && canScan) ? _openCameraSerial : null,
-                icon: const Icon(Icons.camera_alt_outlined),
-                color: const Color(0xFF6366F1),
-                style: IconButton.styleFrom(backgroundColor: const Color(0xFFEEF2FF)),
-              ),
-              const SizedBox(width: 4),
-              SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: (!_serialScanning && canScan) ? _onSerialScan : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6366F1),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _serialScanning
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.search, color: Colors.white),
-                ),
-              ),
-            ],
+          const SizedBox(height: 8),
+          Text(
+            _serialCameraMode ? 'Arahkan kamera ke barcode nomor seri' : 'Gunakan scanner bluetooth atau ketik manual',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
-          if (_serialFeedback.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: _serialFeedbackSuccess ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _serialFeedbackSuccess ? Icons.check_circle : Icons.error,
-                    size: 16,
-                    color: _serialFeedbackSuccess ? const Color(0xFF047857) : const Color(0xFFB91C1C),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _serialFeedback,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _serialFeedbackSuccess ? const Color(0xFF047857) : const Color(0xFFB91C1C),
-                        fontWeight: FontWeight.w500,
-                      ),
+          if (!kIsWeb) ...[
+            const SizedBox(height: 10),
+            buildInlineScanModeToggle(
+              cameraMode: _serialCameraMode,
+              accent: _serialAccent,
+              onScannerTap: () => _toggleCameraMode(_CameraScanTarget.serial),
+              onCameraTap: () => _toggleCameraMode(_CameraScanTarget.serial),
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (_serialCameraMode)
+            buildInlineCameraPreview(
+              controller: _cameraController,
+              accent: _serialAccent,
+              processing: _cameraProcessing,
+              onDetect: _onBarcodeDetected,
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _serialInputController,
+                    focusNode: _serialFocusNode,
+                    enabled: !_serialScanning && canScan,
+                    textInputAction: TextInputAction.go,
+                    onSubmitted: (_) => _onSerialScan(null),
+                    decoration: InputDecoration(
+                      hintText: 'Scan atau ketik nomor seri...',
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      prefixIcon: const Icon(Icons.qr_code, size: 20, color: _serialAccent),
+                      suffixIcon: _serialScanning
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                            )
+                          : null,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                     ),
                   ),
-                ],
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: (!_serialScanning && canScan) ? () => _onSerialScan(null) : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _serialAccent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Icon(Icons.check_rounded, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          if (_serialFeedback.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              _serialFeedback,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _serialFeedbackSuccess ? const Color(0xFF059669) : const Color(0xFFDC2626),
               ),
             ),
           ],
@@ -888,7 +1035,7 @@ class _RetailWarehouseSaleCreateScreenState extends State<RetailWarehouseSaleCre
               _serialPriceControllers.putIfAbsent(
                 i,
                 () => TextEditingController(
-                  text: ((s['price'] as num?)?.toDouble() ?? 0) > 0 ? '${s['price']}' : '',
+                  text: _parsePrice(s['price']) > 0 ? _parsePrice(s['price']).toString() : '',
                 ),
               );
               return Container(

@@ -255,6 +255,30 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   /// Usage: auto-fill dari item_bom.stock_cut=1 + stok outlet (sama endpoint Stock Cut web).
   bool get _isUsageAutoBom => (_type ?? '') == 'usage';
 
+  TextEditingController _qtyControllerOf(Map<String, dynamic> it) {
+    final existing = it['qtyController'];
+    if (existing is TextEditingController) return existing;
+    final ctrl = TextEditingController();
+    it['qtyController'] = ctrl;
+    return ctrl;
+  }
+
+  TextEditingController _physicalQtyControllerOf(Map<String, dynamic> it) {
+    final existing = it['physicalQtyController'];
+    if (existing is TextEditingController) return existing;
+    final ctrl = TextEditingController();
+    it['physicalQtyController'] = ctrl;
+    return ctrl;
+  }
+
+  TextEditingController _noteControllerOf(Map<String, dynamic> it) {
+    final existing = it['noteController'];
+    if (existing is TextEditingController) return existing;
+    final ctrl = TextEditingController();
+    it['noteController'] = ctrl;
+    return ctrl;
+  }
+
   String _usageCategory(Map<String, dynamic> item) {
     final cat = item['category_name']?.toString().trim();
     return (cat == null || cat.isEmpty) ? 'Tanpa Kategori' : cat;
@@ -290,6 +314,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
     _usageSearchController.dispose();
     for (final it in _items) {
       (it['qtyController'] as TextEditingController?)?.dispose();
+      (it['physicalQtyController'] as TextEditingController?)?.dispose();
       (it['noteController'] as TextEditingController?)?.dispose();
     }
     super.dispose();
@@ -340,14 +365,19 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
           _items.clear();
           for (final raw in itemsRaw) {
             final m = Map<String, dynamic>.from(raw);
-            final qtyCtrl = TextEditingController(text: '${m['qty'] ?? ''}');
             final noteCtrl = TextEditingController(text: '${m['note'] ?? ''}');
+            final isUsageRow = (_type ?? '') == 'usage';
             _items.add({
               'item_id': m['item_id'] ?? m['id'] ?? m['item']?['id'],
               'item_name': m['item_name'] ?? m['name'] ?? m['item']?['name'] ?? '',
               'unit_id': m['unit_id'] ?? m['unit'] ?? '',
               'unit_name': m['unit_name'] ?? m['unit']?['name'] ?? '',
-              'qtyController': qtyCtrl,
+              'qtyController': TextEditingController(),
+              'physicalQtyController': TextEditingController(
+                text: isUsageRow && m['physical_qty'] != null ? '${m['physical_qty']}' : '',
+              ),
+              'stock_on_hand': m['stock_on_hand'],
+              'saved_usage_qty': isUsageRow ? m['qty'] : null,
               'noteController': noteCtrl,
               'unitOptions': <Map<String, dynamic>>[],
             });
@@ -395,9 +425,87 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   void _disposeAllItemRows() {
     for (final it in _items) {
       (it['qtyController'] as TextEditingController?)?.dispose();
+      (it['physicalQtyController'] as TextEditingController?)?.dispose();
       (it['noteController'] as TextEditingController?)?.dispose();
     }
     _items.clear();
+  }
+
+  double _getStockOnHandFromSystem(Map<String, dynamic> it) {
+    final stock = it['stock'];
+    if (stock == null || stock is! Map) return 0;
+    return (stock['qty_small'] as num?)?.toDouble() ?? 0;
+  }
+
+  double _getStockOnHandSmall(Map<String, dynamic> it) {
+    final saved = it['stock_on_hand'];
+    if (saved != null && '$saved'.trim().isNotEmpty) {
+      return (saved as num).toDouble();
+    }
+    return _getStockOnHandFromSystem(it);
+  }
+
+  double _getUsageQty(Map<String, dynamic> it) {
+    if (!_isUsageAutoBom) {
+      return double.tryParse(_qtyControllerOf(it).text.replaceAll(',', '')) ?? 0;
+    }
+    final pc = it['physicalQtyController'] is TextEditingController
+        ? it['physicalQtyController'] as TextEditingController
+        : null;
+    if (pc == null || pc.text.trim().isEmpty) return 0;
+    final physical = double.tryParse(pc.text.replaceAll(',', '')) ?? 0;
+    final usage = _getStockOnHandSmall(it) - physical;
+    return usage > 0 ? usage : 0;
+  }
+
+  String _formatStockOnHandSmall(Map<String, dynamic> it) {
+    final qty = _getStockOnHandSmall(it);
+    final stock = it['stock'];
+    final unit = (it['unit_name'] ?? (stock is Map ? stock['unit_small'] : '') ?? '').toString();
+    final formatted = qty % 1 == 0 ? qty.toStringAsFixed(0) : qty.toStringAsFixed(2);
+    return '$formatted $unit'.trim();
+  }
+
+  void _syncUsagePhysicalFromSavedQty(Map<String, dynamic> it) {
+    if (!_isUsageAutoBom) return;
+    final pc = it['physicalQtyController'] is TextEditingController
+        ? it['physicalQtyController'] as TextEditingController
+        : null;
+    if (pc != null && pc.text.trim().isNotEmpty) return;
+    final savedUsage = it['saved_usage_qty'];
+    if (savedUsage == null) return;
+    final usage = (savedUsage as num).toDouble();
+    final onHand = _getStockOnHandSmall(it);
+    pc?.text = (onHand - usage).clamp(0, double.infinity).toString();
+  }
+
+  bool _isItemValidForSave(Map<String, dynamic> it) {
+    if (it['item_id'] == null) return false;
+    if (_isUsageAutoBom) {
+      final pc = it['physicalQtyController'] is TextEditingController
+          ? it['physicalQtyController'] as TextEditingController
+          : null;
+      if (pc == null || pc.text.trim().isEmpty) return false;
+      final physical = double.tryParse(pc.text.replaceAll(',', '')) ?? 0;
+      if (physical > _getStockOnHandSmall(it)) return false;
+      return _getUsageQty(it) > 0;
+    }
+    return (double.tryParse(_qtyControllerOf(it).text.replaceAll(',', '')) ?? 0) > 0;
+  }
+
+  Map<String, dynamic> _mapItemToPayload(Map<String, dynamic> it) {
+    final note = _noteControllerOf(it).text.trim();
+    final payload = <String, dynamic>{
+      'item_id': it['item_id'],
+      'qty': _isUsageAutoBom ? _getUsageQty(it) : (double.tryParse(_qtyControllerOf(it).text.replaceAll(',', '')) ?? 0),
+      'unit_id': it['unit_id'],
+      'note': note.isEmpty ? null : note,
+    };
+    if (_isUsageAutoBom) {
+      payload['stock_on_hand'] = _getStockOnHandFromSystem(it);
+      payload['physical_qty'] = double.tryParse(_physicalQtyControllerOf(it).text.replaceAll(',', '')) ?? 0;
+    }
+    return payload;
   }
 
   Future<void> _loadUsageBomItems() async {
@@ -406,6 +514,18 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
 
     setState(() => _loadingUsageBom = true);
     try {
+      final savedByItemId = <String, Map<String, dynamic>>{};
+      for (final it in _items) {
+        final id = it['item_id'];
+        if (id == null) continue;
+        savedByItemId['$id'] = {
+          'physical_qty': (it['physicalQtyController'] as TextEditingController?)?.text,
+          'stock_on_hand': it['stock_on_hand'],
+          'saved_usage_qty': it['saved_usage_qty'],
+          'note': (it['noteController'] as TextEditingController?)?.text,
+        };
+      }
+
       final rows = await _service.getStockCutItems(
         outletId: _outletId!,
         warehouseOutletId: _warehouseOutletId!,
@@ -418,24 +538,35 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
         final uname = row['unit_name']?.toString() ?? '';
         final stock = row['stock'];
         final categoryName = row['category_name']?.toString() ?? 'Tanpa Kategori';
-        final qtyCtrl = TextEditingController();
-        final noteCtrl = TextEditingController();
+        final saved = savedByItemId['$itemId'];
+        final noteCtrl = TextEditingController(text: saved?['note']?.toString() ?? '');
+        final physicalCtrl = TextEditingController(text: saved?['physical_qty']?.toString() ?? '');
         final idNum = uid is int ? uid : int.tryParse('$uid');
-        _items.add({
+        final mapped = <String, dynamic>{
           'item_id': itemId,
           'item_name': row['item_name']?.toString() ?? '',
           'category_name': categoryName,
           'unit_id': idNum ?? uid,
           'unit_name': uname,
-          'qtyController': qtyCtrl,
+          'qtyController': TextEditingController(),
+          'physicalQtyController': physicalCtrl,
           'noteController': noteCtrl,
           'stock': stock,
+          'stock_on_hand': saved?['stock_on_hand'],
+          'saved_usage_qty': saved?['saved_usage_qty'],
           'unitOptions': idNum != null || uid != null
               ? <Map<String, dynamic>>[
                   {'id': idNum ?? uid, 'name': uname},
                 ]
               : <Map<String, dynamic>>[],
-        });
+        };
+        if (mapped['stock'] != null &&
+            physicalCtrl.text.trim().isEmpty &&
+            mapped['saved_usage_qty'] != null &&
+            (mapped['stock_on_hand'] == null || '$mapped[stock_on_hand]'.trim().isEmpty)) {
+          _syncUsagePhysicalFromSavedQty(mapped);
+        }
+        _items.add(mapped);
         _usageExpandedByCategory[categoryName] = true;
       }
       if (mounted) setState(() {});
@@ -450,8 +581,10 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
       'item_name': '',
       'unit_id': null,
       'qtyController': TextEditingController(text: '1'),
+      'physicalQtyController': TextEditingController(),
       'noteController': TextEditingController(),
       'stock': null,
+      'stock_on_hand': null,
       'unitOptions': <Map<String, dynamic>>[],
     });
   }
@@ -460,6 +593,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
     if (idx < 0 || idx >= _items.length) return;
     final it = _items.removeAt(idx);
     (it['qtyController'] as TextEditingController?)?.dispose();
+    (it['physicalQtyController'] as TextEditingController?)?.dispose();
     (it['noteController'] as TextEditingController?)?.dispose();
     setState(() {});
   }
@@ -508,6 +642,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
     if (!mounted) return;
     setState(() {
       _items[idx]['stock'] = stock;
+      _syncUsagePhysicalFromSavedQty(_items[idx]);
     });
   }
 
@@ -598,9 +733,7 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
   }
   
   void _showPreview({VoidCallback? onConfirm, String confirmLabel = 'Submit'}) {
-    final items = _items
-        .where((it) => (it['item_id'] != null) && ((it['qtyController'] as TextEditingController).text.trim().isNotEmpty))
-        .toList();
+    final items = _items.where(_isItemValidForSave).toList();
     showDialog<void>(
       context: context,
       builder: (context) {
@@ -676,11 +809,10 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                       itemBuilder: (context, index) {
                         final it = items[index];
                         final accent = _itemAccentColor(index);
-                        final qtyText = (it['qtyController'] as TextEditingController).text;
                         final unitName = it['unit_name']?.toString().isNotEmpty == true
                             ? it['unit_name']
                             : _findUnitName(it);
-                        final noteText = (it['noteController'] as TextEditingController).text.trim();
+                        final noteText = _noteControllerOf(it).text.trim();
                         return Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -693,7 +825,21 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                             children: [
                               Text(it['item_name'] ?? '-', style: const TextStyle(fontWeight: FontWeight.w600)),
                               const SizedBox(height: 4),
-                              Text('Qty: $qtyText ${unitName ?? ''}'.trim(), style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                              if (_isUsageAutoBom) ...[
+                                Text('Stock On Hand: ${_formatStockOnHandSmall(it)}', style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                                Text(
+                                  'Stock Fisik: ${_physicalQtyControllerOf(it).text} ${unitName ?? ''}'.trim(),
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                ),
+                                Text(
+                                  'Qty Usage: ${_getUsageQty(it)} ${unitName ?? ''}'.trim(),
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                                ),
+                              ] else
+                                Text(
+                                  'Qty: ${_qtyControllerOf(it).text} ${unitName ?? ''}'.trim(),
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                ),
                               if (noteText.isNotEmpty)
                                 Text('Note: $noteText', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                             ],
@@ -758,23 +904,21 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
 
     final itemsPayload = <Map<String, dynamic>>[];
     for (final it in _items) {
-      final qty = double.tryParse((it['qtyController'] as TextEditingController).text.replaceAll(',', '')) ?? 0;
-      if (it['item_id'] == null) {
-        _showMessage('Isi item terlebih dahulu');
-        return;
+      if (!_isItemValidForSave(it)) continue;
+      if (_isUsageAutoBom) {
+        final physical = double.tryParse(_physicalQtyControllerOf(it).text.replaceAll(',', '')) ?? 0;
+        if (physical > _getStockOnHandSmall(it)) {
+          _showMessage('Stock fisik "${it['item_name']}" melebihi stock on hand');
+          return;
+        }
       }
-      if (qty <= 0) {
-        _showMessage('Qty harus lebih dari 0');
-        return;
-      }
-      itemsPayload.add({
-        'item_id': it['item_id'],
-        'qty': qty,
-        'unit_id': it['unit_id'],
-        'note': (it['noteController'] as TextEditingController?)?.text.trim().isEmpty == true
-            ? null
-            : (it['noteController'] as TextEditingController).text.trim(),
-      });
+      itemsPayload.add(_mapItemToPayload(it));
+    }
+    if (itemsPayload.isEmpty) {
+      _showMessage(_isUsageAutoBom
+          ? 'Isi stock fisik pada item (qty usage = selisih dengan stock on hand)'
+          : 'Isi item dan qty terlebih dahulu');
+      return;
     }
 
     final payload = {
@@ -1000,7 +1144,6 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
       children: List.generate(_items.length, (index) {
         final it = _items[index];
         final accent = _itemAccentColor(index);
-        final qtyText = (it['qtyController'] as TextEditingController?)?.text ?? '-';
         final unitName = it['unit_name']?.toString().isNotEmpty == true
             ? it['unit_name']
             : _findUnitName(it);
@@ -1044,10 +1187,21 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Qty: $qtyText ${unitName ?? ''}'.trim(),
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-                ),
+                if (_isUsageAutoBom) ...[
+                  Text('Stock On Hand: ${_formatStockOnHandSmall(it)}', style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                  Text(
+                    'Stock Fisik: ${it['physicalQtyController'] is TextEditingController ? (it['physicalQtyController'] as TextEditingController).text : '-'} ${unitName ?? ''}'.trim(),
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                  ),
+                  Text(
+                    'Qty Usage: ${_getUsageQty(it)} ${unitName ?? ''}'.trim(),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                  ),
+                ] else
+                  Text(
+                    'Qty: ${it['qtyController'] is TextEditingController ? (it['qtyController'] as TextEditingController).text : '-'} ${unitName ?? ''}'.trim(),
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                  ),
                 if (noteText.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
@@ -1112,16 +1266,26 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                           .toList(),
                       onChanged: (v) async {
                         final prev = _type;
-                        setState(() => _type = v);
                         if (v == 'usage') {
                           _usageSearchController.clear();
-                          await _loadUsageBomItems();
-                        } else if (prev == 'usage' && v != 'usage' && widget.id == 0) {
                           _disposeAllItemRows();
-                          _addEmptyItem();
-                          _usageSearchController.clear();
-                          _usageExpandedByCategory.clear();
-                          setState(() {});
+                          setState(() {
+                            _type = v;
+                            _loadingUsageBom = _outletId != null && _warehouseOutletId != null;
+                          });
+                          if (_outletId != null && _warehouseOutletId != null) {
+                            await _loadUsageBomItems();
+                          } else if (mounted) {
+                            setState(() => _loadingUsageBom = false);
+                          }
+                        } else {
+                          setState(() => _type = v);
+                          if (prev == 'usage' && widget.id == 0) {
+                            _disposeAllItemRows();
+                            _addEmptyItem();
+                            _usageSearchController.clear();
+                            _usageExpandedByCategory.clear();
+                          }
                         }
                       },
                       decoration: const InputDecoration(labelText: 'Type'),
@@ -1281,6 +1445,23 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
             ),
           ],
         ),
+        if (_isUsageAutoBom && !_loadingUsageBom) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: Text(
+              'Tipe Usage: isi stock fisik hanya untuk barang yang dihitung. '
+              'Barang yang dikosongkan tidak disimpan dan stok tidak dipotong. '
+              'Qty usage = stock on hand − stock fisik.',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF)),
+            ),
+          ),
+        ],
         if (_isUsageAutoBom && _loadingUsageBom) ...[
           const SizedBox(height: 8),
           const LinearProgressIndicator(),
@@ -1319,7 +1500,16 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Menampilkan $usageVisibleCount item', style: const TextStyle(fontSize: 12)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Menampilkan $usageVisibleCount item BOM', style: const TextStyle(fontSize: 12)),
+                        Text(
+                          'Akan disimpan: ${_items.where(_isItemValidForSave).length} item (yang stock fisiknya diisi)',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                        ),
+                      ],
+                    ),
                     Row(
                       children: [
                         TextButton(
@@ -1493,51 +1683,83 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                 ),
               ],
             ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.inventory, size: 14, color: Color(0xFF64748B)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  _formatStock(it['stock']),
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                width: 140,
-                child: TextFormField(
-                  controller: it['qtyController'] as TextEditingController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Qty'),
-                  validator: (v) {
-                    final val = double.tryParse(v ?? '0') ?? 0;
-                    if (val <= 0) return '>0';
-                    return null;
-                  },
-                ),
-              ),
-              if (_isUsageAutoBom)
-                SizedBox(
-                  width: 220,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(labelText: 'Unit (terkecil)'),
-                    child: Text(
-                      unitOptions.isNotEmpty
-                          ? '${unitOptions.first['name'] ?? ''}'
-                          : (it['unit_name'] ?? '').toString(),
-                      style: const TextStyle(color: Color(0xFF0F172A)),
-                    ),
+          if (!_isUsageAutoBom) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.inventory, size: 14, color: Color(0xFF64748B)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _formatStock(it['stock']),
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
-                )
-              else
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (_isUsageAutoBom) ...[
+            InputDecorator(
+              decoration: const InputDecoration(labelText: 'Stock On Hand'),
+              child: Text(_formatStockOnHandSmall(it), style: const TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _physicalQtyControllerOf(it),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Stock Fisik (opsional)',
+                hintText: 'Kosongkan jika barang tidak dihitung',
+              ),
+              onChanged: (_) => setState(() {}),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null;
+                final physical = double.tryParse(v.replaceAll(',', '')) ?? -1;
+                if (physical < 0) return 'Tidak valid';
+                if (physical > _getStockOnHandSmall(it)) return 'Melebihi stock on hand';
+                if (_getUsageQty(it) <= 0) return 'Qty usage harus > 0';
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Qty Usage',
+                filled: true,
+                fillColor: Color(0xFFEFF6FF),
+              ),
+              child: Text(
+                '${_getUsageQty(it)} ${(it['unit_name'] ?? '').toString()}'.trim(),
+                style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            InputDecorator(
+              decoration: const InputDecoration(labelText: 'Unit (terkecil)'),
+              child: Text(
+                unitOptions.isNotEmpty ? '${unitOptions.first['name'] ?? ''}' : (it['unit_name'] ?? '').toString(),
+                style: const TextStyle(color: Color(0xFF0F172A)),
+              ),
+            ),
+          ] else
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextFormField(
+                    controller: _qtyControllerOf(it),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Qty'),
+                    validator: (v) {
+                      final val = double.tryParse(v ?? '0') ?? 0;
+                      if (val <= 0) return '>0';
+                      return null;
+                    },
+                  ),
+                ),
                 SizedBox(
                   width: 200,
                   child: DropdownButtonFormField<int>(
@@ -1563,11 +1785,11 @@ class _CategoryCostOutletDetailScreenState extends State<CategoryCostOutletDetai
                     decoration: const InputDecoration(labelText: 'Unit'),
                   ),
                 ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: 10),
           TextFormField(
-            controller: it['noteController'] as TextEditingController,
+            controller: _noteControllerOf(it),
             decoration: const InputDecoration(labelText: 'Note'),
             maxLines: 2,
           ),

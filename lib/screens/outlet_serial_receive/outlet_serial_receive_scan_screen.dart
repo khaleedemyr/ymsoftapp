@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -68,18 +69,22 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
     });
   }
 
-  void _onBarcodeDetected(BarcodeCapture capture) {
-    if (_cameraProcessing || _scanning) return;
+  Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
+    if (_cameraProcessing || (_scanning && !_cameraMode)) return;
     final barcode = capture.barcodes.firstOrNull;
     if (barcode == null || barcode.rawValue == null || barcode.rawValue!.isEmpty) return;
 
     final value = barcode.rawValue!.trim();
-    _cameraProcessing = true;
-    _processScannedValue(value).then((_) {
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        _cameraProcessing = false;
-      });
-    });
+    if (!mounted) return;
+    setState(() => _cameraProcessing = true);
+
+    try {
+      await _processScannedValue(value, fromCamera: true);
+    } finally {
+      // Debounce agar tidak double-scan barcode yang sama
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) setState(() => _cameraProcessing = false);
+    }
   }
 
   Future<void> _loadUserInfo() async {
@@ -98,20 +103,153 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
     }
   }
 
-  Future<void> _playSuccessSound() async {
-    HapticFeedback.lightImpact();
+  Future<void> _playTone(double frequency, int durationMs, {double volume = 0.5}) async {
     try {
-      final bytes = _generateToneWav(frequency: 1200, durationMs: 150, volume: 0.5);
+      final bytes = _generateToneWav(frequency: frequency, durationMs: durationMs, volume: volume);
       await _audioPlayer.play(BytesSource(bytes));
+      await Future.delayed(Duration(milliseconds: durationMs + 40));
     } catch (_) {}
   }
 
+  /// Dua nada naik — jelas terdengar sebagai "berhasil".
+  Future<void> _playSuccessSound() async {
+    HapticFeedback.lightImpact();
+    await _playTone(1568, 90, volume: 0.55);
+    await Future.delayed(const Duration(milliseconds: 60));
+    await _playTone(2093, 130, volume: 0.55);
+  }
+
+  /// Tiga nada turun — jelas terdengar sebagai "gagal / error".
   Future<void> _playErrorSound() async {
     HapticFeedback.heavyImpact();
-    try {
-      final bytes = _generateToneWav(frequency: 400, durationMs: 300, volume: 0.5);
-      await _audioPlayer.play(BytesSource(bytes));
-    } catch (_) {}
+    await _playTone(440, 130, volume: 0.65);
+    await Future.delayed(const Duration(milliseconds: 45));
+    await _playTone(330, 150, volume: 0.65);
+    await Future.delayed(const Duration(milliseconds: 45));
+    await _playTone(220, 220, volume: 0.7);
+  }
+
+  Future<void> _showScanFailureFeedback({
+    required String message,
+    String? serialNumber,
+  }) async {
+    if (!mounted) return;
+
+    const accent = Color(0xFFDC2626);
+    const headerBg = Color(0xFFFEF2F2);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (dialogContext) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 28),
+              constraints: const BoxConstraints(maxWidth: 360),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 28,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
+                    decoration: const BoxDecoration(
+                      color: headerBg,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(Icons.cancel_rounded, size: 60, color: accent),
+                        SizedBox(height: 12),
+                        Text(
+                          'Scan Gagal',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                    child: Column(
+                      children: [
+                        if (serialNumber != null && serialNumber.isNotEmpty) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Color(0xFFE2E8F0)),
+                            ),
+                            child: Text(
+                              serialNumber,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Text(
+                          message,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.45,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: accent,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text(
+                              'OK',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Uint8List _generateToneWav({required double frequency, required int durationMs, double volume = 0.5}) {
@@ -177,53 +315,71 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
     _serialFocus.requestFocus();
   }
 
-  Future<void> _processScannedValue(String input) async {
+  Future<void> _processScannedValue(String input, {bool fromCamera = false}) async {
     if (input.isEmpty) return;
 
     if (_scannedSerials.any((s) => s['serial_number'] == input)) {
-      setState(() {
-        _feedback = 'Nomor seri ini sudah di-scan.';
-        _feedbackSuccess = false;
-      });
-      _playErrorSound();
-      _showSnack('Duplikat: Nomor seri sudah ada di daftar.', isError: true);
+      if (mounted) {
+        setState(() {
+          _feedback = 'Nomor seri ini sudah di-scan.';
+          _feedbackSuccess = false;
+        });
+      }
+      await _playErrorSound();
+      await _showScanFailureFeedback(
+        message: 'Nomor seri ini sudah ada di daftar scan.',
+        serialNumber: input,
+      );
       return;
     }
 
-    setState(() {
-      _scanning = true;
-      _feedback = '';
-    });
+    if (mounted) {
+      setState(() {
+        if (!fromCamera) _scanning = true;
+        _feedback = fromCamera ? 'Memvalidasi...' : '';
+        _feedbackSuccess = false;
+      });
+    }
 
     try {
       final res = await _service.validateSerial(input);
 
+      if (!mounted) return;
+
       if (res != null && res['valid'] == true) {
         final serial = Map<String, dynamic>.from(res['serial']);
+        final itemName = serial['item_name']?.toString() ?? '';
         setState(() {
           _scannedSerials.insert(0, serial);
-          _feedback = '✓ ${serial['item_name']}';
+          _feedback = itemName.isNotEmpty ? '✓ $itemName' : '✓ Berhasil';
           _feedbackSuccess = true;
         });
-        _playSuccessSound();
+        unawaited(_playSuccessSound());
       } else {
-        final msg = res?['message'] ?? 'Serial tidak valid.';
+        final msg = res?['message'] ?? 'Nomor seri tidak ditemukan atau tidak valid.';
         setState(() {
           _feedback = msg;
           _feedbackSuccess = false;
         });
-        _playErrorSound();
-        _showSnack(msg, isError: true);
+        await _playErrorSound();
+        await _showScanFailureFeedback(message: msg, serialNumber: input);
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _feedback = 'Gagal memvalidasi serial.';
         _feedbackSuccess = false;
       });
-      _playErrorSound();
+      await _playErrorSound();
+      await _showScanFailureFeedback(
+        message: 'Tidak dapat memvalidasi nomor seri. Periksa koneksi internet lalu coba lagi.',
+        serialNumber: input,
+      );
+    } finally {
+      if (mounted && !fromCamera) {
+        setState(() => _scanning = false);
+      }
     }
-
-    setState(() => _scanning = false);
   }
 
   void _removeSerial(int index) {
@@ -312,9 +468,15 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
       showDrawer: false,
       body: Column(
         children: [
-          _buildScanCard(),
-          _buildStatsRow(),
-          Expanded(child: _buildSerialList()),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _buildScanCard()),
+                SliverToBoxAdapter(child: _buildStatsRow()),
+                _buildSerialListSliver(),
+              ],
+            ),
+          ),
           _buildBottomBar(),
         ],
       ),
@@ -437,7 +599,7 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: SizedBox(
-                height: 220,
+                height: 180,
                 width: double.infinity,
                 child: _cameraController != null
                     ? Stack(
@@ -457,11 +619,28 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
                               ),
                             ),
                           ),
-                          if (_scanning || _cameraProcessing)
-                            Container(
-                              color: Colors.black26,
-                              child: const Center(
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                          if (_cameraProcessing)
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text('Validasi...', style: TextStyle(color: Colors.white, fontSize: 11)),
+                                  ],
+                                ),
                               ),
                             ),
                         ],
@@ -474,6 +653,8 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
               'Arahkan kamera ke barcode nomor seri',
               style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
             ),
+            const SizedBox(height: 8),
+            _buildCameraScannedList(),
           ] else ...[
             // External scanner text input
             TextField(
@@ -515,6 +696,123 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
     );
   }
 
+  Widget _buildCameraScannedList() {
+    if (_scannedSerials.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Text(
+          'Belum ada serial di-scan',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: Row(
+              children: [
+                Text(
+                  'Sudah di-scan (${_scannedSerials.length})',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(flex: 3, child: Text('No. Seri', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey.shade600))),
+                Expanded(flex: 4, child: Text('Nama', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey.shade600))),
+                Expanded(flex: 2, child: Text('Qty', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey.shade600), textAlign: TextAlign.right)),
+                Expanded(flex: 2, child: Text('Unit', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey.shade600), textAlign: TextAlign.right)),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 160),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: _scannedSerials.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, indent: 10, endIndent: 10),
+              itemBuilder: (context, index) {
+                final s = _scannedSerials[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          s['serial_number']?.toString() ?? '-',
+                          style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF1E293B)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 4,
+                        child: Text(
+                          s['item_name']?.toString() ?? '-',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          _fmtQty(s['qty']),
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          s['unit_name']?.toString() ?? '-',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (!_saving)
+                        InkWell(
+                          onTap: () => _removeSerial(index),
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.close_rounded, size: 16, color: Color(0xFFDC2626)),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatsRow() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -549,26 +847,36 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
     );
   }
 
-  Widget _buildSerialList() {
+  Widget _buildSerialListSliver() {
     if (_scannedSerials.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.qr_code_2_rounded, size: 56, color: Colors.grey.shade300),
-            const SizedBox(height: 12),
-            Text('Scan nomor seri untuk memulai', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
-          ],
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+          child: Column(
+            children: [
+              Icon(Icons.qr_code_2_rounded, size: 48, color: Colors.grey.shade300),
+              const SizedBox(height: 10),
+              Text('Scan nomor seri untuk memulai', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      itemCount: _scannedSerials.length,
-      itemBuilder: (context, index) {
-        final s = _scannedSerials[index];
-        return Container(
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => _buildSerialListItem(index),
+          childCount: _scannedSerials.length,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSerialListItem(int index) {
+    final s = _scannedSerials[index];
+    return Container(
           margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -603,14 +911,17 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
                       const SizedBox(height: 3),
                       Row(
                         children: [
-                          Text(
-                            s['serial_number'] ?? '',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFamily: 'monospace'),
+                          Expanded(
+                            child: Text(
+                              s['serial_number'] ?? '',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFamily: 'monospace'),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '${_fmtQty(s['qty'])} ${s['unit_name'] ?? ''}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                            '${_fmtQty(s['qty'])} ${s['unit_name'] ?? ''}'.trim(),
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
                           ),
                         ],
                       ),
@@ -639,8 +950,6 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildBottomBar() {
