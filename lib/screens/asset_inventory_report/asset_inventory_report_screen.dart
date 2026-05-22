@@ -15,6 +15,8 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
 
   List<dynamic> _stocks = [];
   List<dynamic> _warehouseOutlets = [];
+  List<dynamic> _outlets = [];
+  int? _selectedOwnerOutletId;
   bool _isLoading = false;
   bool _hasMore = true;
   int _currentPage = 1;
@@ -66,6 +68,7 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
 
     final data = await _service.getStockPosition(
       search: _searchController.text.isNotEmpty ? _searchController.text : null,
+      ownerOutletId: _selectedOwnerOutletId,
       warehouseOutletId: _selectedWarehouseId,
       page: _currentPage,
     );
@@ -84,8 +87,27 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
         _hasMore = false;
       }
 
-      if (data['warehouseOutlets'] != null && reset) {
-        _warehouseOutlets = data['warehouseOutlets'] as List<dynamic>;
+      if (reset) {
+        if (data['warehouseOutlets'] != null) {
+          _warehouseOutlets = data['warehouseOutlets'] as List<dynamic>;
+        }
+        if (data['outlets'] != null) {
+          _outlets = data['outlets'] as List<dynamic>;
+        } else if (_outlets.isEmpty && list.isNotEmpty) {
+          final seen = <int>{};
+          _outlets = list
+              .where((r) {
+                final id = int.tryParse(r['owner_outlet_id']?.toString() ?? '') ?? 0;
+                if (id == 0 || seen.contains(id)) return false;
+                seen.add(id);
+                return true;
+              })
+              .map((r) => {
+                    'id_outlet': r['owner_outlet_id'],
+                    'nama_outlet': r['owner_outlet_name'],
+                  })
+              .toList();
+        }
       }
 
       setState(() {
@@ -102,7 +124,7 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
   }
 
   String _itemKey(dynamic row) {
-    return '${row['inventory_item_id']}-${row['warehouse_outlet_id']}';
+    return '${row['inventory_item_id']}-${row['owner_outlet_id']}-${row['warehouse_outlet_id']}';
   }
 
   Future<void> _toggleExpand(dynamic row) async {
@@ -122,6 +144,7 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
 
     final data = await _service.getStockCardDetail(
       inventoryItemId: int.tryParse(row['inventory_item_id'].toString()) ?? 0,
+      ownerOutletId: int.tryParse(row['owner_outlet_id'].toString()) ?? 0,
       warehouseOutletId: int.tryParse(row['warehouse_outlet_id'].toString()) ?? 0,
       from: _dateFrom,
       to: _dateTo,
@@ -294,6 +317,17 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
                 const SizedBox(width: 6),
                 _filterChip('Sampai', _dateTo, () => _pickDate(false), () { setState(() => _dateTo = null); }),
                 const SizedBox(width: 6),
+                if (_outlets.isNotEmpty)
+                  _dropdownChip(
+                    'Pemilik',
+                    _selectedOwnerOutletId?.toString() ?? '',
+                    {'': 'Semua', ..._ownerMap()},
+                    (v) {
+                      setState(() => _selectedOwnerOutletId = v.isEmpty ? null : int.tryParse(v));
+                      _loadStocks();
+                    },
+                  ),
+                const SizedBox(width: 6),
                 if (_warehouseOutlets.isNotEmpty)
                   _dropdownChip(
                     'Warehouse',
@@ -310,6 +344,15 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
         ],
       ),
     );
+  }
+
+  Map<String, String> _ownerMap() {
+    final map = <String, String>{};
+    for (final o in _outlets) {
+      final id = o['id_outlet']?.toString() ?? '';
+      if (id.isNotEmpty) map[id] = o['nama_outlet']?.toString() ?? '';
+    }
+    return map;
   }
 
   Map<String, String> _warehouseMap() {
@@ -345,7 +388,10 @@ class _AssetInventoryReportScreenState extends State<AssetInventoryReportScreen>
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text('${row['outlet_name'] ?? '-'} • ${row['warehouse_name'] ?? '-'}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  Text(
+                    'Pemilik: ${row['owner_outlet_name'] ?? '-'} · ${row['location_outlet_name'] ?? row['outlet_name'] ?? '-'} · ${row['warehouse_name'] ?? '-'}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
                   const SizedBox(height: 6),
                   Text('Stok: ${_stockSummary(row)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                 ],

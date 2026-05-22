@@ -129,6 +129,7 @@ class AssetGoodReceiveService {
   Future<Map<String, dynamic>> createGoodReceive({
     required String receiveDate,
     required int poId,
+    required int ownerOutletId,
     required int outletId,
     int? warehouseOutletId,
     String? notes,
@@ -150,6 +151,7 @@ class AssetGoodReceiveService {
         body: jsonEncode({
           'receive_date': receiveDate,
           'po_id': poId,
+          'owner_outlet_id': ownerOutletId,
           'outlet_id': outletId,
           if (warehouseOutletId != null)
             'warehouse_outlet_id': warehouseOutletId,

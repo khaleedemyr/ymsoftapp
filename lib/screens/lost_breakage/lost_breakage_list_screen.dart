@@ -8,6 +8,7 @@ import '../../widgets/app_loading_indicator.dart';
 import 'lost_breakage_form_screen.dart';
 import 'lost_breakage_detail_screen.dart';
 import 'lost_breakage_report_screen.dart';
+import 'lost_breakage_replacement_backlog_screen.dart';
 
 class LostBreakageListScreen extends StatefulWidget {
   const LostBreakageListScreen({super.key});
@@ -34,6 +35,7 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
   String? _dateTo;
   String _statusFilter = '';
   int? _outletFilter;
+  int? _ownerOutletFilter;
 
   Map<String, dynamic>? _userData;
   List<Map<String, dynamic>> _outlets = [];
@@ -102,6 +104,7 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
         status: _statusFilter.isNotEmpty ? _statusFilter : null,
         outletId: _outletFilter,
+        ownerOutletId: _ownerOutletFilter,
         dateFrom: _dateFrom,
         dateTo: _dateTo,
         page: _currentPage,
@@ -168,6 +171,7 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
       _dateTo = null;
       _statusFilter = '';
       _outletFilter = null;
+      _ownerOutletFilter = null;
     });
     _loadItems(isRefresh: true);
   }
@@ -229,9 +233,17 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Lost & Breakage',
+      title: 'Asset Lost & Breakage',
       showDrawer: false,
       actions: [
+        IconButton(
+          icon: const Icon(Icons.list_alt_rounded, color: Color(0xFF0D9488)),
+          tooltip: 'Sisa Penggantian',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LostBreakageReplacementBacklogScreen()),
+          ),
+        ),
         IconButton(
           icon: const Icon(Icons.bar_chart_rounded, color: Color(0xFFE65100)),
           tooltip: 'Report',
@@ -245,7 +257,7 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
         onPressed: _navigateToForm,
         backgroundColor: const Color(0xFFE65100),
         icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text('Buat Lost & Breakage', style: TextStyle(color: Colors.white)),
+        label: const Text('Tambah Baru', style: TextStyle(color: Colors.white)),
       ),
       body: Column(
         children: [
@@ -283,6 +295,7 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
     if (_dateTo != null) count++;
     if (_statusFilter.isNotEmpty) count++;
     if (_outletFilter != null) count++;
+    if (_ownerOutletFilter != null) count++;
     return count;
   }
 
@@ -390,7 +403,38 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
                   if (_isAdmin) ...[
                     InputDecorator(
                       decoration: InputDecoration(
-                        hintText: 'Semua Outlet',
+                        labelText: 'Pemilik',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      ),
+                      child: DropdownButton<int?>(
+                        value: _ownerOutletFilter,
+                        isExpanded: true,
+                        underline: const SizedBox(),
+                        hint: const Text('Semua pemilik'),
+                        items: [
+                          const DropdownMenuItem<int?>(value: null, child: Text('Semua pemilik')),
+                          ..._outlets.map((o) {
+                            final id = int.tryParse(
+                                o['id']?.toString() ?? o['id_outlet']?.toString() ?? '');
+                            return DropdownMenuItem<int?>(
+                              value: id,
+                              child: Text(
+                                o['name']?.toString() ?? o['nama_outlet']?.toString() ?? '',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (v) => setState(() => _ownerOutletFilter = v),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Lokasi',
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -400,14 +444,18 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
                         value: _outletFilter,
                         isExpanded: true,
                         underline: const SizedBox(),
-                        hint: const Text('Semua Outlet'),
+                        hint: const Text('Semua lokasi'),
                         items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('Semua Outlet')),
+                          const DropdownMenuItem<int?>(value: null, child: Text('Semua lokasi')),
                           ..._outlets.map((o) {
-                            final id = int.tryParse(o['id_outlet']?.toString() ?? '');
+                            final id = int.tryParse(
+                                o['id']?.toString() ?? o['id_outlet']?.toString() ?? '');
                             return DropdownMenuItem<int?>(
                               value: id,
-                              child: Text(o['nama_outlet']?.toString() ?? '', overflow: TextOverflow.ellipsis),
+                              child: Text(
+                                o['name']?.toString() ?? o['nama_outlet']?.toString() ?? '',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             );
                           }),
                         ],

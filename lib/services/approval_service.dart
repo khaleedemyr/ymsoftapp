@@ -2628,6 +2628,38 @@ class ApprovalService {
     }
   }
 
+  // Get Pending Asset Owner Transfer Approvals
+  Future<List<AssetOwnerTransferApproval>> getPendingAssetOwnerTransferApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/asset-owner-transfers/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic>? approvalsJson = data['headers'] ?? data['transfers'];
+        if (data['success'] == true && approvalsJson != null) {
+          _rawJsonCache['asset_owner_transfer'] = approvalsJson;
+          return approvalsJson
+              .map((json) => AssetOwnerTransferApproval.fromJson(json))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Asset Owner Transfer approvals: $e');
+      return [];
+    }
+  }
+
   // Get Pending Asset Inventory Transfer Approvals
   Future<List<AssetInventoryTransferApproval>> getPendingAssetTransferApprovals() async {
     try {
@@ -2645,8 +2677,8 @@ class ApprovalService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['transfers'] != null) {
-          final List<dynamic> approvalsJson = data['transfers'];
+        final List<dynamic>? approvalsJson = data['headers'] ?? data['transfers'];
+        if (data['success'] == true && approvalsJson != null) {
           _rawJsonCache['asset_transfer'] = approvalsJson;
           return approvalsJson
               .map((json) => AssetInventoryTransferApproval.fromJson(json))
@@ -2677,8 +2709,8 @@ class ApprovalService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['adjustments'] != null) {
-          final List<dynamic> approvalsJson = data['adjustments'];
+        final List<dynamic>? approvalsJson = data['headers'] ?? data['adjustments'];
+        if (data['success'] == true && approvalsJson != null) {
           _rawJsonCache['asset_adjustment'] = approvalsJson;
           return approvalsJson
               .map((json) => AssetInventoryAdjustmentApproval.fromJson(json))
@@ -2709,8 +2741,8 @@ class ApprovalService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['service_orders'] != null) {
-          final List<dynamic> approvalsJson = data['service_orders'];
+        final List<dynamic>? approvalsJson = data['headers'] ?? data['service_orders'];
+        if (data['success'] == true && approvalsJson != null) {
           _rawJsonCache['asset_service_order'] = approvalsJson;
           return approvalsJson
               .map((json) => AssetServiceOrderApproval.fromJson(json))
@@ -2752,6 +2784,37 @@ class ApprovalService {
       return [];
     } catch (e) {
       print('Error loading Asset Disposal approvals: $e');
+      return [];
+    }
+  }
+
+  Future<List<LostBreakageApproval>> getPendingLostBreakageApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/lost-breakage/pending-approvals';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['headers'] != null) {
+          final List<dynamic> approvalsJson = data['headers'];
+          _rawJsonCache['lost_breakage'] = approvalsJson;
+          return approvalsJson
+              .map((json) => LostBreakageApproval.fromJson(json))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Lost Breakage approvals: $e');
       return [];
     }
   }

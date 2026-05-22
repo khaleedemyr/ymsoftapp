@@ -13,6 +13,8 @@ import '../screens/purchase_requisition_list_screen.dart';
 import '../screens/tickets/ticket_list_screen.dart';
 import '../screens/guest_comment/guest_comment_list_screen.dart';
 import '../screens/support/support_admin_panel_screen.dart';
+import '../screens/omnichannel/omnichannel_inbox_list_screen.dart';
+import '../screens/instagram_comments/instagram_comments_screen.dart';
 import '../screens/settings/user_role_settings_screen.dart';
 import '../screens/settings/role_management_screen.dart';
 import '../screens/reports/activity_log_report_screen.dart';
@@ -43,8 +45,10 @@ import '../screens/inventory/warehouse_stock_card_screen.dart';
 import '../screens/outlet_inventory/outlet_stock_card_screen.dart';
 import '../screens/outlet_inventory/category_cost_outlet_index_screen.dart';
 import '../screens/lost_breakage/lost_breakage_list_screen.dart';
+import '../screens/lost_breakage/lost_breakage_replacement_backlog_screen.dart';
 import '../screens/asset_good_receive/asset_good_receive_index_screen.dart';
 import '../screens/asset_inventory_transfer/asset_inventory_transfer_index_screen.dart';
+import '../screens/asset_owner_transfer/asset_owner_transfer_index_screen.dart';
 import '../screens/asset_inventory_adjustment/asset_inventory_adjustment_index_screen.dart';
 import '../screens/asset_service_order/asset_service_order_index_screen.dart';
 import '../screens/asset_disposal/asset_disposal_index_screen.dart';
@@ -699,6 +703,12 @@ class _AppSidebarState extends State<AppSidebar> {
     if (route == '/items' || route.startsWith('/items')) {
       route = '/items';
     }
+    if (route == '/crm/omnichannel-inbox' || route.startsWith('/crm/omnichannel-inbox')) {
+      route = '/crm/omnichannel-inbox';
+    }
+    if (route == '/crm/instagram-comments' || route.startsWith('/crm/instagram-comments')) {
+      route = '/crm/instagram-comments';
+    }
 
     // List of allowed routes that can be accessed in mobile app
     // Only: Beranda, Sales Outlet Dashboard, My Attendance, Payment, Support Admin
@@ -741,6 +751,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/lost-breakage', // Lost & Breakage
       '/asset-good-receives', // Asset Good Receive
       '/asset-inventory-transfers', // Asset Inventory Transfer
+      '/asset-owner-transfers', // Asset Owner Transfer
       '/asset-inventory-adjustments', // Asset Stock Adjustment
       '/asset-service-orders', // Asset Service
       '/outlet-serial-receive', // GR Nomor Seri
@@ -766,6 +777,8 @@ class _AppSidebarState extends State<AppSidebar> {
       // Menu Utama (web)
       '/marketing/dashboard',
       '/crm/dashboard',
+      '/crm/omnichannel-inbox',
+      '/crm/instagram-comments',
       '/cashflow-outlet-dashboard',
       '/pr-ops/report',
       '/purchase-requisitions/payment-tracker',
@@ -1096,6 +1109,20 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const SupportAdminPanelScreen(),
         ),
       );
+    } else if (route == '/crm/omnichannel-inbox') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const OmnichannelInboxListScreen(),
+        ),
+      );
+    } else if (route == '/crm/instagram-comments') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const InstagramCommentsScreen(),
+        ),
+      );
     } else if (route == '/user-roles') {
       Navigator.push(
         context,
@@ -1291,6 +1318,13 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const LostBreakageListScreen(),
         ),
       );
+    } else if (route == '/lost-breakage-replacement-backlog') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LostBreakageReplacementBacklogScreen(),
+        ),
+      );
     } else if (route == '/asset-good-receives') {
       Navigator.push(
         context,
@@ -1303,6 +1337,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const AssetInventoryTransferIndexScreen(),
+        ),
+      );
+    } else if (route == '/asset-owner-transfers') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetOwnerTransferIndexScreen(),
         ),
       );
     } else if (route == '/asset-inventory-adjustments') {

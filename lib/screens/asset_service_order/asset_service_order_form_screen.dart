@@ -26,6 +26,7 @@ class _AssetServiceOrderFormScreenState
   List<dynamic> _warehouseOutlets = [];
   int? _userOutletId;
 
+  int? _ownerOutletId;
   int? _selectedOutletId;
   int? _selectedWarehouseId;
   String _selectedDate = '';
@@ -74,6 +75,7 @@ class _AssetServiceOrderFormScreenState
         _warehouseOutlets = data['warehouseOutlets'] ?? [];
         _userOutletId = int.tryParse(data['user']?['id_outlet']?.toString() ?? '0');
         if (_userOutletId != null && _userOutletId != 1) {
+          _ownerOutletId = _userOutletId;
           _selectedOutletId = _userOutletId;
         }
         _isLoading = false;
@@ -140,13 +142,16 @@ class _AssetServiceOrderFormScreenState
   // ── Item search ──
   void _onItemSearch(String val) {
     _itemDebounce?.cancel();
-    if (val.length < 2 || _selectedWarehouseId == null) {
+    if (val.length < 2 || _selectedWarehouseId == null || _ownerOutletId == null) {
       setState(() => _itemResults = []);
       return;
     }
     _itemDebounce = Timer(const Duration(milliseconds: 400), () async {
-      final results = await _service.searchItems(val,
-          warehouseOutletId: _selectedWarehouseId);
+      final results = await _service.searchItems(
+        val,
+        ownerOutletId: _ownerOutletId,
+        warehouseOutletId: _selectedWarehouseId,
+      );
       if (mounted) setState(() => _itemResults = results);
     });
   }
@@ -289,7 +294,13 @@ class _AssetServiceOrderFormScreenState
       };
     }).toList();
 
+    if (_ownerOutletId == null) {
+      _showError('Pilih outlet pemilik');
+      return;
+    }
+
     final result = await _service.createOrder(
+      ownerOutletId: _ownerOutletId!,
       date: _selectedDate,
       outletId: _selectedOutletId!,
       warehouseOutletId: _selectedWarehouseId!,
@@ -385,15 +396,40 @@ class _AssetServiceOrderFormScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Outlet & Warehouse',
+            const Text('Pemilik & Lokasi',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(height: 10),
+            if (_isHQ)
+              DropdownButtonFormField<int>(
+                value: _ownerOutletId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Outlet Pemilik *', isDense: true, border: OutlineInputBorder()),
+                items: _outlets
+                    .map((o) => DropdownMenuItem<int>(
+                        value: int.tryParse(o['id_outlet'].toString()),
+                        child: Text(o['nama_outlet']?.toString() ?? '',
+                            style: const TextStyle(fontSize: 13))))
+                    .toList(),
+                onChanged: (val) => setState(() => _ownerOutletId = val),
+              )
+            else
+              TextFormField(
+                initialValue: _outlets.firstWhere(
+                  (o) => int.tryParse(o['id_outlet'].toString()) == _userOutletId,
+                  orElse: () => {'nama_outlet': '-'},
+                )['nama_outlet']?.toString(),
+                enabled: false,
+                decoration: const InputDecoration(
+                    labelText: 'Outlet Pemilik', isDense: true, border: OutlineInputBorder()),
+              ),
+            const SizedBox(height: 8),
             if (_isHQ)
               DropdownButtonFormField<int>(
                 value: _selectedOutletId,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                    labelText: 'Outlet', isDense: true, border: OutlineInputBorder()),
+                    labelText: 'Lokasi Outlet', isDense: true, border: OutlineInputBorder()),
                 items: _outlets
                     .map((o) => DropdownMenuItem<int>(
                         value: int.tryParse(o['id_outlet'].toString()),

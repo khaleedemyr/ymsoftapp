@@ -979,17 +979,68 @@ class AssetInventoryTransferApproval {
   });
 
   factory AssetInventoryTransferApproval.fromJson(Map<String, dynamic> json) {
+    DateTime? parsedDate;
+    final dateVal = json['created_at'] ?? json['date'];
+    if (dateVal != null) {
+      try {
+        parsedDate = DateTime.parse(dateVal.toString());
+      } catch (_) {}
+    }
+    final fromWh = json['from_warehouse'];
+    final toWh = json['to_warehouse'];
     return AssetInventoryTransferApproval(
       id: json['id'] ?? 0,
       transferNumber: json['transfer_number'] ?? json['number'],
-      fromWarehouse: json['from_warehouse']?['name'] ?? json['from_warehouse_name'],
-      toWarehouse: json['to_warehouse']?['name'] ?? json['to_warehouse_name'],
-      status: json['status'],
-      notes: json['notes'],
-      createdByName: json['created_by']?['name'] ?? json['created_by_name'],
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
-          : null,
+      fromWarehouse: fromWh is String
+          ? fromWh
+          : (fromWh is Map ? fromWh['name']?.toString() : null) ?? json['from_warehouse_name']?.toString(),
+      toWarehouse: toWh is String
+          ? toWh
+          : (toWh is Map ? toWh['name']?.toString() : null) ?? json['to_warehouse_name']?.toString(),
+      status: json['status']?.toString(),
+      notes: json['notes']?.toString(),
+      createdByName: json['creator_name']?.toString() ??
+          json['created_by']?['name']?.toString() ??
+          json['created_by_name']?.toString(),
+      createdAt: parsedDate,
+    );
+  }
+}
+
+class AssetOwnerTransferApproval {
+  final int id;
+  final String? transferNumber;
+  final String? ownerFromName;
+  final String? ownerToName;
+  final String? creatorName;
+  final DateTime? createdAt;
+
+  AssetOwnerTransferApproval({
+    required this.id,
+    this.transferNumber,
+    this.ownerFromName,
+    this.ownerToName,
+    this.creatorName,
+    this.createdAt,
+  });
+
+  factory AssetOwnerTransferApproval.fromJson(Map<String, dynamic> json) {
+    DateTime? parsedDate;
+    final dateVal = json['created_at'] ?? json['date'];
+    if (dateVal != null) {
+      try {
+        parsedDate = DateTime.parse(dateVal.toString());
+      } catch (_) {}
+    }
+    return AssetOwnerTransferApproval(
+      id: json['id'] ?? 0,
+      transferNumber: json['transfer_number']?.toString() ?? json['number']?.toString(),
+      ownerFromName: json['owner_from_name']?.toString(),
+      ownerToName: json['owner_to_name']?.toString(),
+      creatorName: json['creator_name']?.toString() ??
+          json['created_by']?['name']?.toString() ??
+          json['created_by_name']?.toString(),
+      createdAt: parsedDate,
     );
   }
 }
@@ -1016,17 +1067,29 @@ class AssetInventoryAdjustmentApproval {
   });
 
   factory AssetInventoryAdjustmentApproval.fromJson(Map<String, dynamic> json) {
+    DateTime? parsedDate;
+    final dateVal = json['created_at'] ?? json['date'];
+    if (dateVal != null) {
+      try {
+        parsedDate = DateTime.parse(dateVal.toString());
+      } catch (_) {}
+    }
+    final wh = json['warehouse'];
     return AssetInventoryAdjustmentApproval(
       id: json['id'] ?? 0,
       adjustmentNumber: json['adjustment_number'] ?? json['number'],
-      warehouseName: json['warehouse']?['name'] ?? json['warehouse_name'],
-      status: json['status'],
-      notes: json['notes'],
-      adjustmentType: json['adjustment_type'] ?? json['type'],
-      createdByName: json['created_by']?['name'] ?? json['created_by_name'],
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
-          : null,
+      warehouseName: wh is String
+          ? wh
+          : (wh is Map ? wh['name']?.toString() : null) ??
+              json['warehouse_name']?.toString() ??
+              json['outlet_name']?.toString(),
+      status: json['status']?.toString(),
+      notes: json['notes']?.toString(),
+      adjustmentType: json['adjustment_type']?.toString() ?? json['type']?.toString(),
+      createdByName: json['creator_name']?.toString() ??
+          json['created_by']?['name']?.toString() ??
+          json['created_by_name']?.toString(),
+      createdAt: parsedDate,
     );
   }
 }
@@ -1053,17 +1116,59 @@ class AssetServiceOrderApproval {
   });
 
   factory AssetServiceOrderApproval.fromJson(Map<String, dynamic> json) {
+    DateTime? parsedDate;
+    final dateVal = json['created_at'] ?? json['date'];
+    if (dateVal != null) {
+      try {
+        parsedDate = DateTime.parse(dateVal.toString());
+      } catch (_) {}
+    }
     return AssetServiceOrderApproval(
       id: json['id'] ?? 0,
       orderNumber: json['order_number'] ?? json['number'],
-      assetName: json['asset']?['name'] ?? json['asset_name'],
-      status: json['status'],
-      serviceType: json['service_type'],
-      description: json['description'],
-      createdByName: json['created_by']?['name'] ?? json['created_by_name'],
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
-          : null,
+      assetName: json['asset']?['name']?.toString() ??
+          json['asset_name']?.toString() ??
+          json['outlet_name']?.toString() ??
+          json['supplier_name']?.toString(),
+      status: json['status']?.toString(),
+      serviceType: json['service_type']?.toString(),
+      description: json['description']?.toString() ?? json['notes']?.toString(),
+      createdByName: json['creator_name']?.toString() ??
+          json['created_by']?['name']?.toString() ??
+          json['created_by_name']?.toString(),
+      createdAt: parsedDate,
+    );
+  }
+}
+
+class LostBreakageApproval {
+  final int id;
+  final String? number;
+  final String? status;
+  final String? notes;
+  final String? outletName;
+  final String? creatorName;
+  final String? date;
+
+  LostBreakageApproval({
+    required this.id,
+    this.number,
+    this.status,
+    this.notes,
+    this.outletName,
+    this.creatorName,
+    this.date,
+  });
+
+  factory LostBreakageApproval.fromJson(Map<String, dynamic> json) {
+    return LostBreakageApproval(
+      id: json['id'] ?? 0,
+      number: json['number']?.toString(),
+      status: json['status']?.toString(),
+      notes: json['notes']?.toString(),
+      outletName: json['outlet_name']?.toString(),
+      creatorName: json['creator_name']?.toString(),
+      date: json['date']?.toString(),
     );
   }
 }

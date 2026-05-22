@@ -26,6 +26,7 @@ class _AssetGoodReceiveFormScreenState
   AssetPOData? _poData;
   List<_AssetItemForm> _formItems = [];
 
+  int? _ownerOutletId;
   int? _selectedOutletId;
   int? _selectedWarehouseOutletId;
 
@@ -136,6 +137,13 @@ class _AssetGoodReceiveFormScreenState
                     ))
                 .toList();
 
+            final suggestedOwner = int.tryParse(
+                data['suggested_owner_outlet_id']?.toString() ?? '');
+            if (suggestedOwner != null && suggestedOwner > 0) {
+              _ownerOutletId = suggestedOwner;
+            } else if (poData.userOutletId != 1) {
+              _ownerOutletId = poData.userOutletId;
+            }
             if (poData.userOutletId != 1) {
               _selectedOutletId = poData.userOutletId;
             } else if (poData.outlets.isNotEmpty) {
@@ -196,10 +204,19 @@ class _AssetGoodReceiveFormScreenState
       return;
     }
 
+    if (_ownerOutletId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pilih outlet pemilik terlebih dahulu'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     if (_selectedOutletId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pilih outlet terlebih dahulu'),
+          content: Text('Pilih lokasi outlet terlebih dahulu'),
           backgroundColor: Colors.red,
         ),
       );
@@ -252,6 +269,7 @@ class _AssetGoodReceiveFormScreenState
       final result = await _service.createGoodReceive(
         receiveDate: _receiveDateController.text,
         poId: int.tryParse(_poData!.po['id']?.toString() ?? '0') ?? 0,
+        ownerOutletId: _ownerOutletId!,
         outletId: _selectedOutletId!,
         warehouseOutletId: _selectedWarehouseOutletId,
         notes: _notesController.text,
@@ -560,7 +578,7 @@ class _AssetGoodReceiveFormScreenState
               children: [
                 Icon(Icons.store, color: Colors.teal.shade600, size: 20),
                 const SizedBox(width: 8),
-                const Text('Outlet & Warehouse',
+                const Text('Pemilik & Lokasi',
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
@@ -568,9 +586,56 @@ class _AssetGoodReceiveFormScreenState
             const SizedBox(height: 16),
             if (isHeadOffice)
               DropdownButtonFormField<int>(
+                value: _ownerOutletId,
+                decoration: InputDecoration(
+                  labelText: 'Outlet Pemilik *',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+                items: _poData!.outlets.map((outlet) {
+                  return DropdownMenuItem<int>(
+                    value:
+                        int.tryParse(outlet['id_outlet']?.toString() ?? ''),
+                    child:
+                        Text(outlet['nama_outlet']?.toString() ?? '-'),
+                  );
+                }).toList(),
+                onChanged: (value) => setState(() => _ownerOutletId = value),
+                validator: (value) =>
+                    value == null ? 'Pilih pemilik' : null,
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.business, size: 18, color: Colors.grey.shade600),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _poData!.outlets.isNotEmpty
+                            ? 'Pemilik: ${_poData!.outlets.firstWhere((o) => int.tryParse(o['id_outlet']?.toString() ?? '') == (_ownerOutletId ?? _poData!.userOutletId), orElse: () => _poData!.outlets.first)['nama_outlet']}'
+                            : '-',
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (isHeadOffice) const SizedBox(height: 12),
+            if (isHeadOffice)
+              DropdownButtonFormField<int>(
                 value: _selectedOutletId,
                 decoration: InputDecoration(
-                  labelText: 'Outlet *',
+                  labelText: 'Lokasi Outlet *',
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10)),
                   filled: true,

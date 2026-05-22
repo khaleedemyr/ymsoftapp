@@ -18,6 +18,7 @@ class AssetInventoryReportService {
 
   Future<Map<String, dynamic>?> getStockPosition({
     String? search,
+    int? ownerOutletId,
     int? outletId,
     int? warehouseOutletId,
     int page = 1,
@@ -32,6 +33,7 @@ class AssetInventoryReportService {
         'per_page': perPage.toString(),
       };
       if (search != null && search.isNotEmpty) params['search'] = search;
+      if (ownerOutletId != null) params['owner_outlet_id'] = ownerOutletId.toString();
       if (outletId != null) params['outlet_id'] = outletId.toString();
       if (warehouseOutletId != null) params['warehouse_outlet_id'] = warehouseOutletId.toString();
 
@@ -51,6 +53,7 @@ class AssetInventoryReportService {
 
   Future<Map<String, dynamic>?> getStockCardDetail({
     required int inventoryItemId,
+    required int ownerOutletId,
     required int warehouseOutletId,
     String? from,
     String? to,
@@ -61,6 +64,7 @@ class AssetInventoryReportService {
 
       final params = <String, String>{
         'inventory_item_id': inventoryItemId.toString(),
+        'owner_outlet_id': ownerOutletId.toString(),
         'warehouse_outlet_id': warehouseOutletId.toString(),
       };
       if (from != null && from.isNotEmpty) params['from'] = from;

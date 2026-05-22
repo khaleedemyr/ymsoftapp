@@ -18,6 +18,7 @@ class LostBreakageService {
 
   Future<Map<String, dynamic>?> getList({
     int? outletId,
+    int? ownerOutletId,
     String? search,
     String? status,
     String? dateFrom,
@@ -30,6 +31,7 @@ class LostBreakageService {
       if (token == null) return null;
       final qp = <String, String>{};
       if (outletId != null) qp['outlet_id'] = outletId.toString();
+      if (ownerOutletId != null) qp['owner_outlet_id'] = ownerOutletId.toString();
       if (search != null && search.isNotEmpty) qp['search'] = search;
       if (status != null && status.isNotEmpty) qp['status'] = status;
       if (dateFrom != null && dateFrom.isNotEmpty) qp['date_from'] = dateFrom;
@@ -278,7 +280,73 @@ class LostBreakageService {
     return [];
   }
 
+  Future<Map<String, dynamic>?> getFormMeta() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final uri = Uri.parse('$baseUrl/api/approval-app/lost-breakage/form-meta');
+      final resp = await http.get(uri, headers: _headers(token));
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+      }
+    } catch (e) {
+      print('LostBreakageService.getFormMeta error: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getReplacementBacklog({
+    String? search,
+    int? ownerOutletId,
+    int? outletId,
+    String? type,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final qp = <String, String>{};
+      if (search != null && search.isNotEmpty) qp['search'] = search;
+      if (ownerOutletId != null) qp['owner_outlet_id'] = ownerOutletId.toString();
+      if (outletId != null) qp['outlet_id'] = outletId.toString();
+      if (type != null && type.isNotEmpty) qp['type'] = type;
+      if (dateFrom != null && dateFrom.isNotEmpty) qp['date_from'] = dateFrom;
+      if (dateTo != null && dateTo.isNotEmpty) qp['date_to'] = dateTo;
+      final uri = Uri.parse('$baseUrl/api/approval-app/lost-breakage/replacement-backlog')
+          .replace(queryParameters: qp.isNotEmpty ? qp : null);
+      final resp = await http.get(uri, headers: _headers(token));
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+      }
+    } catch (e) {
+      print('LostBreakageService.getReplacementBacklog error: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> preparePrFromBacklog(List<int> detailIds) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final uri = Uri.parse('$baseUrl/api/approval-app/lost-breakage/replacement-backlog/prepare-pr');
+      final resp = await http.post(
+        uri,
+        headers: {..._headers(token), 'Content-Type': 'application/json'},
+        body: jsonEncode({'detail_ids': detailIds}),
+      );
+      final decoded = jsonDecode(resp.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (e) {
+      print('LostBreakageService.preparePrFromBacklog error: $e');
+    }
+    return null;
+  }
+
   /// Catat penggantian parsial / identik (setelah dokumen APPROVED).
+  /// Tidak dipakai di UI app — penggantian lewat Asset Replacement → PR Asset.
   Future<Map<String, dynamic>?> storeReplacement(
     int headerId,
     int detailId, {

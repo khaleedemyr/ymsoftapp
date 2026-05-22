@@ -25,6 +25,7 @@ class _AssetInventoryTransferFormScreenState
   List<Map<String, dynamic>> _warehouseOutlets = [];
   int? _userOutletId;
 
+  int? _ownerOutletId;
   int? _outletFromId;
   int? _outletToId;
   int? _warehouseFromId;
@@ -70,6 +71,7 @@ class _AssetInventoryTransferFormScreenState
             [];
         _userOutletId = int.tryParse(result['user']?['id_outlet']?.toString() ?? '0');
         if (_userOutletId != null && _userOutletId != 1) {
+          _ownerOutletId = _userOutletId;
           _outletFromId = _userOutletId;
         }
         _isLoading = false;
@@ -88,7 +90,7 @@ class _AssetInventoryTransferFormScreenState
 
   void _onItemSearch(String query) {
     _itemDebounce?.cancel();
-    if (query.length < 2 || _warehouseFromId == null) {
+    if (query.length < 2 || _warehouseFromId == null || _ownerOutletId == null) {
       setState(() => _itemSearchResults = []);
       return;
     }
@@ -96,6 +98,7 @@ class _AssetInventoryTransferFormScreenState
       setState(() => _isSearchingItems = true);
       final results = await _service.searchItems(
         query,
+        ownerOutletId: _ownerOutletId,
         warehouseOutletId: _warehouseFromId,
       );
       if (mounted) {
@@ -244,7 +247,15 @@ class _AssetInventoryTransferFormScreenState
     final dateStr =
         '${_transferDate.year}-${_transferDate.month.toString().padLeft(2, '0')}-${_transferDate.day.toString().padLeft(2, '0')}';
 
+    if (_ownerOutletId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih outlet pemilik stok.')),
+      );
+      return;
+    }
+
     final result = await _service.createTransfer(
+      ownerOutletId: _ownerOutletId!,
       transferDate: dateStr,
       warehouseOutletFromId: _warehouseFromId!,
       warehouseOutletToId: _warehouseToId!,
@@ -289,6 +300,50 @@ class _AssetInventoryTransferFormScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Pemilik Stok',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
+                          const SizedBox(height: 8),
+                          if (_userOutletId == 1)
+                            DropdownButtonFormField<int>(
+                              value: _ownerOutletId,
+                              decoration: _inputDecoration('Outlet Pemilik *'),
+                              items: _outlets.map((o) {
+                                return DropdownMenuItem<int>(
+                                  value: int.tryParse(o['id_outlet'].toString()),
+                                  child: Text(o['nama_outlet']?.toString() ?? '', style: const TextStyle(fontSize: 14)),
+                                );
+                              }).toList(),
+                              onChanged: (v) => setState(() => _ownerOutletId = v),
+                            )
+                          else
+                            TextFormField(
+                              initialValue: _outlets
+                                      .where((o) => int.tryParse(o['id_outlet'].toString()) == _userOutletId)
+                                      .map((o) => o['nama_outlet']?.toString())
+                                      .firstOrNull ??
+                                  '-',
+                              enabled: false,
+                              decoration: _inputDecoration('Outlet Pemilik'),
+                            ),
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Kepemilikan tetap saat pindah lokasi gudang.',
+                              style: TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   // From/To Card
                   Card(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -297,7 +352,7 @@ class _AssetInventoryTransferFormScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Asal & Tujuan',
+                          const Text('Lokasi Asal & Tujuan',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
                           const SizedBox(height: 12),
                           const Text('DARI', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),

@@ -82,12 +82,19 @@ class AssetInventoryAdjustmentService {
     }
   }
 
-  Future<List<dynamic>> searchItems(String query, {int? warehouseOutletId}) async {
+  Future<List<dynamic>> searchItems(
+    String query, {
+    int? ownerOutletId,
+    int? warehouseOutletId,
+  }) async {
     try {
       final token = await _getToken();
       if (token == null) return [];
 
       final qp = <String, String>{'q': query};
+      if (ownerOutletId != null) {
+        qp['owner_outlet_id'] = ownerOutletId.toString();
+      }
       if (warehouseOutletId != null) {
         qp['warehouse_outlet_id'] = warehouseOutletId.toString();
       }
@@ -105,6 +112,7 @@ class AssetInventoryAdjustmentService {
   }
 
   Future<Map<String, dynamic>> createAdjustment({
+    required int ownerOutletId,
     required String date,
     required int outletId,
     required int warehouseOutletId,
@@ -118,6 +126,7 @@ class AssetInventoryAdjustmentService {
       if (token == null) return {'success': false, 'message': 'No token'};
 
       final body = {
+        'owner_outlet_id': ownerOutletId,
         'date': date,
         'outlet_id': outletId,
         'warehouse_outlet_id': warehouseOutletId,

@@ -28,6 +28,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
   List<dynamic> _warehouseOutlets = [];
   int? _userOutletId;
 
+  int? _ownerOutletId;
   int? _selectedOutletId;
   int? _selectedWarehouseId;
   String _selectedDate = '';
@@ -72,6 +73,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
         _warehouseOutlets = data['warehouseOutlets'] ?? [];
         _userOutletId = int.tryParse(data['user']?['id_outlet']?.toString() ?? '0');
         if (_userOutletId != null && _userOutletId != 1) {
+          _ownerOutletId = _userOutletId;
           _selectedOutletId = _userOutletId;
         }
         _isLoading = false;
@@ -109,7 +111,12 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
       return;
     }
     _itemDebounce = Timer(const Duration(milliseconds: 400), () async {
-      final results = await _service.searchItems(val, _selectedWarehouseId!);
+      if (_ownerOutletId == null || _selectedWarehouseId == null) return;
+      final results = await _service.searchItems(
+        val,
+        ownerOutletId: _ownerOutletId!,
+        warehouseOutletId: _selectedWarehouseId!,
+      );
       if (mounted) setState(() => _itemResults = results);
     });
   }
@@ -269,7 +276,8 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
   }
 
   Future<void> _submit() async {
-    if (_selectedOutletId == null) { _showError('Pilih outlet'); return; }
+    if (_ownerOutletId == null) { _showError('Pilih outlet pemilik'); return; }
+    if (_selectedOutletId == null) { _showError('Pilih lokasi outlet'); return; }
     if (_selectedWarehouseId == null) { _showError('Pilih warehouse'); return; }
     if (_descController.text.trim().isEmpty) { _showError('Isi deskripsi'); return; }
     if (_items.isEmpty) { _showError('Tambahkan minimal 1 item'); return; }
@@ -294,6 +302,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
 
     final payload = <String, dynamic>{
       'date': _selectedDate,
+      'owner_outlet_id': _ownerOutletId,
       'outlet_id': _selectedOutletId,
       'warehouse_outlet_id': _selectedWarehouseId,
       'type': _selectedType,
@@ -445,13 +454,34 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Outlet & Warehouse', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const Text('Pemilik & Lokasi', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(height: 10),
+            if (_isHQ)
+              DropdownButtonFormField<int>(
+                value: _ownerOutletId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Outlet Pemilik *', isDense: true, border: OutlineInputBorder()),
+                items: _outlets.map((o) => DropdownMenuItem<int>(
+                  value: int.tryParse(o['id_outlet'].toString()),
+                  child: Text(o['nama_outlet']?.toString() ?? '', style: const TextStyle(fontSize: 13)),
+                )).toList(),
+                onChanged: (val) => setState(() => _ownerOutletId = val),
+              )
+            else
+              TextFormField(
+                initialValue: _outlets.firstWhere(
+                  (o) => int.tryParse(o['id_outlet'].toString()) == _userOutletId,
+                  orElse: () => {'nama_outlet': '-'},
+                )['nama_outlet']?.toString(),
+                enabled: false,
+                decoration: const InputDecoration(labelText: 'Outlet Pemilik', isDense: true, border: OutlineInputBorder()),
+              ),
+            const SizedBox(height: 8),
             if (_isHQ)
               DropdownButtonFormField<int>(
                 value: _selectedOutletId,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Outlet', isDense: true, border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Lokasi Outlet', isDense: true, border: OutlineInputBorder()),
                 items: _outlets.map((o) => DropdownMenuItem<int>(
                   value: int.tryParse(o['id_outlet'].toString()),
                   child: Text(o['nama_outlet']?.toString() ?? '', style: const TextStyle(fontSize: 13)),

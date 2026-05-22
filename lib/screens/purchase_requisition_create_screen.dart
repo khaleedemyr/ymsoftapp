@@ -18,12 +18,16 @@ class PurchaseRequisitionCreateScreen extends StatefulWidget {
   final String? initialTicketNumber;
   final String? initialTicketTitle;
 
+  /// Dari Asset Replacement backlog (Lost & Breakage).
+  final Map<String, dynamic>? lbPrefill;
+
   const PurchaseRequisitionCreateScreen({
     super.key,
     this.editData,
     this.initialTicketId,
     this.initialTicketNumber,
     this.initialTicketTitle,
+    this.lbPrefill,
   });
 
   @override
@@ -123,6 +127,9 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     if (widget.editData != null) {
       _loadEditData();
     } else {
+      if (widget.lbPrefill != null) {
+        _selectedMode = 'pr_assets';
+      }
       _initializeForm();
       _applyInitialTicketPrefill();
     }
@@ -178,6 +185,83 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
     _kasbonReasonController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _applyLbPrefill() {
+    final prefill = widget.lbPrefill;
+    if (prefill == null) return;
+    final lines = prefill['lines'] as List?;
+    if (lines == null || lines.isEmpty) return;
+
+    _selectedMode = 'pr_assets';
+    _titleController.text = prefill['title']?.toString() ?? '';
+    _descriptionController.text = prefill['description']?.toString() ?? '';
+
+    final categoryId = prefill['default_category_id'];
+    if (categoryId != null) {
+      _selectedCategoryId = categoryId is int
+          ? categoryId
+          : int.tryParse(categoryId.toString());
+    }
+
+    if (_userData != null) {
+      final divisionId = _userData!['division_id'] ?? _userData!['id_divisi'];
+      if (divisionId != null) {
+        _selectedDivisionId =
+            divisionId is int ? divisionId : int.tryParse(divisionId.toString());
+      }
+    }
+
+    final byOutlet = <int, Map<String, dynamic>>{};
+    for (final raw in lines) {
+      final line = Map<String, dynamic>.from(raw as Map);
+      final oid = int.tryParse(line['owner_outlet_id'].toString());
+      if (oid == null) continue;
+
+      if (!byOutlet.containsKey(oid)) {
+        byOutlet[oid] = {
+          'outlet_id': oid,
+          'categories': <String, Map<String, dynamic>>{},
+        };
+      }
+
+      final catKey = categoryId?.toString() ?? 'lb';
+      final cats = byOutlet[oid]!['categories'] as Map<String, dynamic>;
+      if (!cats.containsKey(catKey)) {
+        cats[catKey] = {
+          'category_id': _selectedCategoryId,
+          'items': <Map<String, dynamic>>[],
+        };
+      }
+
+      final asset = line['asset'] is Map
+          ? Map<String, dynamic>.from(line['asset'] as Map)
+          : <String, dynamic>{};
+      final items = cats[catKey]!['items'] as List<Map<String, dynamic>>;
+      final typeLabel = line['type']?.toString() == 'breakage' ? 'Rusak' : 'Hilang';
+      items.add({
+        'item_name': asset['name']?.toString() ?? line['item_name']?.toString() ?? '',
+        'qty': line['qty_remaining'],
+        'unit': line['unit_name']?.toString() ?? '',
+        'unit_price': 0.0,
+        'subtotal': 0.0,
+        'outlet_id': oid,
+        'category_id': _selectedCategoryId,
+        'lost_breakage_detail_id': line['lost_breakage_detail_id'],
+        'selectedAsset': asset,
+        'lb_note': '${line['header_number'] ?? ''} · $typeLabel',
+      });
+    }
+
+    _outlets = byOutlet.values.map((o) {
+      final cats = (o['categories'] as Map).values
+          .map((c) => Map<String, dynamic>.from(c as Map))
+          .toList();
+      return {
+        'outlet_id': o['outlet_id'],
+        'categories': cats,
+      };
+    }).toList();
   }
 
   void _initializeForm() {
@@ -315,6 +399,10 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
       // Load next PR number (preview) - same logic as web
       if (widget.editData == null) {
         await _loadNextPrNumber();
+      }
+
+      if (widget.lbPrefill != null) {
+        _applyLbPrefill();
       }
 
       // Debug: Print loaded data
@@ -544,6 +632,8 @@ class _PurchaseRequisitionCreateScreenState extends State<PurchaseRequisitionCre
                 'subtotal': subtotal,
                 'outlet_id': outletIdInt,
                 'category_id': categoryIdInt,
+                if (itemMap['lost_breakage_detail_id'] != null)
+                  'lost_breakage_detail_id': itemMap['lost_breakage_detail_id'],
               });
             }
           }

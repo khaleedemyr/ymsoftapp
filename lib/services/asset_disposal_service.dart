@@ -91,13 +91,21 @@ class AssetDisposalService {
     }
   }
 
-  Future<List<dynamic>> searchItems(String query, int warehouseOutletId) async {
+  Future<List<dynamic>> searchItems(
+    String query, {
+    required int ownerOutletId,
+    required int warehouseOutletId,
+  }) async {
     try {
       final token = await _getToken();
       if (token == null) return [];
 
-      final uri = Uri.parse('$baseUrl/api/approval-app/items/search-for-asset-transfer')
-          .replace(queryParameters: {'q': query, 'warehouse_outlet_id': warehouseOutletId.toString()});
+      final uri = Uri.parse('$baseUrl/api/items/search-for-asset-transfer')
+          .replace(queryParameters: {
+        'q': query,
+        'owner_outlet_id': ownerOutletId.toString(),
+        'warehouse_outlet_id': warehouseOutletId.toString(),
+      });
       final response = await http.get(uri, headers: _headers(token));
 
       if (response.statusCode == 200) {

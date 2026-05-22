@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../models/approval_models.dart';
 
-class AssetServiceOrderApprovalCard extends StatelessWidget {
-  final AssetServiceOrderApproval approval;
+class LostBreakageApprovalCard extends StatelessWidget {
+  final LostBreakageApproval approval;
   final VoidCallback onTap;
 
-  const AssetServiceOrderApprovalCard({
+  const LostBreakageApprovalCard({
     super.key,
     required this.approval,
     required this.onTap,
@@ -14,17 +13,15 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('dd MMM yyyy', 'id_ID');
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.purple.shade50,
+          color: Colors.orange.shade50,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.purple.shade200, width: 1),
+          border: Border.all(color: Colors.orange.shade200, width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -35,14 +32,14 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: Colors.purple.shade500,
+                    color: Colors.orange.shade600,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    approval.orderNumber ?? 'No Number',
+                    approval.number ?? 'No Number',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -54,51 +51,34 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Asset Repair & Maintenance',
+              'Asset Lost & Breakage',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.purple,
+                color: Colors.deepOrange,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (approval.assetName != null) ...[
+            if (approval.outletName != null) ...[
               const SizedBox(height: 4),
               Text(
-                approval.assetName!,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade700,
-                ),
+                approval.outletName!,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            if (approval.serviceType != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Service: ${approval.serviceType!}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ],
-            if (approval.createdByName != null) ...[
+            if (approval.creatorName != null) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(
-                    Icons.person_outline,
-                    size: 12,
-                    color: Colors.purple.shade600,
-                  ),
+                  Icon(Icons.person_outline, size: 12, color: Colors.orange.shade700),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      approval.createdByName!,
+                      approval.creatorName!,
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.purple.shade700,
+                        color: Colors.orange.shade800,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -108,14 +88,11 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
                 ],
               ),
             ],
-            if (approval.createdAt != null) ...[
+            if (approval.date != null) ...[
               const SizedBox(height: 4),
               Text(
-                dateFormat.format(approval.createdAt!),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.shade500,
-                ),
+                approval.date!,
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
               ),
             ],
           ],

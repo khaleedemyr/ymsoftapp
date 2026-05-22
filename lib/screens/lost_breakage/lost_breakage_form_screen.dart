@@ -28,8 +28,12 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
   bool _submitting = false;
   int? _headerId;
   DateTime _date = DateTime.now();
+  int? _ownerOutletId;
+  String? _ownerOutletName;
   int? _outletId;
   String? _outletName;
+  int? _warehouseOutletId;
+  List<Map<String, dynamic>> _warehouseOutlets = [];
   Map<String, dynamic>? _userData;
   List<Map<String, dynamic>> _outlets = [];
   List<Map<String, dynamic>> _assetItems = [];
@@ -96,10 +100,21 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
     final auth = AuthService();
     _userData = await auth.getUserData();
     _assetItems = await _service.getAssetItems();
-    if (_isAdmin) _outlets = await _service.getOutlets();
-    if (!_isAdmin && _userData != null) {
-      _outletId = int.tryParse(_userData!['id_outlet']?.toString() ?? '');
-      _outletName = _userData!['outlet_name']?.toString() ?? _userData!['nama_outlet']?.toString();
+    final meta = await _service.getFormMeta();
+    if (meta != null && meta['warehouse_outlets'] is List) {
+      _warehouseOutlets = (meta['warehouse_outlets'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+    if (_isAdmin) {
+      _outlets = await _service.getOutlets();
+    } else if (_userData != null) {
+      _ownerOutletId = int.tryParse(_userData!['id_outlet']?.toString() ?? '');
+      _ownerOutletName =
+          _userData!['outlet_name']?.toString() ?? _userData!['nama_outlet']?.toString();
+      _outletId = _ownerOutletId;
+      _outletName = _ownerOutletName;
+      _outlets = await _service.getOutlets();
     }
 
     if (_headerId != null) {
@@ -108,7 +123,11 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
         final h = Map<String, dynamic>.from(res['header'] as Map);
         _date = DateTime.tryParse(h['date']?.toString() ?? '') ?? DateTime.now();
         _dateController.text = DateFormat('yyyy-MM-dd').format(_date);
+        _ownerOutletId = int.tryParse(h['owner_outlet_id']?.toString() ?? '') ?? _ownerOutletId;
+        _ownerOutletName = h['owner_outlet_name']?.toString() ?? _ownerOutletName;
         _outletId = int.tryParse(h['outlet_id']?.toString() ?? '');
+        _outletName = h['outlet_name']?.toString() ?? _outletName;
+        _warehouseOutletId = int.tryParse(h['warehouse_outlet_id']?.toString() ?? '');
         _notesController.text = h['notes']?.toString() ?? '';
         final details = res['details'] as List? ?? [];
         for (final d in details) {
@@ -246,10 +265,15 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
       });
     }
 
+    final ownerId = _ownerOutletId ?? _outletId;
+    if (ownerId == null) return false;
+
     final payload = {
       'header_id': _headerId,
       'date': DateFormat('yyyy-MM-dd').format(_date),
+      'owner_outlet_id': ownerId,
       'outlet_id': _outletId,
+      if (_warehouseOutletId != null) 'warehouse_outlet_id': _warehouseOutletId,
       'notes': _notesController.text,
       'items': items,
       if (autoSave) 'autosave': true,
@@ -268,9 +292,26 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
     return false;
   }
 
+  List<DropdownMenuItem<int>> get _warehouseDropdownItems {
+    final loc = _outletId;
+    final seen = <int>{};
+    final items = <DropdownMenuItem<int>>[];
+    for (final w in _warehouseOutlets) {
+      if (loc != null && int.tryParse(w['outlet_id'].toString()) != loc) continue;
+      final id = int.tryParse(w['id'].toString());
+      if (id == null || seen.contains(id)) continue;
+      seen.add(id);
+      items.add(DropdownMenuItem<int>(
+        value: id,
+        child: Text(w['name']?.toString() ?? '', style: const TextStyle(fontSize: 13)),
+      ));
+    }
+    return items;
+  }
+
   Future<void> _doSave() async {
     if (_outletId == null) {
-      _showMessage('Pilih outlet');
+      _showMessage('Pilih outlet lokasi');
       return;
     }
     setState(() => _saving = true);
@@ -284,7 +325,7 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
 
   Future<void> _doSubmit() async {
     if (_outletId == null) {
-      _showMessage('Pilih outlet');
+      _showMessage('Pilih outlet lokasi');
       return;
     }
     final hasItems = _formItems.any((fi) => fi.itemId != null);
@@ -438,7 +479,7 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: _headerId != null ? 'Edit Lost & Breakage' : 'Buat Lost & Breakage',
+      title: _headerId != null ? 'Edit Asset L&B' : 'Buat Asset L&B',
       showDrawer: false,
       body: _loading
           ? const Center(child: AppLoadingIndicator(size: 32, color: _primaryColor))
@@ -484,24 +525,60 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
           const SizedBox(height: 12),
           if (_isAdmin)
             InputDecorator(
-              decoration: _inputDecoration('Outlet'),
+              decoration: _inputDecoration('Outlet Pemilik *'),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<int>(
-                  value: _outletDropdownItems.any((d) => d.value == _outletId) ? _outletId : null,
+                  value: _outletDropdownItems.any((d) => d.value == _ownerOutletId) ? _ownerOutletId : null,
                   isExpanded: true,
                   isDense: true,
-                  hint: const Text('Pilih Outlet'),
+                  hint: const Text('Pilih pemilik'),
                   items: _outletDropdownItems,
-                  onChanged: (v) => setState(() => _outletId = v),
+                  onChanged: (v) => setState(() => _ownerOutletId = v),
                 ),
               ),
             )
           else
             TextField(
               readOnly: true,
-              controller: TextEditingController(text: _outletName ?? 'Outlet #${_outletId ?? '-'}'),
-              decoration: _inputDecoration('Outlet'),
+              controller: TextEditingController(text: _ownerOutletName ?? '-'),
+              decoration: _inputDecoration('Outlet Pemilik *'),
             ),
+          const SizedBox(height: 12),
+          InputDecorator(
+            decoration: _inputDecoration('Outlet Lokasi *'),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _outletDropdownItems.any((d) => d.value == _outletId) ? _outletId : null,
+                isExpanded: true,
+                isDense: true,
+                hint: const Text('Pilih lokasi'),
+                items: _outletDropdownItems,
+                onChanged: (v) => setState(() {
+                  _outletId = v;
+                  _warehouseOutletId = null;
+                }),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          InputDecorator(
+            decoration: _inputDecoration('Gudang (opsional)'),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _warehouseDropdownItems.any((d) => d.value == _warehouseOutletId)
+                    ? _warehouseOutletId
+                    : null,
+                isExpanded: true,
+                isDense: true,
+                hint: const Text('— Opsional —'),
+                items: [
+                  const DropdownMenuItem<int>(value: null, child: Text('— Opsional —')),
+                  ..._warehouseDropdownItems,
+                ],
+                onChanged: (v) => setState(() => _warehouseOutletId = v),
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _notesController,

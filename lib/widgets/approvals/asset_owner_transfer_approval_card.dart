@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/approval_models.dart';
 
-class AssetServiceOrderApprovalCard extends StatelessWidget {
-  final AssetServiceOrderApproval approval;
+class AssetOwnerTransferApprovalCard extends StatelessWidget {
+  final AssetOwnerTransferApproval approval;
   final VoidCallback onTap;
 
-  const AssetServiceOrderApprovalCard({
+  const AssetOwnerTransferApprovalCard({
     super.key,
     required this.approval,
     required this.onTap,
   });
+
+  static const Color _violet = Color(0xFF7C3AED);
 
   @override
   Widget build(BuildContext context) {
@@ -22,9 +24,9 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.purple.shade50,
+          color: _violet.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.purple.shade200, width: 1),
+          border: Border.all(color: _violet.withOpacity(0.35), width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,15 +36,15 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: BoxDecoration(
-                    color: Colors.purple.shade500,
+                  decoration: const BoxDecoration(
+                    color: _violet,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    approval.orderNumber ?? 'No Number',
+                    approval.transferNumber ?? 'No Number',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -54,17 +56,17 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Asset Repair & Maintenance',
+              'Transfer Kepemilikan Aset',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.purple,
+                color: _violet,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (approval.assetName != null) ...[
+            if (approval.ownerFromName != null || approval.ownerToName != null) ...[
               const SizedBox(height: 4),
               Text(
-                approval.assetName!,
+                '${approval.ownerFromName ?? '-'} → ${approval.ownerToName ?? '-'}',
                 style: TextStyle(
                   fontSize: 11,
                   color: Colors.grey.shade700,
@@ -73,32 +75,22 @@ class AssetServiceOrderApprovalCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            if (approval.serviceType != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Service: ${approval.serviceType!}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ],
-            if (approval.createdByName != null) ...[
+            if (approval.creatorName != null) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
                   Icon(
                     Icons.person_outline,
                     size: 12,
-                    color: Colors.purple.shade600,
+                    color: _violet.withOpacity(0.8),
                   ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      approval.createdByName!,
+                      approval.creatorName!,
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.purple.shade700,
+                        color: _violet.withOpacity(0.9),
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,

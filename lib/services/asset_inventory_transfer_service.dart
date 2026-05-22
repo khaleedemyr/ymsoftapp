@@ -80,12 +80,19 @@ class AssetInventoryTransferService {
     }
   }
 
-  Future<List<dynamic>> searchItems(String query, {int? warehouseOutletId}) async {
+  Future<List<dynamic>> searchItems(
+    String query, {
+    int? ownerOutletId,
+    int? warehouseOutletId,
+  }) async {
     try {
       final token = await _getToken();
       if (token == null) return [];
 
       final qp = <String, String>{'q': query};
+      if (ownerOutletId != null) {
+        qp['owner_outlet_id'] = ownerOutletId.toString();
+      }
       if (warehouseOutletId != null) {
         qp['warehouse_outlet_id'] = warehouseOutletId.toString();
       }
@@ -103,6 +110,7 @@ class AssetInventoryTransferService {
   }
 
   Future<Map<String, dynamic>> createTransfer({
+    required int ownerOutletId,
     required String transferDate,
     required int warehouseOutletFromId,
     required int warehouseOutletToId,
@@ -115,6 +123,7 @@ class AssetInventoryTransferService {
       if (token == null) return {'success': false, 'message': 'No token'};
 
       final body = {
+        'owner_outlet_id': ownerOutletId,
         'transfer_date': transferDate,
         'warehouse_outlet_from_id': warehouseOutletFromId,
         'warehouse_outlet_to_id': warehouseOutletToId,

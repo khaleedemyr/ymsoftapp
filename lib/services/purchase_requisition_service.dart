@@ -94,6 +94,10 @@ class PurchaseRequisitionService {
       if (item['others_notes'] != null) {
         request.fields['items[$i][others_notes]'] = item['others_notes'] as String;
       }
+      if (item['lost_breakage_detail_id'] != null) {
+        request.fields['items[$i][lost_breakage_detail_id]'] =
+            item['lost_breakage_detail_id'].toString();
+      }
     }
 
     if (approvers != null && approvers.isNotEmpty) {

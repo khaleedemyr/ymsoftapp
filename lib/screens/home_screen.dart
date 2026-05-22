@@ -30,7 +30,9 @@ import '../widgets/approvals/pr_food_approval_card.dart';
 import '../widgets/approvals/po_food_approval_card.dart';
 import '../widgets/approvals/ro_khusus_approval_card.dart';
 import '../widgets/approvals/employee_resignation_approval_card.dart';
+import '../widgets/approvals/lost_breakage_approval_card.dart';
 import '../widgets/approvals/asset_transfer_approval_card.dart';
+import '../widgets/approvals/asset_owner_transfer_approval_card.dart';
 import '../widgets/approvals/asset_adjustment_approval_card.dart';
 import '../widgets/approvals/asset_service_order_approval_card.dart';
 import '../widgets/approvals/asset_disposal_approval_card.dart';
@@ -54,10 +56,12 @@ import 'approvals/pr_food_approval_detail_screen.dart';
 import 'approvals/po_food_approval_detail_screen.dart';
 import 'approvals/ro_khusus_approval_detail_screen.dart';
 import 'approvals/employee_resignation_approval_detail_screen.dart';
-import 'approvals/asset_inventory_transfer_detail_screen.dart';
-import 'approvals/asset_inventory_adjustment_detail_screen.dart';
-import 'approvals/asset_service_order_detail_screen.dart';
+import 'asset_inventory_transfer/asset_inventory_transfer_detail_screen.dart';
+import 'asset_owner_transfer/asset_owner_transfer_detail_screen.dart';
+import 'asset_inventory_adjustment/asset_inventory_adjustment_detail_screen.dart';
+import 'asset_service_order/asset_service_order_detail_screen.dart';
 import 'asset_disposal/asset_disposal_detail_screen.dart';
+import 'lost_breakage/lost_breakage_detail_screen.dart';
 import '../widgets/approval_list_modal.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/customer_voice/capa_home_verification_card.dart';
@@ -107,7 +111,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<POFoodApproval> _poFoodApprovals = [];
   List<ROKhususApproval> _roKhususApprovals = [];
   List<EmployeeResignationApproval> _employeeResignationApprovals = [];
+  List<LostBreakageApproval> _lostBreakageApprovals = [];
   List<AssetInventoryTransferApproval> _assetTransferApprovals = [];
+  List<AssetOwnerTransferApproval> _assetOwnerTransferApprovals = [];
   List<AssetInventoryAdjustmentApproval> _assetAdjustmentApprovals = [];
   List<AssetServiceOrderApproval> _assetServiceOrderApprovals = [];
   List<AssetDisposalApproval> _assetDisposalApprovals = [];
@@ -711,6 +717,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingLostBreakageApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingLostBreakageApprovals();
+      if (mounted) {
+        setState(() {
+          _lostBreakageApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Lost Breakage approvals: $e');
+    }
+  }
+
   Future<void> _loadPendingAssetTransferApprovals() async {
     try {
       final approvals = await _approvalService.getPendingAssetTransferApprovals();
@@ -721,6 +740,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
     } catch (e) {
       print('Error loading Asset Transfer approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingAssetOwnerTransferApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingAssetOwnerTransferApprovals();
+      if (mounted) {
+        setState(() {
+          _assetOwnerTransferApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Asset Owner Transfer approvals: $e');
     }
   }
 
@@ -927,8 +959,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               _employeeResignationApprovals = (_cachedApprovalsJson['employee_resignation'] as List<dynamic>?)
                       ?.map((e) => EmployeeResignationApproval.fromJson(e))
                       .toList() ?? [];
+              _lostBreakageApprovals = (_cachedApprovalsJson['lost_breakage'] as List<dynamic>?)
+                      ?.map((e) => LostBreakageApproval.fromJson(e))
+                      .toList() ?? [];
               _assetTransferApprovals = (_cachedApprovalsJson['asset_transfer'] as List<dynamic>?)
                       ?.map((e) => AssetInventoryTransferApproval.fromJson(e))
+                      .toList() ?? [];
+              _assetOwnerTransferApprovals = (_cachedApprovalsJson['asset_owner_transfer'] as List<dynamic>?)
+                      ?.map((e) => AssetOwnerTransferApproval.fromJson(e))
                       .toList() ?? [];
               _assetAdjustmentApprovals = (_cachedApprovalsJson['asset_adjustment'] as List<dynamic>?)
                       ?.map((e) => AssetInventoryAdjustmentApproval.fromJson(e))
@@ -1031,8 +1069,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'employee_resignation':
           await _loadPendingEmployeeResignationApprovals();
           break;
+        case 'lost_breakage':
+          await _loadPendingLostBreakageApprovals();
+          break;
         case 'asset_transfer':
           await _loadPendingAssetTransferApprovals();
+          break;
+        case 'asset_owner_transfer':
+          await _loadPendingAssetOwnerTransferApprovals();
           break;
         case 'asset_adjustment':
           await _loadPendingAssetAdjustmentApprovals();
@@ -1115,16 +1159,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
       // Batch 5: Asset approvals
       await Future.wait([
+        _loadPendingLostBreakageApprovals(),
         _loadPendingAssetTransferApprovals(),
+        _loadPendingAssetOwnerTransferApprovals(),
         _loadPendingAssetAdjustmentApprovals(),
         _loadPendingAssetServiceOrderApprovals(),
+        _loadPendingAssetDisposalApprovals(),
         _loadPendingPosVoidItemApprovals(),
       ], eagerError: false);
 
       // Save to cache after loading
       await _saveApprovalsToCache();
 
-      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}, AssetTransfer=${_assetTransferApprovals.length}, AssetAdjustment=${_assetAdjustmentApprovals.length}, AssetServiceOrder=${_assetServiceOrderApprovals.length}, AssetDisposal=${_assetDisposalApprovals.length}, PosVoidItem=${_posVoidItemApprovals.length}');
+      print('Approvals loaded: PR=${_prApprovals.length}, PO=${_poOpsApprovals.length}, Leave=${_leaveApprovals.length}, HRD=${_hrdApprovals.length}, CategoryCost=${_categoryCostApprovals.length}, StockAdj=${_stockAdjustmentApprovals.length}, StockOpname=${_stockOpnameApprovals.length}, WhStockOpname=${_warehouseStockOpnameApprovals.length}, CCTV=${_cctvAccessRequestApprovals.length}, OutletTransfer=${_outletTransferApprovals.length}, ContraBon=${_contraBonApprovals.length}, Movement=${_movementApprovals.length}, Coaching=${_coachingApprovals.length}, Correction=${_correctionApprovals.length}, FoodPayment=${_foodPaymentApprovals.length}, NonFoodPayment=${_nonFoodPaymentApprovals.length}, PRFood=${_prFoodApprovals.length}, POFood=${_poFoodApprovals.length}, ROKhusus=${_roKhususApprovals.length}, EmployeeResignation=${_employeeResignationApprovals.length}, AssetTransfer=${_assetTransferApprovals.length}, AssetOwnerTransfer=${_assetOwnerTransferApprovals.length}, AssetAdjustment=${_assetAdjustmentApprovals.length}, AssetServiceOrder=${_assetServiceOrderApprovals.length}, AssetDisposal=${_assetDisposalApprovals.length}, PosVoidItem=${_posVoidItemApprovals.length}');
     } catch (e) {
       print('Error loading approvals: $e');
     } finally {
@@ -1158,7 +1205,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _poFoodApprovals.length +
         _roKhususApprovals.length +
         _employeeResignationApprovals.length +
+        _lostBreakageApprovals.length +
         _assetTransferApprovals.length +
+        _assetOwnerTransferApprovals.length +
         _assetAdjustmentApprovals.length +
         _assetServiceOrderApprovals.length +
         _assetDisposalApprovals.length +
@@ -3312,6 +3361,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ],
 
+            // Asset Lost & Breakage Approvals
+            if (_lostBreakageApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Asset Lost & Breakage',
+                _lostBreakageApprovals.length,
+                Colors.deepOrange,
+                _lostBreakageApprovals.map((approval) => LostBreakageApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => LostBreakageDetailScreen(headerId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('lost_breakage');
+                      }
+                    });
+                  },
+                )).toList(),
+                'lost_breakage',
+              ),
+            ],
+
             // Asset Inventory Transfer Approvals
             if (_assetTransferApprovals.isNotEmpty) ...[
               const SizedBox(height: 20),
@@ -3335,6 +3410,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   },
                 )).toList(),
                 'asset_transfer',
+              ),
+            ],
+
+            // Asset Owner Transfer Approvals
+            if (_assetOwnerTransferApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Transfer Kepemilikan Aset',
+                _assetOwnerTransferApprovals.length,
+                const Color(0xFF7C3AED),
+                _assetOwnerTransferApprovals.map((approval) => AssetOwnerTransferApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AssetOwnerTransferDetailScreen(transferId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('asset_owner_transfer');
+                      }
+                    });
+                  },
+                )).toList(),
+                'asset_owner_transfer',
               ),
             ],
 
@@ -3368,7 +3469,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             if (_assetServiceOrderApprovals.isNotEmpty) ...[
               const SizedBox(height: 20),
               _buildModernApprovalSection(
-                'Asset Service Order',
+                'Asset Repair & Maintenance',
                 _assetServiceOrderApprovals.length,
                 Colors.purple,
                 _assetServiceOrderApprovals.map((approval) => AssetServiceOrderApprovalCard(
@@ -3649,8 +3750,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       case 'employee_resignation':
         approvals = _employeeResignationApprovals;
         break;
+      case 'lost_breakage':
+        approvals = _lostBreakageApprovals;
+        break;
       case 'asset_transfer':
         approvals = _assetTransferApprovals;
+        break;
+      case 'asset_owner_transfer':
+        approvals = _assetOwnerTransferApprovals;
         break;
       case 'asset_adjustment':
         approvals = _assetAdjustmentApprovals;

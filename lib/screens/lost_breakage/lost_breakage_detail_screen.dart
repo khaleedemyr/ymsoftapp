@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 import 'lost_breakage_form_screen.dart';
+import 'lost_breakage_replacement_backlog_screen.dart';
 
 class LostBreakageDetailScreen extends StatefulWidget {
   final int headerId;
@@ -22,8 +23,6 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
   List<Map<String, dynamic>> _flows = [];
   bool _loading = true;
   bool _actionLoading = false;
-  bool _canRecordReplacements = false;
-
   @override
   void initState() {
     super.initState();
@@ -40,7 +39,6 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
           _header = res['header'] is Map ? Map<String, dynamic>.from(res['header']) : null;
           _details = (res['details'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
           _flows = (res['approval_flows'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
-          _canRecordReplacements = res['can_record_replacements'] == true;
         });
       }
     } catch (e) {
@@ -80,7 +78,9 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
     setState(() => _actionLoading = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res?['message'] ?? 'Gagal')));
-      if (res?['success'] == true) _load();
+      if (res?['success'] == true) {
+        Navigator.pop(context, true);
+      }
     }
   }
 
@@ -115,14 +115,16 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
     setState(() => _actionLoading = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res?['message'] ?? 'Gagal')));
-      if (res?['success'] == true) _load();
+      if (res?['success'] == true) {
+        Navigator.pop(context, true);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Detail Lost & Breakage',
+      title: 'Asset Lost & Breakage',
       showDrawer: false,
       body: _loading
           ? const Center(child: AppLoadingIndicator(size: 26, color: Color(0xFFE65100)))
@@ -144,8 +146,12 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
           const SizedBox(height: 16),
           _buildApprovalFlowCard(),
         ],
+        if (status == 'APPROVED' && _hasRemainingQty) ...[
+          const SizedBox(height: 16),
+          _buildReplacementBanner(),
+        ],
         const SizedBox(height: 16),
-        const Text('Detail Item', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+        const Text('Detail Item & Penggantian', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
         const SizedBox(height: 10),
         ..._details.map(_buildItemCard),
         const SizedBox(height: 24),
@@ -211,7 +217,11 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
         children: [
           const Text('Informasi', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
           const SizedBox(height: 12),
-          _buildInfoRow('Outlet', _header!['outlet_name']?.toString() ?? '-'),
+          _buildInfoRow('Outlet Pemilik', _header!['owner_outlet_name']?.toString() ?? '-'),
+          _buildInfoRow('Outlet Lokasi', _header!['outlet_name']?.toString() ?? '-'),
+          if (_header!['warehouse_outlet_name'] != null &&
+              _header!['warehouse_outlet_name'].toString().isNotEmpty)
+            _buildInfoRow('Gudang', _header!['warehouse_outlet_name']?.toString() ?? '-'),
           _buildInfoRow('Dibuat Oleh', null, valueWidget: _buildCreator(creator, creatorAvatar)),
           if (notes != null && notes.isNotEmpty) _buildInfoRow('Catatan', notes),
         ],
@@ -359,187 +369,57 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
     );
   }
 
-  Future<void> _openReplacementDialog(Map<String, dynamic> detail) async {
-    final detailId = int.tryParse(detail['id'].toString()) ?? 0;
-    final unitId = int.tryParse(detail['unit_id'].toString()) ?? 0;
-    final qtyLine = double.tryParse(detail['qty']?.toString() ?? '0') ?? 0;
-    final repSum =
-        double.tryParse(detail['replaced_qty_total']?.toString() ?? '0') ?? 0;
-    final remaining = detail['remaining_qty'] != null
-        ? (double.tryParse(detail['remaining_qty'].toString()) ??
-            (qtyLine - repSum))
-        : (qtyLine - repSum);
+  bool get _hasRemainingQty {
+    for (final d in _details) {
+      final rem = double.tryParse(d['remaining_qty']?.toString() ?? '');
+      if (rem != null && rem > 1e-6) return true;
+      final qty = double.tryParse(d['qty']?.toString() ?? '0') ?? 0;
+      final rep = double.tryParse(d['replaced_qty_total']?.toString() ?? '0') ?? 0;
+      if (qty - rep > 1e-6) return true;
+    }
+    return false;
+  }
 
-    if (remaining <= 1e-9 || detailId == 0 || unitId == 0) return;
-
-    final qtyCtrl = TextEditingController(
-      text: (remaining >= 1 ? 1.0 : remaining).toString(),
-    );
-    final noteCtrl = TextEditingController();
-    final searchCtrl = TextEditingController();
-    List<Map<String, dynamic>> results = [];
-    int? selectedReplacementItemId;
-
-    final payload = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSt) {
-            return AlertDialog(
-              title: const Text('Catat penggantian',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              content: SingleChildScrollView(
-                child: SizedBox(
-                  width: double.maxFinite,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Sisa: ${remaining.toStringAsFixed(4)} ${detail['unit_name'] ?? ''}',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: qtyCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Qty pengganti *',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text('Item pengganti (opsional)',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: searchCtrl,
-                              decoration: const InputDecoration(
-                                hintText: 'SKU / nama...',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.search),
-                            onPressed: () async {
-                              final r = await _service
-                                  .getAssetItems(search: searchCtrl.text);
-                              setSt(() => results = r);
-                            },
-                          ),
-                        ],
-                      ),
-                      if (selectedReplacementItemId != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text(
-                            'Item terpilih: #$selectedReplacementItemId',
-                            style: const TextStyle(
-                                fontSize: 11, color: Color(0xFF047857)),
-                          ),
-                        ),
-                      SizedBox(
-                        height: 120,
-                        child: results.isEmpty
-                            ? const Center(
-                                child: Text('Cari lalu tap hasil',
-                                    style: TextStyle(
-                                        fontSize: 11, color: Colors.grey)))
-                            : ListView.builder(
-                                itemCount: results.length,
-                                itemBuilder: (_, i) {
-                                  final it = results[i];
-                                  final id =
-                                      int.tryParse(it['id'].toString()) ?? 0;
-                                  return ListTile(
-                                    dense: true,
-                                    title: Text(
-                                        it['name']?.toString() ?? '',
-                                        style: const TextStyle(fontSize: 13)),
-                                    subtitle: Text(
-                                        it['sku']?.toString() ?? '',
-                                        style: const TextStyle(fontSize: 11)),
-                                    onTap: () {
-                                      selectedReplacementItemId = id;
-                                      setSt(() {});
-                                    },
-                                  );
-                                },
-                              ),
-                      ),
-                      TextField(
-                        controller: noteCtrl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Catatan (opsional)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                    ],
+  Widget _buildReplacementBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDFA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF99F6E4)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(fontSize: 13, color: Color(0xFF115E59), height: 1.4),
+          children: [
+            const TextSpan(text: 'Penggantian item dilakukan lewat '),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LostBreakageReplacementBacklogScreen(),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Asset Replacement',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F766E),
+                    decoration: TextDecoration.underline,
                   ),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, null),
-                  child: const Text('Batal'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    final q = double.tryParse(qtyCtrl.text) ?? 0;
-                    if (q <= 0 || q > remaining + 1e-6) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(content: Text('Qty tidak valid')),
-                      );
-                      return;
-                    }
-                    Navigator.pop(ctx, {
-                      'qty': q,
-                      'replacement_item_id': selectedReplacementItemId,
-                      'note': noteCtrl.text.trim(),
-                    });
-                  },
-                  child: const Text('Simpan'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+            ),
+            const TextSpan(text: ' → PR Asset → PO → GR Asset (bukan dari halaman ini).'),
+          ],
+        ),
+      ),
     );
-
-    qtyCtrl.dispose();
-    noteCtrl.dispose();
-    searchCtrl.dispose();
-
-    if (payload == null || !mounted) return;
-
-    setState(() => _actionLoading = true);
-    final res = await _service.storeReplacement(
-      widget.headerId,
-      detailId,
-      qtyReplaced: (payload['qty'] as num).toDouble(),
-      unitId: unitId,
-      replacementItemId: payload['replacement_item_id'] as int?,
-      note: (payload['note'] as String?)?.isNotEmpty == true
-          ? payload['note'] as String
-          : null,
-    );
-    setState(() => _actionLoading = false);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(res?['message'] ?? 'Gagal')),
-    );
-    if (res?['success'] == true) _load();
   }
 
   Widget _buildItemCard(Map<String, dynamic> item) {
@@ -589,9 +469,6 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
         fulBg = const Color(0xFFF1F5F9);
         fulFg = const Color(0xFF64748B);
     }
-
-    final showRepBtn =
-        _canRecordReplacements && remaining > 1e-6;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -667,21 +544,6 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
                   const SizedBox(width: 4),
                   const Text('Lihat Foto', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE65100))),
                 ],
-              ),
-            ),
-          ],
-          if (showRepBtn) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _actionLoading ? null : () => _openReplacementDialog(item),
-                icon: const Icon(Icons.add_task, size: 18),
-                label: const Text('Catat penggantian'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFE65100),
-                  side: const BorderSide(color: Color(0xFFE65100)),
-                ),
               ),
             ),
           ],
