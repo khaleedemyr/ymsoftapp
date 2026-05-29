@@ -24,8 +24,6 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   static const Color _accent = Color(0xFF6366F1);
-  final FocusNode _barcodeFocus = FocusNode();
-  final FocusNode _serialFocus = FocusNode();
 
   bool _loadingMeta = true;
   String? _metaError;
@@ -38,9 +36,9 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
   bool _loadingItems = false;
   final List<Map<String, dynamic>> _items = [];
 
-  String _scanMode = 'barcode';
-  final TextEditingController _barcodeCtrl = TextEditingController();
-  final TextEditingController _serialCtrl = TextEditingController();
+  final TextEditingController _unifiedCtrl = TextEditingController();
+  final FocusNode _unifiedFocus = FocusNode();
+  bool _resolvingScan = false;
   String _scanFeedback = '';
   Color _scanFeedbackColor = Colors.transparent;
 
@@ -53,7 +51,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
 
   bool _submitting = false;
 
-  Color get _scanAccent => _scanMode == 'barcode' ? _accent : Colors.deepPurple;
+  static const Color _scanAccent = Color(0xFF6366F1);
 
   static const List<String> _reasonOptions = [
     'Stok kurang',
@@ -70,10 +68,8 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
 
   @override
   void dispose() {
-    _barcodeFocus.dispose();
-    _serialFocus.dispose();
-    _barcodeCtrl.dispose();
-    _serialCtrl.dispose();
+    _unifiedFocus.dispose();
+    _unifiedCtrl.dispose();
     _cameraController?.dispose();
     _audioPlayer.dispose();
     super.dispose();
@@ -173,11 +169,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
         _cameraController = null;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          if (_scanMode == 'barcode') {
-            _barcodeFocus.requestFocus();
-          } else {
-            _serialFocus.requestFocus();
-          }
+          _unifiedFocus.requestFocus();
         });
       }
     });
@@ -193,11 +185,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     setState(() => _cameraProcessing = true);
 
     try {
-      if (_scanMode == 'barcode') {
-        await _onScanBarcode(value);
-      } else {
-        await _onScanSerial(value);
-      }
+      await _onUnifiedScan(value);
     } finally {
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) setState(() => _cameraProcessing = false);
@@ -319,8 +307,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       _selectedPackingListId = '';
       _items.clear();
       _scannedSerials.clear();
-      _barcodeCtrl.clear();
-      _serialCtrl.clear();
+      _unifiedCtrl.clear();
       _scanFeedback = '';
     });
   }
@@ -354,6 +341,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
         if (e is Map) {
           final m = Map<String, dynamic>.from(e);
           m['qty_scan'] = 0.0;
+          m['qty_scan_barcode'] = 0.0;
           _items.add(m);
         }
       }
@@ -361,70 +349,174 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_scanMode == 'barcode') {
-        _barcodeFocus.requestFocus();
-      } else {
-        _serialFocus.requestFocus();
-      }
+      _unifiedFocus.requestFocus();
     });
   }
 
-  Future<void> _onScanBarcode([String? raw]) async {
-    final input = (raw ?? _barcodeCtrl.text).trim();
-    if (input.isEmpty) return;
+  int _itemId(Map<String, dynamic> item) =>
+      int.tryParse((item['item_id'] ?? item['id'])?.toString() ?? '') ?? 0;
+
+  double _getSerialQtySum(Map<String, dynamic> item) {
+    final list = _scannedSerials[_itemId(item)];
+    if (list == null) return 0;
+    return list.fold<double>(0, (sum, s) => sum + (_num(s['effective_qty']) <= 0 ? 1.0 : _num(s['effective_qty'])));
+  }
+
+  void _syncItemQtyScan(Map<String, dynamic> item) {
+    item['qty_scan_barcode'] = _num(item['qty_scan_barcode']);
+    item['qty_scan'] = _num(item['qty_scan_barcode']) + _getSerialQtySum(item);
+  }
+
+  double _getMaxBarcodeQty(Map<String, dynamic> item) {
+    final target = _num(item['qty']);
+    return (target - _getSerialQtySum(item)).clamp(0.0, 1e18);
+  }
+
+  String _computeScanMode() {
+    final hasSerial = _scannedSerials.values.any((l) => l.isNotEmpty);
+    final hasBarcode = _items.any((i) => _num(i['qty_scan_barcode']) > 0);
+    if (hasSerial && hasBarcode) return 'mixed';
+    if (hasSerial) return 'serial';
+    return 'barcode';
+  }
+
+  bool _hasScannedSerials() => _scannedSerials.values.any((l) => l.isNotEmpty);
+
+  Future<void> _onUnifiedScan([String? raw]) async {
+    final input = (raw ?? _unifiedCtrl.text).trim();
+    if (input.isEmpty || _resolvingScan || _selectedPackingListId.isEmpty) return;
+
     String code = input;
-    double? qty;
+    double? presetQty;
     final match = RegExp(r'^(\S+)\s+(\d+(?:\.\d+)?)$').firstMatch(input);
     if (match != null) {
       code = match.group(1)!;
-      qty = double.tryParse(match.group(2)!);
+      presetQty = double.tryParse(match.group(2)!);
     }
+
+    for (final list in _scannedSerials.values) {
+      for (final s in list) {
+        if (s['serial_number']?.toString() == code) {
+          _setFeedback('Nomor seri sudah di-scan sebelumnya!', Colors.red, scanSound: false);
+          _unifiedCtrl.clear();
+          return;
+        }
+      }
+    }
+
+    final pl = _selectedSource;
+    final warehouseId = int.tryParse(pl?['warehouse_id']?.toString() ?? '') ?? 1;
+    final itemIds = _items.map(_itemId).where((id) => id > 0).toList();
+
+    setState(() => _resolvingScan = true);
+    final res = await _service.resolveScan(
+      code: code,
+      packingListId: _selectedPackingListId,
+      warehouseId: warehouseId,
+      itemIds: itemIds,
+    );
+    if (!mounted) return;
+    setState(() => _resolvingScan = false);
+    _unifiedCtrl.clear();
+
+    final type = res['type']?.toString() ?? '';
+    if (type == 'serial') {
+      if (res['valid'] != true) {
+        _setFeedback(res['message']?.toString() ?? 'Serial tidak valid', Colors.red, scanSound: false);
+        return;
+      }
+      final serial = res['serial'];
+      if (serial is Map) {
+        _applySerialScan(code, Map<String, dynamic>.from(serial));
+      } else {
+        _setFeedback('Response serial tidak valid', Colors.red, scanSound: false);
+      }
+    } else if (type == 'barcode') {
+      await _onScanBarcode(code, presetQty);
+    } else {
+      _setFeedback(res['message']?.toString() ?? 'Kode tidak dikenali', Colors.red, scanSound: false);
+    }
+  }
+
+  void _applySerialScan(String serialNumber, Map<String, dynamic> sm) {
+    final itemId = int.tryParse(sm['item_id']?.toString() ?? '') ?? 0;
+    Map<String, dynamic>? matched;
+    for (final i in _items) {
+      if (_itemId(i) == itemId) {
+        matched = i;
+        break;
+      }
+    }
+    if (matched == null) {
+      _setFeedback('Item tidak ditemukan di Packing List!', Colors.red, scanSound: false);
+      return;
+    }
+    final hit = matched;
+    final effectiveQty = _num(sm['effective_qty']) <= 0 ? 1.0 : _num(sm['effective_qty']);
+    final remainingSerial = _num(hit['qty']) - _num(hit['qty_scan_barcode']) - _getSerialQtySum(hit);
+    if (effectiveQty > remainingSerial + 0.001) {
+      _setFeedback('Qty serial melebihi sisa (sisa: ${remainingSerial.toStringAsFixed(2)} ${hit['unit']})', Colors.red, scanSound: false);
+      return;
+    }
+    _scannedSerials.putIfAbsent(itemId, () => []);
+    _scannedSerials[itemId]!.add({
+      'serial_number': serialNumber,
+      'effective_qty': effectiveQty,
+      'repack_unit_name': sm['repack_unit_name'],
+      'repack_qty': sm['repack_qty'],
+      'unit_name': sm['unit_name'],
+    });
+    setState(() {
+      _syncItemQtyScan(hit);
+      final conv = sm['repack_unit_name'] != null
+          ? ' (1 ${sm['repack_unit_name']} = ${_fmtQty4(sm['repack_qty'])} ${sm['unit_name']})'
+          : '';
+      _setFeedback('[Seri] ${sm['item_name'] ?? ''} - $serialNumber$conv (+$effectiveQty)', Colors.green.shade700, scanSound: true);
+    });
+  }
+
+  Future<void> _onScanBarcode(String code, [double? presetQty]) async {
+    if (code.isEmpty) return;
 
     final item = _findItemByBarcode(code);
     if (item == null) {
       _setFeedback('Barcode tidak ditemukan di Packing List!', Colors.red, scanSound: false);
-      _barcodeCtrl.clear();
       return;
     }
 
-    final maxQty = _num(item['qty']);
-    final currentScan = _num(item['qty_scan']);
+    final maxBarcode = _getMaxBarcodeQty(item);
+    final currentBarcode = _num(item['qty_scan_barcode']);
     final stock = _stockAvailable(item);
 
     if (stock <= 0) {
       _setFeedback('Stok tidak tersedia', Colors.red, scanSound: false);
-      _barcodeCtrl.clear();
       return;
     }
 
-    final addQty = qty ?? 0.0;
+    final qty = presetQty;
     if (qty != null) {
-      if (currentScan + addQty > maxQty) {
-        _setFeedback('Qty scan tidak boleh lebih dari $maxQty (sisa: ${maxQty - currentScan})', Colors.red, scanSound: false);
-        _barcodeCtrl.clear();
+      if (currentBarcode + qty > maxBarcode) {
+        _setFeedback('Qty barcode melebihi sisa (max: $maxBarcode, sisa: ${(maxBarcode - currentBarcode).toStringAsFixed(2)})', Colors.red, scanSound: false);
         return;
       }
-      if (currentScan + addQty > stock) {
+      if (currentBarcode + qty > stock) {
         _setFeedback('Qty scan tidak boleh melebihi stock ($stock)', Colors.red, scanSound: false);
-        _barcodeCtrl.clear();
         return;
       }
       setState(() {
-        item['qty_scan'] = currentScan + addQty;
+        item['qty_scan_barcode'] = currentBarcode + qty;
+        _syncItemQtyScan(item);
       });
-      _setFeedback('Berhasil scan $addQty ${item['unit']}', Colors.green.shade700, scanSound: true);
-      _barcodeCtrl.clear();
+      _setFeedback('[Barcode] +$qty ${item['unit']} (BC: ${item['qty_scan_barcode']}/$maxBarcode)', Colors.green.shade700, scanSound: true);
       return;
     }
 
-    if (currentScan + 0.01 > stock) {
+    if (currentBarcode + 0.01 > stock) {
       _setFeedback('Qty scan tidak boleh melebihi stock ($stock)', Colors.red, scanSound: false);
-      _barcodeCtrl.clear();
       return;
     }
 
-    _barcodeCtrl.clear();
-    final remaining = maxQty - currentScan;
+    final remaining = maxBarcode - currentBarcode;
     final initialQty = remaining > 0 ? remaining : 0.01;
     if (!mounted) return;
     final ctrl = TextEditingController(text: _trimDecimal(initialQty));
@@ -437,12 +529,13 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Item: ${item['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-            Text('Qty Packing List: $maxQty'),
+            Text('Qty Packing List: ${item['qty']}'),
+            Text('Maks barcode: $maxBarcode'),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Qty scan', border: OutlineInputBorder()),
+              decoration: const InputDecoration(labelText: 'Qty scan barcode', border: OutlineInputBorder()),
               autofocus: true,
               onSubmitted: (_) => Navigator.pop(ctx, true),
             ),
@@ -454,7 +547,10 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
         ],
       ),
     );
-    if (ok != true || !mounted) return;
+    if (ok != true || !mounted) {
+      ctrl.dispose();
+      return;
+    }
 
     final inputQty = double.tryParse(ctrl.text.replaceAll(',', '.')) ?? 0;
     ctrl.dispose();
@@ -463,16 +559,17 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       return;
     }
 
-    if (stock < currentScan + inputQty) {
-      _setFeedback('Qty scan tidak boleh melebihi stock (sisa: ${stock - currentScan})', Colors.red, scanSound: false);
+    if (currentBarcode + inputQty > stock) {
+      _setFeedback('Qty scan tidak boleh melebihi stock (sisa: ${(stock - currentBarcode).toStringAsFixed(2)})', Colors.red, scanSound: false);
       return;
     }
-    if (currentScan + inputQty > maxQty) {
-      _setFeedback('Qty scan tidak boleh lebih dari $maxQty (sisa: ${maxQty - currentScan})', Colors.red, scanSound: false);
+    if (currentBarcode + inputQty > maxBarcode) {
+      _setFeedback('Qty barcode melebihi sisa (max: $maxBarcode, sisa: ${(maxBarcode - currentBarcode).toStringAsFixed(2)})', Colors.red, scanSound: false);
       return;
     }
 
-    if (inputQty < maxQty - 1e-9) {
+    final targetTotal = _num(item['qty']);
+    if (inputQty + _getSerialQtySum(item) < targetTotal - 1e-9) {
       if (!mounted) return;
       final reason = await showDialog<String>(
         context: context,
@@ -494,92 +591,23 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       );
       if (reason == null || !mounted) return;
       setState(() {
-        item['qty_scan'] = inputQty;
+        item['qty_scan_barcode'] = currentBarcode + inputQty;
+        _syncItemQtyScan(item);
       });
-      _setFeedback('${item['name']} ($inputQty/$maxQty) - $reason', Colors.orange.shade800);
+      _setFeedback('${item['name']} (total: ${item['qty_scan']}/${item['qty']}) - $reason', Colors.orange.shade800);
       return;
     }
 
     setState(() {
-      item['qty_scan'] = inputQty;
+      item['qty_scan_barcode'] = currentBarcode + inputQty;
+      _syncItemQtyScan(item);
     });
-    _setFeedback('${item['name']} ($inputQty/$maxQty)', Colors.green.shade700, scanSound: true);
+    _setFeedback('${item['name']} (BC: ${item['qty_scan_barcode']}, SN: ${_getSerialQtySum(item)}, total: ${item['qty_scan']}/${item['qty']})', Colors.green.shade700, scanSound: true);
   }
 
   String _trimDecimal(double v) {
     if ((v - v.roundToDouble()).abs() < 1e-9) return v.round().toString();
     return v.toString();
-  }
-
-  Future<void> _onScanSerial([String? raw]) async {
-    final input = (raw ?? _serialCtrl.text).trim();
-    if (input.isEmpty) return;
-    if (_selectedPackingListId.isEmpty) return;
-    for (final list in _scannedSerials.values) {
-      for (final s in list) {
-        if (s['serial_number']?.toString() == input) {
-          _setFeedback('Nomor seri sudah di-scan sebelumnya!', Colors.red, scanSound: false);
-          _serialCtrl.clear();
-          return;
-        }
-      }
-    }
-
-    final pl = _selectedSource;
-    final warehouseId = int.tryParse(pl?['warehouse_id']?.toString() ?? '') ?? 1;
-    final itemIds = _items.map((i) => int.tryParse((i['item_id'] ?? i['id'])?.toString() ?? '') ?? 0).where((id) => id > 0).toList();
-
-    final res = await _service.validateSerial(
-      serialNumber: input,
-      packingListId: _selectedPackingListId,
-      warehouseId: warehouseId,
-      itemIds: itemIds,
-    );
-    if (!mounted) return;
-    _serialCtrl.clear();
-
-    if (res['valid'] != true) {
-      _setFeedback(res['message']?.toString() ?? 'Serial tidak valid', Colors.red, scanSound: false);
-      return;
-    }
-
-    final serial = res['serial'];
-    if (serial is! Map) {
-      _setFeedback('Response serial tidak valid', Colors.red, scanSound: false);
-      return;
-    }
-    final sm = Map<String, dynamic>.from(serial);
-    final itemId = int.tryParse(sm['item_id']?.toString() ?? '') ?? 0;
-    Map<String, dynamic>? matched;
-    for (final i in _items) {
-      final iid = int.tryParse((i['item_id'] ?? i['id'])?.toString() ?? '') ?? 0;
-      if (iid == itemId) {
-        matched = i;
-        break;
-      }
-    }
-    if (matched == null) {
-      _setFeedback('Item tidak ditemukan di Packing List!', Colors.red, scanSound: false);
-      return;
-    }
-    final hit = matched;
-
-    final effectiveQty = _num(sm['effective_qty']) <= 0 ? 1.0 : _num(sm['effective_qty']);
-    _scannedSerials.putIfAbsent(itemId, () => []);
-    _scannedSerials[itemId]!.add({
-      'serial_number': input,
-      'effective_qty': effectiveQty,
-      'repack_unit_name': sm['repack_unit_name'],
-      'repack_qty': sm['repack_qty'],
-      'unit_name': sm['unit_name'],
-    });
-    setState(() {
-      hit['qty_scan'] = _num(hit['qty_scan']) + effectiveQty;
-      final conv = sm['repack_unit_name'] != null
-          ? ' (1 ${sm['repack_unit_name']} = ${_fmtQty4(sm['repack_qty'])} ${sm['unit_name']})'
-          : '';
-      _setFeedback('${sm['item_name'] ?? ''} - $input$conv (+$effectiveQty)', Colors.green.shade700, scanSound: true);
-    });
   }
 
   String _fmtQty4(dynamic v) {
@@ -593,10 +621,9 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     final itemId = int.tryParse((item['item_id'] ?? item['id'])?.toString() ?? '') ?? 0;
     final list = _scannedSerials[itemId];
     if (list == null || idx < 0 || idx >= list.length) return;
-    final removed = list.removeAt(idx);
-    final eq = _num(removed['effective_qty']) <= 0 ? 1.0 : _num(removed['effective_qty']);
+    list.removeAt(idx);
     setState(() {
-      item['qty_scan'] = (_num(item['qty_scan']) - eq).clamp(0.0, 1e18);
+      _syncItemQtyScan(item);
       if (list.isEmpty) _scannedSerials.remove(itemId);
     });
   }
@@ -618,13 +645,13 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
         'barcode': barcodeList,
         'qty': item['qty'],
         'qty_scan': item['qty_scan'],
+        'qty_scan_barcode': _num(item['qty_scan_barcode']),
         'unit': item['unit'],
       };
     }).toList();
   }
 
   List<Map<String, dynamic>> _buildScannedSerialsPayload() {
-    if (_scanMode != 'serial') return [];
     final out = <Map<String, dynamic>>[];
     _scannedSerials.forEach((itemId, serials) {
       if (serials.isEmpty) return;
@@ -661,7 +688,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
 
     final res = await _service.store(
       packingListId: _selectedPackingListId,
-      scanMode: _scanMode,
+      scanMode: _computeScanMode(),
       outletId: outletId,
       warehouseOutletId: warehouseOutletId,
       items: _buildItemsPayload(),
@@ -744,7 +771,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
     final src = _selectedSource;
 
     return AppScaffold(
-      title: 'Delivery Order (Scan Barang)',
+      title: 'Delivery Order (Scan)',
       showDrawer: false,
       body: CustomScrollView(
         slivers: [
@@ -911,52 +938,6 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          setState(() => _scanMode = 'barcode');
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _barcodeFocus.requestFocus();
-                          });
-                        },
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          backgroundColor: _scanMode == 'barcode' ? _accent : null,
-                          foregroundColor: _scanMode == 'barcode' ? Colors.white : _accent,
-                          side: BorderSide(color: _scanMode == 'barcode' ? _accent : const Color(0xFFE2E8F0)),
-                        ),
-                        child: const Text('Barcode'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          setState(() => _scanMode = 'serial');
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _serialFocus.requestFocus();
-                          });
-                        },
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          backgroundColor: _scanMode == 'serial' ? Colors.deepPurple : null,
-                          foregroundColor: _scanMode == 'serial' ? Colors.white : Colors.deepPurple,
-                          side: BorderSide(color: _scanMode == 'serial' ? Colors.deepPurple : const Color(0xFFE2E8F0)),
-                        ),
-                        child: const Text('Nomor Seri'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              sliver: SliverToBoxAdapter(
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -969,23 +950,19 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _scanMode == 'barcode' ? 'Scan barcode' : 'Scan nomor seri',
+                      const Text(
+                        'Scan Barcode / Nomor Seri',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
-                          color: _scanMode == 'barcode' ? _accent : Colors.deepPurple,
+                          color: _scanAccent,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _cameraMode
-                            ? (_scanMode == 'barcode'
-                                ? 'Arahkan kamera ke barcode barang.'
-                                : 'Arahkan kamera ke barcode nomor seri.')
-                            : (_scanMode == 'barcode'
-                                ? 'Gunakan scanner bluetooth (fokus di kolom) atau "KODE 2.5" untuk qty.'
-                                : 'Gunakan scanner bluetooth — satu nomor seri per scan.'),
+                            ? 'Arahkan kamera ke sticker barcode atau nomor seri.'
+                            : 'Sistem otomatis mengenali jenis sticker. Format qty opsional: KODE 2.5',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                       ),
                       if (!kIsWeb) ...[
@@ -996,33 +973,25 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
                       if (_cameraMode) ...[
                         _buildCameraPreview(),
                         const SizedBox(height: 8),
-                      ] else if (_scanMode == 'barcode')
+                      ] else
                         TextField(
-                          controller: _barcodeCtrl,
-                          focusNode: _barcodeFocus,
+                          controller: _unifiedCtrl,
+                          focusNode: _unifiedFocus,
+                          enabled: !_resolvingScan,
                           decoration: InputDecoration(
-                            hintText: 'Tap di sini lalu scan — atau "KODE 2.5" untuk qty',
-                            prefixIcon: const Icon(Icons.qr_code_rounded, color: _accent),
+                            hintText: 'Tap di sini lalu scan…',
+                            prefixIcon: _resolvingScan
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                                  )
+                                : const Icon(Icons.qr_code_scanner_rounded, color: _scanAccent),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                           ),
                           textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _onScanBarcode(),
-                        )
-                      else
-                        TextField(
-                          controller: _serialCtrl,
-                          focusNode: _serialFocus,
-                          decoration: InputDecoration(
-                            hintText: 'Tap di sini lalu scan serial',
-                            prefixIcon: const Icon(Icons.tag_rounded, color: Colors.deepPurple),
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                          ),
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _onScanSerial(),
+                          onSubmitted: (_) => _onUnifiedScan(),
                         ),
                       if (_scanFeedback.isNotEmpty) ...[
                         const SizedBox(height: 10),
@@ -1040,7 +1009,7 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
                 ),
               ),
             ),
-            if (_scanMode == 'serial' && _scannedSerials.values.any((l) => l.isNotEmpty))
+            if (_hasScannedSerials())
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 sliver: SliverToBoxAdapter(
@@ -1255,19 +1224,29 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () {
-          if (_scanMode == 'barcode') {
-            _barcodeFocus.requestFocus();
-          } else {
-            _serialFocus.requestFocus();
-          }
-        },
+        onTap: () => _unifiedFocus.requestFocus(),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(item['name']?.toString() ?? '-', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              if (_getSerialQtySum(item) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'SN: ${_getSerialQtySum(item).toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.deepPurple.shade700),
+                  ),
+                ),
+              if (_num(item['qty_scan_barcode']) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    'BC: ${_num(item['qty_scan_barcode']).toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade700),
+                  ),
+                ),
               if (item['units'] is Map && item['stock'] is Map) ...[
                 const SizedBox(height: 4),
                 _stockLine(item, 'small'),

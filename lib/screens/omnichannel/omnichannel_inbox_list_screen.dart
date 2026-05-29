@@ -7,6 +7,7 @@ import '../../utils/omni_channel_icon.dart';
 import '../../utils/omni_theme.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import 'omnichannel_chat_analytics_screen.dart';
 import 'omnichannel_contact_sheet.dart';
 import 'omnichannel_inbox_chat_screen.dart';
 
@@ -28,7 +29,7 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
   final _searchCtrl = TextEditingController();
   bool _loading = true;
   bool _pollInFlight = false;
-  String _inbox = 'all';
+  String _inbox = 'mine';
   String? _channelFilter;
   String? _leadStageFilter;
   OmniInboxBootstrap? _bootstrap;
@@ -80,15 +81,7 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
       if (!mounted) return;
       final prev = _bootstrap!;
       setState(() {
-        _bootstrap = OmniInboxBootstrap(
-          conversations: poll.conversations,
-          inbox: _inbox,
-          leadStages: prev.leadStages,
-          assignableUsers: prev.assignableUsers,
-          assignableTeams: prev.assignableTeams,
-          canSeeAllChats: prev.canSeeAllChats,
-          messageTemplates: prev.messageTemplates,
-        );
+        _bootstrap = prev.copyWith(conversations: poll.conversations, inbox: _inbox);
       });
     } catch (_) {
       // Abaikan error poll — user masih bisa pull-to-refresh
@@ -111,6 +104,11 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
         setState(() {
           _bootstrap = data;
           _loading = false;
+          if (!data.canSeeAllChats) {
+            if (_inbox == 'unassigned') {
+              _inbox = 'mine';
+            }
+          }
         });
       }
     } catch (e) {
@@ -138,11 +136,15 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
           .map((a) => '${a.name} ${a.jabatan ?? ''} ${a.outlet ?? ''}'.toLowerCase())
           .join(' ');
       final teamNames = c.assignedTeams.map((t) => t.name.toLowerCase()).join(' ');
+      final memberName = (c.member?.namaLengkap ?? '').toLowerCase();
+      final tier = (c.member?.memberLevel ?? '').toLowerCase().replaceAll('_', ' ');
       return name.contains(q) ||
           phone.contains(q) ||
           title.contains(q) ||
           assigneeBits.contains(q) ||
-          teamNames.contains(q);
+          teamNames.contains(q) ||
+          memberName.contains(q) ||
+          tier.contains(q);
     }).toList();
   }
 
@@ -177,6 +179,18 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
 
     return AppScaffold(
       title: channelTitle ?? 'Inbox Omnichannel',
+      actions: [
+        IconButton(
+          tooltip: 'Analisis chat',
+          icon: const Icon(Icons.bar_chart_rounded),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const OmnichannelChatAnalyticsScreen()),
+            );
+          },
+        ),
+      ],
       body: Container(
         color: OmniTheme.surface,
         child: Column(
@@ -288,15 +302,17 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
                 },
               ),
             ],
-            if (canSeeAll) ...[
-              const SizedBox(height: 10),
-              _InboxFilterBar(inbox: _inbox, onChanged: (v) {
+            const SizedBox(height: 10),
+            _InboxFilterBar(
+              inbox: _inbox,
+              canSeeAllChats: canSeeAll,
+              onChanged: (v) {
                 if (_inbox != v) {
                   setState(() => _inbox = v);
                   _load();
                 }
-              }),
-            ],
+              },
+            ),
             Expanded(
               child: _loading
                   ? const Center(child: AppLoadingIndicator())
@@ -432,6 +448,8 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
                     leadStages: bootstrap.leadStages,
                     assignableUsers: bootstrap.assignableUsers,
                     assignableTeams: bootstrap.assignableTeams,
+                    maritalStatusOptions: bootstrap.maritalStatusOptions,
+                    outletOptions: bootstrap.outletOptions,
                     onUpdated: (_) => _load(),
                   );
                 },
@@ -656,17 +674,27 @@ class _LeadChip extends StatelessWidget {
 
 class _InboxFilterBar extends StatelessWidget {
   final String inbox;
+  final bool canSeeAllChats;
   final ValueChanged<String> onChanged;
 
-  const _InboxFilterBar({required this.inbox, required this.onChanged});
+  const _InboxFilterBar({
+    required this.inbox,
+    required this.canSeeAllChats,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const tabs = [
-      ('all', 'Semua'),
-      ('mine', 'Saya'),
-      ('unassigned', 'Belum ditugaskan'),
-    ];
+    final tabs = canSeeAllChats
+        ? <(String, String)>[
+            ('all', 'Semua'),
+            ('mine', 'Ditugaskan ke saya'),
+            ('unassigned', 'Belum ditugaskan'),
+          ]
+        : <(String, String)>[
+            ('mine', 'Ditugaskan ke saya'),
+            ('all', 'Tim saya'),
+          ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -845,6 +873,27 @@ class _ChatListTile extends StatelessWidget {
                         if (c.channelAccountLabel != null && c.channelAccountLabel!.trim().isNotEmpty) ...[
                           const SizedBox(width: 6),
                           OmniChannelAccountBadge(channel: c.channel, label: c.channelAccountLabel!.trim()),
+                        ],
+                        if (c.member != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green.shade200),
+                            ),
+                            child: Text(
+                              c.member!.tierLabel.isEmpty
+                                  ? 'Member'
+                                  : 'Member · ${c.member!.tierLabel}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          ),
                         ],
                         if (timeLabel.isNotEmpty) ...[
                           const SizedBox(width: 6),

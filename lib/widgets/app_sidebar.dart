@@ -13,6 +13,7 @@ import '../screens/purchase_requisition_list_screen.dart';
 import '../screens/tickets/ticket_list_screen.dart';
 import '../screens/guest_comment/guest_comment_list_screen.dart';
 import '../screens/support/support_admin_panel_screen.dart';
+import '../screens/omnichannel/omnichannel_chat_analytics_screen.dart';
 import '../screens/omnichannel/omnichannel_inbox_list_screen.dart';
 import '../screens/instagram_comments/instagram_comments_screen.dart';
 import '../screens/settings/user_role_settings_screen.dart';
@@ -706,6 +707,9 @@ class _AppSidebarState extends State<AppSidebar> {
     if (route == '/crm/omnichannel-inbox' || route.startsWith('/crm/omnichannel-inbox')) {
       route = '/crm/omnichannel-inbox';
     }
+    if (route == '/crm/omnichannel-chat-analytics' || route.startsWith('/crm/omnichannel-chat-analytics')) {
+      route = '/crm/omnichannel-chat-analytics';
+    }
     if (route == '/crm/instagram-comments' || route.startsWith('/crm/instagram-comments')) {
       route = '/crm/instagram-comments';
     }
@@ -778,6 +782,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/marketing/dashboard',
       '/crm/dashboard',
       '/crm/omnichannel-inbox',
+      '/crm/omnichannel-chat-analytics',
       '/crm/instagram-comments',
       '/cashflow-outlet-dashboard',
       '/pr-ops/report',
@@ -1114,6 +1119,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const OmnichannelInboxListScreen(),
+        ),
+      );
+    } else if (route == '/crm/omnichannel-chat-analytics') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const OmnichannelChatAnalyticsScreen(),
         ),
       );
     } else if (route == '/crm/instagram-comments') {

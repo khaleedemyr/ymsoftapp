@@ -32,6 +32,18 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
   bool _isSpsLoading = false;
   Map<String, dynamic>? _spsItem;
 
+  bool _isGrItemComplete(OutletDeliveryOrderItem item) {
+    if (item.receiveViaSerialOnly) return true;
+    final target = item.barcodeTarget;
+    return item.qtyScan >= target - 0.001;
+  }
+
+  bool get _isReadyToSubmit =>
+      _items.isNotEmpty && _items.every(_isGrItemComplete);
+
+  List<OutletDeliveryOrderItem> get _barcodeItems =>
+      _items.where((item) => item.isBarcodeItem).toList();
+
   @override
   void initState() {
     super.initState();
@@ -74,7 +86,7 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
       if (detail != null) {
         _doDetail = OutletDeliveryOrderDetail.fromJson(detail);
         _items = _doDetail?.items.map((item) {
-          item.qtyScan = 0;
+          item.qtyScan = item.receiveViaSerial ? item.qtyPackingList : 0;
           return item;
         }).toList() ?? [];
       }
@@ -130,7 +142,17 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
       return;
     }
 
-    final remaining = item.qtyPackingList - item.qtyScan;
+    if (item.receiveViaSerialOnly) {
+      _setFeedback(
+        'Item ini pakai nomor seri. Terima lewat menu GR Serial Outlet.',
+        Colors.red.shade600,
+      );
+      _barcodeController.clear();
+      return;
+    }
+
+    final maxQty = item.barcodeTarget;
+    final remaining = maxQty - item.qtyScan;
     if (remaining <= 0) {
       _setFeedback('Qty scan sudah maksimal untuk ${item.itemName}', Colors.red.shade600);
       _barcodeController.clear();
@@ -154,10 +176,10 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
       item.qtyScan += qty;
     });
 
-    final isExact = item.qtyScan.toStringAsFixed(2) == item.qtyPackingList.toStringAsFixed(2);
+    final isExact = item.qtyScan.toStringAsFixed(2) == maxQty.toStringAsFixed(2);
     final message = isExact
-        ? 'Lengkap: ${item.itemName} (${item.qtyScan.toStringAsFixed(2)}/${item.qtyPackingList})'
-        : 'Scan: ${item.itemName} (${item.qtyScan.toStringAsFixed(2)}/${item.qtyPackingList})';
+        ? 'Lengkap: ${item.itemName} (${item.qtyScan.toStringAsFixed(2)}/$maxQty)'
+        : 'Scan: ${item.itemName} (${item.qtyScan.toStringAsFixed(2)}/$maxQty)';
 
     _setFeedback(message, isExact ? Colors.green.shade700 : Colors.orange.shade700);
     _barcodeController.clear();
@@ -213,6 +235,26 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
       return;
     }
 
+    if (_barcodeItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Semua item di DO ini memakai nomor seri. Gunakan menu GR Serial Outlet.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!_isReadyToSubmit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masih ada item barcode yang belum lengkap di-scan'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await _showPreviewDialog();
     if (confirmed != true) return;
 
@@ -220,10 +262,10 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
       _isSubmitting = true;
     });
 
-    final payloadItems = _items.map((item) {
+    final payloadItems = _barcodeItems.map((item) {
       return {
         'item_id': item.itemId,
-        'qty': item.qtyPackingList,
+        'qty': item.barcodeTarget,
         if (item.unitId != null) 'unit_id': item.unitId,
         'received_qty': item.qtyScan,
       };
@@ -253,14 +295,16 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
   }
 
   Future<bool?> _showPreviewDialog() async {
-    final unscannedItems = _items.where((item) => item.qtyScan == 0).toList();
-    final incompleteItems = _items
-        .where((item) => item.qtyScan > 0 && item.qtyScan < item.qtyPackingList)
-        .toList();
+    final barcodeItems = _barcodeItems;
+    final unscannedItems =
+        barcodeItems.where((item) => item.qtyScan <= 0).toList();
+    final incompleteItems = barcodeItems.where((item) {
+      final target = item.barcodeTarget;
+      return item.qtyScan > 0 && item.qtyScan < target - 0.001;
+    }).toList();
 
-    final totalItems = _items.length;
-    final scannedItems = _items.where((item) => item.qtyScan > 0).length;
-    final totalQty = _items.fold<double>(0, (sum, item) => sum + item.qtyScan);
+    final scannedItems = barcodeItems.where((item) => item.qtyScan > 0).length;
+    final totalQty = barcodeItems.fold<double>(0, (sum, item) => sum + item.qtyScan);
 
     return showDialog<bool>(
       context: context,
@@ -311,7 +355,7 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
                       if (_doDetail?.info != null)
                         _buildPreviewHeader(),
                       const SizedBox(height: 12),
-                      _buildPreviewSummary(scannedItems, totalItems, totalQty),
+                      _buildPreviewSummary(scannedItems, barcodeItems.length, totalQty),
                       if (unscannedItems.isNotEmpty || incompleteItems.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         _buildPreviewWarning(unscannedItems.length, incompleteItems.length),
@@ -447,7 +491,38 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
   }
 
   Widget _buildPreviewItem(OutletDeliveryOrderItem item) {
-    final isDone = item.qtyScan >= item.qtyPackingList && item.qtyPackingList > 0;
+    if (item.receiveViaSerialOnly) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.purple.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.purple.shade100),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.itemName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text('DO: ${item.qtyPackingList} ${item.unit ?? ''}'),
+                ],
+              ),
+            ),
+            Text(
+              'Via GR Serial',
+              style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final target = item.barcodeTarget;
+    final isDone = item.qtyScan >= target - 0.001 && target > 0;
     final isPartial = item.qtyScan > 0 && !isDone;
     final status = isDone ? 'OK' : (isPartial ? 'Kurang' : 'Belum');
 
@@ -473,6 +548,11 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
                 Text(item.itemName, style: const TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text('DO: ${item.qtyPackingList} ${item.unit ?? ''}'),
+                if (item.hasSerialPortion)
+                  Text(
+                    'Target barcode: $target',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
                 Text('Scan: ${item.qtyScan}'),
               ],
             ),
@@ -503,7 +583,23 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
                   ],
                   const SizedBox(height: 12),
                   if (_items.isNotEmpty) _buildItemsTable(),
-                  if (_items.isNotEmpty) ...[
+                  if (_items.isNotEmpty && _barcodeItems.isEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.purple.shade100),
+                      ),
+                      child: Text(
+                        'Semua item di DO ini memakai nomor seri. Terima lewat menu GR Serial Outlet.',
+                        style: TextStyle(color: Colors.purple.shade900),
+                      ),
+                    ),
+                  ],
+                  if (_barcodeItems.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildScanInput(),
                     const SizedBox(height: 16),
@@ -645,11 +741,58 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
             const Text('Daftar Item', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
             ..._items.map((item) {
-              final isDone = item.qtyScan >= item.qtyPackingList && item.qtyPackingList > 0;
+              if (item.receiveViaSerialOnly) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.purple.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.itemName,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          _buildItemBadge('GR Serial', Colors.purple),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Via GR Serial',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Qty DO: ${item.qtyPackingList} ${item.unit ?? ''}'),
+                    ],
+                  ),
+                );
+              }
+
+              final target = item.barcodeTarget;
+              final isDone = item.qtyScan >= target - 0.001 && target > 0;
               final isPartial = item.qtyScan > 0 && !isDone;
               final status = isDone ? 'OK' : (isPartial ? 'Kurang' : 'Belum');
-                final progress = item.qtyPackingList > 0
-                  ? (item.qtyScan / item.qtyPackingList).clamp(0.0, 1.0).toDouble()
+              final progress = target > 0
+                  ? (item.qtyScan / target).clamp(0.0, 1.0).toDouble()
                   : 0.0;
 
               Color chipBg;
@@ -686,9 +829,18 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            item.itemName,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                item.itemName,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              if (item.hasSerialPortion)
+                                _buildItemBadge('BC + Serial', Colors.indigo),
+                            ],
                           ),
                         ),
                         TextButton(
@@ -726,6 +878,12 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
                         Expanded(
                           child: _buildQtyMetric('Qty DO', '${item.qtyPackingList} ${item.unit ?? ''}'),
                         ),
+                        if (item.hasSerialPortion) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildQtyMetric('Target BC', target.toString()),
+                          ),
+                        ],
                         const SizedBox(width: 8),
                         Expanded(
                           child: _buildQtyMetric('Qty Scan', item.qtyScan.toString()),
@@ -737,6 +895,24 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
               );
             }),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemBadge(String label, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade100,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color.shade800,
         ),
       ),
     );
@@ -881,10 +1057,12 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
   }
 
   Widget _buildSubmitButton() {
+    final canSubmit = _isReadyToSubmit && _barcodeItems.isNotEmpty && !_isSubmitting;
+
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: _isSubmitting ? null : _submit,
+        onPressed: canSubmit ? _submit : null,
         icon: _isSubmitting
             ? const SizedBox(
                 width: 18,

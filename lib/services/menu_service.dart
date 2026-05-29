@@ -373,6 +373,7 @@ class MenuService {
       'menus': [
         {'name': 'Data Member', 'icon': 'fa-solid fa-users', 'route': '/members', 'code': 'crm_members'},
         {'name': 'Inbox Omnichannel', 'icon': 'fa-solid fa-inbox', 'route': '/crm/omnichannel-inbox', 'code': 'omnichannel_inbox'},
+        {'name': 'Analisis Chat Omnichannel', 'icon': 'fa-solid fa-chart-line', 'route': '/crm/omnichannel-chat-analytics', 'code': 'omnichannel_chat_analytics'},
         {'name': 'Komentar IG/FB', 'icon': 'fa-solid fa-comments', 'route': '/crm/instagram-comments', 'code': 'instagram_comments'},
         {'name': 'Customer Voice Command Center', 'icon': 'fa-solid fa-headset', 'route': '/customer-voice-command-center', 'code': 'customer_voice_command_center'},
         {'name': 'Kirim Notifikasi Member', 'icon': 'fa-solid fa-paper-plane', 'route': '/member-notification', 'code': 'member_notification'},

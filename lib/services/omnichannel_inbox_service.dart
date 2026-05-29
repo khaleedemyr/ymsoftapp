@@ -68,8 +68,18 @@ class OmnichannelInboxService {
     return OmniInboxBootstrap.fromJson(Map<String, dynamic>.from(body['data'] as Map));
   }
 
-  Future<({OmniConversation conversation, List<OmniMessage> messages})> fetchMessages(int conversationId) async {
-    final uri = Uri.parse('$_root/conversations/$conversationId/messages');
+  Future<OmniMessagesPageResult> fetchMessages(
+    int conversationId, {
+    int limit = 40,
+    int? beforeId,
+    bool noEnrich = false,
+  }) async {
+    final q = <String, String>{
+      'limit': '$limit',
+      if (beforeId != null) 'before_id': '$beforeId',
+      if (noEnrich) 'no_enrich': '1',
+    };
+    final uri = Uri.parse('$_root/conversations/$conversationId/messages').replace(queryParameters: q);
     final res = await http.get(uri, headers: await _authHeaders());
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
@@ -79,7 +89,12 @@ class OmnichannelInboxService {
     final msgs = (body['messages'] as List? ?? [])
         .map((e) => OmniMessage.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
-    return (conversation: conv, messages: msgs);
+    return OmniMessagesPageResult(
+      conversation: conv,
+      messages: msgs,
+      hasMoreOlder: body['has_more_older'] == true,
+      oldestMessageId: (body['oldest_message_id'] as num?)?.toInt(),
+    );
   }
 
   Future<OmniConversation> updateConversation(int id, Map<String, dynamic> payload) async {
@@ -92,59 +107,148 @@ class OmnichannelInboxService {
     return OmniConversation.fromJson(Map<String, dynamic>.from(body['conversation'] as Map));
   }
 
-  Future<OmniMessage> sendMessage(
+  static const int maxAttachments = 10;
+
+  Future<List<OmniMessage>> sendMessage(
     int conversationId, {
     String? body,
-    String? filePath,
-    String? fileName,
+    List<String> filePaths = const [],
+    List<String>? fileNames,
   }) async {
     return _sendMultipart(
       '$_root/conversations/$conversationId/messages',
       body: body,
-      filePath: filePath,
-      fileName: fileName,
+      filePaths: filePaths,
+      fileNames: fileNames,
     );
   }
 
-  Future<OmniMessage> sendInternalNote(
+  Future<OmniInternalNoteResult> sendInternalNote(
     int conversationId, {
     String? body,
-    String? filePath,
-    String? fileName,
+    List<String> filePaths = const [],
+    List<String>? fileNames,
+    List<int> mentionedUserIds = const [],
   }) async {
-    return _sendMultipart(
-      '$_root/conversations/$conversationId/internal-notes',
-      body: body,
-      filePath: filePath,
-      fileName: fileName,
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_root/conversations/$conversationId/internal-notes'),
     );
-  }
-
-  Future<OmniMessage> _sendMultipart(
-    String url, {
-    String? body,
-    String? filePath,
-    String? fileName,
-  }) async {
-    final request = http.MultipartRequest('POST', Uri.parse(url));
     request.headers.addAll(await _authHeaders(json: false));
     if (body != null && body.trim().isNotEmpty) {
       request.fields['body'] = body.trim();
     }
-    if (filePath != null && filePath.isNotEmpty) {
-      request.files.add(await http.MultipartFile.fromPath(
-        'attachment',
-        filePath,
-        filename: fileName ?? filePath.split(Platform.pathSeparator).last,
-      ));
+    for (final id in mentionedUserIds) {
+      request.fields['mentioned_user_ids[]'] = '$id';
     }
+    await _attachFiles(request, filePaths, fileNames);
     final streamed = await request.send();
     final res = await http.Response.fromStream(streamed);
     final decoded = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
       throw Exception(decoded['message'] ?? 'Gagal mengirim');
     }
-    return OmniMessage.fromJson(Map<String, dynamic>.from(decoded['message'] as Map));
+    final messages = _parseMessagesFromResponse(decoded);
+    OmniConversation? conv;
+    final convRaw = decoded['conversation'];
+    if (convRaw is Map) {
+      conv = OmniConversation.fromJson(Map<String, dynamic>.from(convRaw));
+    }
+    return OmniInternalNoteResult(
+      messages: messages,
+      message: messages.isNotEmpty ? messages.last : throw Exception('Gagal mengirim'),
+      conversation: conv,
+    );
+  }
+
+  /// Perbaiki ejaan / grammar via AI (sama endpoint web `ai-assist`).
+  Future<String> aiAssistGrammar(String text) async {
+    final uri = Uri.parse('$_root/ai-assist');
+    final res = await http.post(
+      uri,
+      headers: await _authHeaders(),
+      body: jsonEncode({'action': 'grammar', 'text': text}),
+    );
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200 || body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal memperbaiki ejaan');
+    }
+    final corrected = body['text'];
+    if (corrected is String && corrected.trim().isNotEmpty) {
+      return corrected.trim();
+    }
+    return text;
+  }
+
+  Future<List<OmniMessage>> _sendMultipart(
+    String url, {
+    String? body,
+    List<String> filePaths = const [],
+    List<String>? fileNames,
+  }) async {
+    final request = http.MultipartRequest('POST', Uri.parse(url));
+    request.headers.addAll(await _authHeaders(json: false));
+    if (body != null && body.trim().isNotEmpty) {
+      request.fields['body'] = body.trim();
+    }
+    await _attachFiles(request, filePaths, fileNames);
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw Exception(decoded['message'] ?? 'Gagal mengirim');
+    }
+    return _parseMessagesFromResponse(decoded);
+  }
+
+  Future<void> _attachFiles(
+    http.MultipartRequest request,
+    List<String> filePaths,
+    List<String>? fileNames,
+  ) async {
+    final paths = filePaths.where((p) => p.isNotEmpty).take(maxAttachments).toList();
+    if (paths.isEmpty) return;
+
+    if (paths.length == 1) {
+      final path = paths.first;
+      request.files.add(await http.MultipartFile.fromPath(
+        'attachment',
+        path,
+        filename: _fileNameAt(fileNames, 0, path),
+      ));
+      return;
+    }
+
+    for (var i = 0; i < paths.length; i++) {
+      final path = paths[i];
+      request.files.add(await http.MultipartFile.fromPath(
+        'attachments[]',
+        path,
+        filename: _fileNameAt(fileNames, i, path),
+      ));
+    }
+  }
+
+  String _fileNameAt(List<String>? fileNames, int index, String path) {
+    if (fileNames != null && index < fileNames.length && fileNames[index].isNotEmpty) {
+      return fileNames[index];
+    }
+    return path.split(Platform.pathSeparator).last;
+  }
+
+  List<OmniMessage> _parseMessagesFromResponse(Map<String, dynamic> decoded) {
+    final rawList = decoded['messages'];
+    if (rawList is List && rawList.isNotEmpty) {
+      return rawList
+          .whereType<Map>()
+          .map((e) => OmniMessage.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    final single = decoded['message'];
+    if (single is Map) {
+      return [OmniMessage.fromJson(Map<String, dynamic>.from(single))];
+    }
+    throw Exception('Gagal mengirim');
   }
 
   /// Unduh/cache lampiran dari server (untuk pesan [Gambar] / [Lampiran] tanpa URL).

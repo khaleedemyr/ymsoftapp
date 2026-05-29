@@ -119,7 +119,13 @@ class _DeliveryOrderDetailScreenState extends State<DeliveryOrderDetailScreen> {
                                 Row(
                                   children: [
                                     const Text('Mode Scan: ', style: TextStyle(fontWeight: FontWeight.w600)),
-                                    if ((_order?['scan_mode'] ?? 'barcode').toString() == 'serial')
+                                    if ((_order?['scan_mode'] ?? 'barcode').toString() == 'mixed')
+                                      Chip(
+                                        label: const Text('BC + Serial', style: TextStyle(fontSize: 12)),
+                                        backgroundColor: Colors.indigo.shade100,
+                                        visualDensity: VisualDensity.compact,
+                                      )
+                                    else if ((_order?['scan_mode'] ?? 'barcode').toString() == 'serial')
                                       Chip(
                                         label: const Text('Nomor Seri', style: TextStyle(fontSize: 12)),
                                         backgroundColor: Colors.purple.shade100,

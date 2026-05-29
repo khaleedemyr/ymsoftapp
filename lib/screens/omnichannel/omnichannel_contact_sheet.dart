@@ -4,12 +4,14 @@ import '../../services/omnichannel_inbox_service.dart';
 import '../../utils/omni_theme.dart';
 import '../../widgets/omni_searchable_multiselect.dart';
 
-/// Panel info kontak (assign, lead, memo) — searchable multiselect seperti web.
+/// Panel info kontak (assign, lead, memo, profil) — searchable multiselect seperti web.
 class OmnichannelContactSheet extends StatefulWidget {
   final OmniConversation conversation;
   final List<OmniLeadStage> leadStages;
   final List<OmniAssignee> assignableUsers;
   final List<OmniTeamRef> assignableTeams;
+  final List<OmniSelectOption> maritalStatusOptions;
+  final List<OmniOutletOption> outletOptions;
   final ValueChanged<OmniConversation> onUpdated;
 
   const OmnichannelContactSheet({
@@ -18,6 +20,8 @@ class OmnichannelContactSheet extends StatefulWidget {
     required this.leadStages,
     required this.assignableUsers,
     required this.assignableTeams,
+    this.maritalStatusOptions = const [],
+    this.outletOptions = const [],
     required this.onUpdated,
   });
 
@@ -27,6 +31,8 @@ class OmnichannelContactSheet extends StatefulWidget {
     required List<OmniLeadStage> leadStages,
     required List<OmniAssignee> assignableUsers,
     required List<OmniTeamRef> assignableTeams,
+    List<OmniSelectOption> maritalStatusOptions = const [],
+    List<OmniOutletOption> outletOptions = const [],
     required ValueChanged<OmniConversation> onUpdated,
   }) {
     return showModalBottomSheet(
@@ -38,6 +44,8 @@ class OmnichannelContactSheet extends StatefulWidget {
         leadStages: leadStages,
         assignableUsers: assignableUsers,
         assignableTeams: assignableTeams,
+        maritalStatusOptions: maritalStatusOptions,
+        outletOptions: outletOptions,
         onUpdated: onUpdated,
       ),
     );
@@ -50,10 +58,13 @@ class OmnichannelContactSheet extends StatefulWidget {
 class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
   final _service = OmnichannelInboxService();
   final _memoCtrl = TextEditingController();
+  final _areaCtrl = TextEditingController();
   late OmniConversation _conversation;
   late String _leadStage;
   late Set<int> _userIds;
   late Set<int> _teamIds;
+  String? _maritalStatus;
+  int? _preferredOutletId;
   bool _saving = false;
 
   @override
@@ -62,6 +73,9 @@ class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
     _conversation = widget.conversation;
     _leadStage = _conversation.leadStage;
     _memoCtrl.text = _conversation.memo ?? '';
+    _areaCtrl.text = _conversation.contactProfile.preferredArea ?? '';
+    _maritalStatus = _conversation.contactProfile.maritalStatus;
+    _preferredOutletId = _conversation.contactProfile.preferredOutletId;
     _userIds = _conversation.assignees.map((a) => a.id).toSet();
     _teamIds = _conversation.assignedTeams.map((t) => t.id).toSet();
   }
@@ -69,6 +83,7 @@ class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
   @override
   void dispose() {
     _memoCtrl.dispose();
+    _areaCtrl.dispose();
     super.dispose();
   }
 
@@ -80,6 +95,9 @@ class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
         'memo': _memoCtrl.text.trim(),
         'assigned_user_ids': _userIds.toList(),
         'assigned_team_ids': _teamIds.toList(),
+        'marital_status': _maritalStatus,
+        'preferred_outlet_id': _preferredOutletId,
+        'preferred_area': _areaCtrl.text.trim().isEmpty ? null : _areaCtrl.text.trim(),
       });
       setState(() => _conversation = updated);
       widget.onUpdated(updated);
@@ -117,8 +135,10 @@ class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
   @override
   Widget build(BuildContext context) {
     final c = _conversation;
+    final member = c.member;
+
     return DraggableScrollableSheet(
-      initialChildSize: 0.72,
+      initialChildSize: 0.78,
       minChildSize: 0.4,
       maxChildSize: 0.92,
       builder: (context, scrollController) => Container(
@@ -146,6 +166,43 @@ class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: OmniTheme.textPrimary),
             ),
             Text(c.displayPhone, style: const TextStyle(color: OmniTheme.textSecondary)),
+            if (member != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.verified_user, size: 16, color: Colors.green.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Member app${member.tierLabel.isNotEmpty ? ' · ${member.tierLabel}' : ''}${member.isExclusiveMember ? ' ★' : ''}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: Colors.green.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(member.namaLengkap, style: TextStyle(color: Colors.green.shade800)),
+                    if (member.mobilePhone != null && member.mobilePhone!.isNotEmpty)
+                      Text(member.mobilePhone!, style: TextStyle(fontSize: 12, color: Colors.green.shade800)),
+                    if (member.memberId != null && member.memberId!.isNotEmpty)
+                      Text('ID: ${member.memberId}', style: TextStyle(fontSize: 11, color: Colors.green.shade700)),
+                  ],
+                ),
+              ),
+            ],
             if (c.activeFlowName != null && !c.automationPaused) ...[
               const SizedBox(height: 12),
               Container(
@@ -162,6 +219,52 @@ class _OmnichannelContactSheetState extends State<OmnichannelContactSheet> {
                 ),
               ),
             ],
+            const SizedBox(height: 20),
+            const Text('Profil kontak', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            const SizedBox(height: 10),
+            const Text('Status marital', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String?>(
+              value: _maritalStatus,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('—')),
+                ...widget.maritalStatusOptions.map(
+                  (o) => DropdownMenuItem(value: o.value, child: Text(o.label)),
+                ),
+              ],
+              onChanged: (v) => setState(() => _maritalStatus = v),
+            ),
+            const SizedBox(height: 12),
+            const Text('Outlet pilihan', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<int?>(
+              value: _preferredOutletId,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+              items: [
+                const DropdownMenuItem<int?>(value: null, child: Text('—')),
+                ...widget.outletOptions.map(
+                  (o) => DropdownMenuItem(
+                    value: o.id,
+                    child: Text(o.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _preferredOutletId = v),
+            ),
+            const SizedBox(height: 12),
+            const Text('Area / wilayah', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _areaCtrl,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Contoh: Jakarta Selatan',
+                isDense: true,
+              ),
+            ),
             const SizedBox(height: 20),
             const Text('Tahap lead', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),

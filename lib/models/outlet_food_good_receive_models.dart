@@ -189,6 +189,10 @@ class OutletDeliveryOrderItem {
   final String itemName;
   final double qtyPackingList;
   double qtyScan;
+  final double qtyFoodTarget;
+  final bool receiveViaSerialOnly;
+  final bool hasSerialPortion;
+  final bool receiveViaSerial;
   final String? unit;
   final int? unitId;
   final String? unitType;
@@ -200,11 +204,21 @@ class OutletDeliveryOrderItem {
     required this.itemName,
     required this.qtyPackingList,
     required this.qtyScan,
+    this.qtyFoodTarget = 0,
+    this.receiveViaSerialOnly = false,
+    this.hasSerialPortion = false,
+    this.receiveViaSerial = false,
     this.unit,
     this.unitId,
     this.unitType,
     required this.barcodes,
   });
+
+  /// Target qty untuk scan barcode (selaras web: qty_food_target).
+  double get barcodeTarget =>
+      qtyFoodTarget > 0 ? qtyFoodTarget : qtyPackingList;
+
+  bool get isBarcodeItem => !receiveViaSerialOnly && barcodeTarget > 0.001;
 
   factory OutletDeliveryOrderItem.fromJson(Map<String, dynamic> json) {
     final rawBarcodes = json['barcodes'];
@@ -222,6 +236,9 @@ class OutletDeliveryOrderItem {
       barcodes.add(singleBarcode);
     }
 
+    bool parseBool(dynamic value) =>
+        value == true || value == 1 || value == '1' || value == 'true';
+
     return OutletDeliveryOrderItem(
       deliveryOrderItemId: int.tryParse(json['delivery_order_item_id'].toString()) ??
           int.tryParse(json['id'].toString()) ??
@@ -230,6 +247,10 @@ class OutletDeliveryOrderItem {
       itemName: json['item_name']?.toString() ?? '-',
       qtyPackingList: double.tryParse(json['qty_packing_list']?.toString() ?? '0') ?? 0,
       qtyScan: double.tryParse(json['qty_scan']?.toString() ?? '0') ?? 0,
+      qtyFoodTarget: double.tryParse(json['qty_food_target']?.toString() ?? '0') ?? 0,
+      receiveViaSerialOnly: parseBool(json['receive_via_serial_only']),
+      hasSerialPortion: parseBool(json['has_serial_portion']),
+      receiveViaSerial: parseBool(json['receive_via_serial']),
       unit: json['unit']?.toString() ?? json['unit_name']?.toString(),
       unitId: json['unit_id'] != null ? int.tryParse(json['unit_id'].toString()) : null,
       unitType: json['unit_type']?.toString(),

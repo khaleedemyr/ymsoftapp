@@ -102,6 +102,40 @@ class DeliveryOrderService {
     return null;
   }
 
+  /// Auto-detect barcode vs nomor seri (selaras web `/api/delivery-order/resolve-scan`).
+  Future<Map<String, dynamic>> resolveScan({
+    required String code,
+    required String packingListId,
+    required int warehouseId,
+    required List<int> itemIds,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'type': 'unknown', 'message': 'Unauthorized'};
+      }
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/delivery-order/resolve-scan'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'code': code,
+          'packing_list_id': packingListId,
+          'warehouse_id': warehouseId,
+          'item_ids': itemIds,
+        }),
+      );
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {'type': 'unknown', 'message': 'Invalid response'};
+    } catch (e) {
+      return {'type': 'unknown', 'message': e.toString()};
+    }
+  }
+
   Future<Map<String, dynamic>> validateSerial({
     required String serialNumber,
     required String packingListId,
