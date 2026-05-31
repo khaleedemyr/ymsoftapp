@@ -431,51 +431,65 @@ class AuthService {
       }
 
       final request = http.MultipartRequest(
-        'PATCH',
+        'POST',
         Uri.parse('$baseUrl/api/approval-app/user/update-profile'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
       request.headers['Accept'] = 'application/json';
 
+      void addField(String key, String? value) {
+        if (value == null) return;
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) return;
+        request.fields[key] = trimmed;
+      }
+
+      // Wajib selalu dikirim
+      request.fields['nama_lengkap'] = namaLengkap.trim();
+
       // Basic fields
-      request.fields['nama_lengkap'] = namaLengkap;
-      if (namaPanggilan != null) request.fields['nama_panggilan'] = namaPanggilan;
-      if (email != null) request.fields['email'] = email;
-      if (noHp != null) request.fields['no_hp'] = noHp;
+      addField('nama_panggilan', namaPanggilan);
+      addField('email', email);
+      addField('no_hp', noHp);
 
       // Personal fields
-      if (jenisKelamin != null) request.fields['jenis_kelamin'] = jenisKelamin;
-      if (tempatLahir != null) request.fields['tempat_lahir'] = tempatLahir;
-      if (tanggalLahir != null) request.fields['tanggal_lahir'] = tanggalLahir;
-      if (suku != null) request.fields['suku'] = suku;
-      if (agama != null) request.fields['agama'] = agama;
-      if (statusPernikahan != null) request.fields['status_pernikahan'] = statusPernikahan;
-      if (golonganDarah != null) request.fields['golongan_darah'] = golonganDarah;
+      addField('jenis_kelamin', jenisKelamin);
+      addField('tempat_lahir', tempatLahir);
+      if (tanggalLahir != null) {
+        final dateValue = tanggalLahir.contains('T')
+            ? tanggalLahir.split('T').first
+            : tanggalLahir;
+        addField('tanggal_lahir', dateValue);
+      }
+      addField('suku', suku);
+      addField('agama', agama);
+      addField('status_pernikahan', statusPernikahan);
+      addField('golongan_darah', golonganDarah);
 
       // Work fields
-      if (pinPos != null) request.fields['pin_pos'] = pinPos;
-      if (pinPayroll != null) request.fields['pin_payroll'] = pinPayroll;
-      if (imei != null) request.fields['imei'] = imei;
+      addField('pin_pos', pinPos);
+      addField('pin_payroll', pinPayroll);
+      addField('imei', imei);
 
       // Contact fields
-      if (alamat != null) request.fields['alamat'] = alamat;
-      if (alamatKtp != null) request.fields['alamat_ktp'] = alamatKtp;
-      if (namaKontakDarurat != null) request.fields['nama_kontak_darurat'] = namaKontakDarurat;
-      if (noHpKontakDarurat != null) request.fields['no_hp_kontak_darurat'] = noHpKontakDarurat;
-      if (hubunganKontakDarurat != null) request.fields['hubungan_kontak_darurat'] = hubunganKontakDarurat;
+      addField('alamat', alamat);
+      addField('alamat_ktp', alamatKtp);
+      addField('nama_kontak_darurat', namaKontakDarurat);
+      addField('no_hp_kontak_darurat', noHpKontakDarurat);
+      addField('hubungan_kontak_darurat', hubunganKontakDarurat);
 
       // Documents fields
-      if (noKtp != null) request.fields['no_ktp'] = noKtp;
-      if (nomorKk != null) request.fields['nomor_kk'] = nomorKk;
-      if (npwpNumber != null) request.fields['npwp_number'] = npwpNumber;
-      if (bpjsHealthNumber != null) request.fields['bpjs_health_number'] = bpjsHealthNumber;
-      if (bpjsEmploymentNumber != null) request.fields['bpjs_employment_number'] = bpjsEmploymentNumber;
-      if (lastEducation != null) request.fields['last_education'] = lastEducation;
-      if (nameSchoolCollege != null) request.fields['name_school_college'] = nameSchoolCollege;
-      if (schoolCollegeMajor != null) request.fields['school_college_major'] = schoolCollegeMajor;
-      if (namaRekening != null) request.fields['nama_rekening'] = namaRekening;
-      if (noRekening != null) request.fields['no_rekening'] = noRekening;
+      addField('no_ktp', noKtp);
+      addField('nomor_kk', nomorKk);
+      addField('npwp_number', npwpNumber);
+      addField('bpjs_health_number', bpjsHealthNumber);
+      addField('bpjs_employment_number', bpjsEmploymentNumber);
+      addField('last_education', lastEducation);
+      addField('name_school_college', nameSchoolCollege);
+      addField('school_college_major', schoolCollegeMajor);
+      addField('nama_rekening', namaRekening);
+      addField('no_rekening', noRekening);
 
       // File uploads
       if (avatar != null) {
@@ -498,7 +512,7 @@ class AuthService {
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           await refreshUserData();
@@ -507,9 +521,13 @@ class AuthService {
       }
 
       final errorData = jsonDecode(response.body);
+      final message = errorData['message'] ??
+          (errorData['errors'] is Map && (errorData['errors'] as Map).isNotEmpty
+              ? (errorData['errors'] as Map).values.first.toString().replaceAll(RegExp(r'[\[\]]'), '')
+              : 'Gagal memperbarui profile');
       return {
         'success': false,
-        'message': errorData['message'] ?? 'Failed to update profile',
+        'message': message,
       };
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};

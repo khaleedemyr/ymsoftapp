@@ -1,7 +1,7 @@
 name: ymsoftapp
 description: YM Soft Approval Mobile App
 publish_to: 'none'
-version: 1.0.16+17
+version: 1.0.17+18
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -69,6 +69,7 @@ dependencies:
   # Video Player
   video_player: ^2.8.1
   new_version_plus: ^0.1.1
+  pdf_combiner: ^6.0.3
 
 dev_dependencies:
   flutter_test:

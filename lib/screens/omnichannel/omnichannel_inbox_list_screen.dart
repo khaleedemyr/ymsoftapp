@@ -7,6 +7,7 @@ import '../../utils/omni_channel_icon.dart';
 import '../../utils/omni_theme.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/omni_assignment_chips.dart';
 import 'omnichannel_chat_analytics_screen.dart';
 import 'omnichannel_contact_sheet.dart';
 import 'omnichannel_inbox_chat_screen.dart';
@@ -927,6 +928,13 @@ class _ChatListTile extends StatelessWidget {
                         color: OmniTheme.textSecondary.withValues(alpha: 0.85),
                       ),
                     ),
+                    if (c.assignees.isNotEmpty || c.assignedTeams.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      OmniAssignmentChips(
+                        assignees: c.assignees,
+                        teams: c.assignedTeams,
+                      ),
+                    ],
                   ],
                 ),
               ),

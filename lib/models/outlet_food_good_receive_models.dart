@@ -197,6 +197,7 @@ class OutletDeliveryOrderItem {
   final int? unitId;
   final String? unitType;
   final List<String> barcodes;
+  final String? itemSku;
 
   OutletDeliveryOrderItem({
     required this.deliveryOrderItemId,
@@ -212,11 +213,39 @@ class OutletDeliveryOrderItem {
     this.unitId,
     this.unitType,
     required this.barcodes,
+    this.itemSku,
   });
 
-  /// Target qty untuk scan barcode (selaras web: qty_food_target).
-  double get barcodeTarget =>
-      qtyFoodTarget > 0 ? qtyFoodTarget : qtyPackingList;
+  bool matchesScanCode(String code) {
+    final normalized = code.trim().replaceFirst(RegExp(r'^\]C\d', caseSensitive: false), '');
+    if (normalized.isEmpty) return false;
+
+    bool matchValue(String? value) {
+      if (value == null) return false;
+      final candidate = value.trim().replaceFirst(RegExp(r'^\]C\d', caseSensitive: false), '');
+      if (candidate.isEmpty) return false;
+      if (candidate == normalized) return true;
+      if (candidate.toLowerCase() == normalized.toLowerCase()) return true;
+      if (RegExp(r'^\d+$').hasMatch(candidate) && RegExp(r'^\d+$').hasMatch(normalized)) {
+        final left = candidate.replaceFirst(RegExp(r'^0+'), '');
+        final right = normalized.replaceFirst(RegExp(r'^0+'), '');
+        return (left.isEmpty ? '0' : left) == (right.isEmpty ? '0' : right);
+      }
+      return false;
+    }
+
+    for (final barcode in barcodes) {
+      if (matchValue(barcode)) return true;
+    }
+    return matchValue(itemSku);
+  }
+
+  /// Target qty untuk scan barcode (selaras web: qty_food_target, fallback qty DO).
+  double get barcodeTarget {
+    if (receiveViaSerialOnly) return 0;
+    if (qtyFoodTarget > 0) return qtyFoodTarget;
+    return qtyPackingList;
+  }
 
   bool get isBarcodeItem => !receiveViaSerialOnly && barcodeTarget > 0.001;
 
@@ -255,6 +284,7 @@ class OutletDeliveryOrderItem {
       unitId: json['unit_id'] != null ? int.tryParse(json['unit_id'].toString()) : null,
       unitType: json['unit_type']?.toString(),
       barcodes: barcodes,
+      itemSku: json['item_sku']?.toString(),
     );
   }
 }

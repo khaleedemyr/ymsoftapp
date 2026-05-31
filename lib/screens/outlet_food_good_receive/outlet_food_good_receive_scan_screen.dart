@@ -32,17 +32,38 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
   bool _isSpsLoading = false;
   Map<String, dynamic>? _spsItem;
 
-  bool _isGrItemComplete(OutletDeliveryOrderItem item) {
-    if (item.receiveViaSerialOnly) return true;
-    final target = item.barcodeTarget;
-    return item.qtyScan >= target - 0.001;
+  /// GR partial: cukup ada minimal satu item barcode yang sudah discan (qty > 0).
+  bool get _isReadyToSubmit {
+    if (_items.isEmpty) return false;
+    return _barcodeItems.any((item) => item.qtyScan > 0) ||
+        _items.every((item) => item.receiveViaSerialOnly || item.receiveViaSerial);
   }
-
-  bool get _isReadyToSubmit =>
-      _items.isNotEmpty && _items.every(_isGrItemComplete);
 
   List<OutletDeliveryOrderItem> get _barcodeItems =>
       _items.where((item) => item.isBarcodeItem).toList();
+
+  Future<OutletDeliveryOrderItem?> _resolveItemByScanCode(String code) async {
+    if (_selectedDoId != null) {
+      final res = await _service.resolveBarcode(
+        deliveryOrderId: _selectedDoId!,
+        code: code,
+      );
+      if (res != null && res['found'] == true) {
+        final itemId = int.tryParse(res['item_id']?.toString() ?? '');
+        if (itemId != null) {
+          for (final item in _items) {
+            if (item.itemId == itemId) return item;
+          }
+        }
+      }
+    }
+
+    for (final item in _items) {
+      if (item.matchesScanCode(code)) return item;
+    }
+
+    return null;
+  }
 
   @override
   void initState() {
@@ -124,19 +145,9 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
       qty = double.tryParse(match.group(2) ?? '1') ?? 1;
     }
 
-    final item = _items.firstWhere(
-      (i) => i.barcodes.contains(code),
-      orElse: () => OutletDeliveryOrderItem(
-        deliveryOrderItemId: 0,
-        itemId: 0,
-        itemName: '',
-        qtyPackingList: 0,
-        qtyScan: 0,
-        barcodes: const [],
-      ),
-    );
+    final item = await _resolveItemByScanCode(code);
 
-    if (item.itemId == 0) {
+    if (item == null) {
       _setFeedback('Barcode tidak ditemukan di DO', Colors.red.shade600);
       _barcodeController.clear();
       return;
@@ -248,7 +259,7 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
     if (!_isReadyToSubmit) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Masih ada item barcode yang belum lengkap di-scan'),
+          content: Text('Minimal satu item harus discan sebelum submit'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -483,8 +494,8 @@ class _OutletFoodGoodReceiveScanScreenState extends State<OutletFoodGoodReceiveS
         children: [
           const Text('Peringatan', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
-          if (unscanned > 0) Text('Belum scan: $unscanned item'),
-          if (incomplete > 0) Text('Qty kurang: $incomplete item'),
+          if (unscanned > 0) Text('Belum scan (qty diterima = 0): $unscanned item'),
+          if (incomplete > 0) Text('Qty kurang (disimpan sesuai qty diterima): $incomplete item'),
         ],
       ),
     );

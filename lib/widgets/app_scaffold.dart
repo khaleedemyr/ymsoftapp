@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../screens/profile_edit_screen.dart';
 import '../screens/signature_screen.dart';
 import '../screens/pin_management_screen.dart';
+import '../screens/payroll/payroll_screen.dart';
 import 'app_sidebar.dart';
 import 'user_profile_menu.dart';
 import 'app_footer.dart';
@@ -133,6 +134,7 @@ class _AppScaffoldState extends State<AppScaffold> {
                   ),
                 );
               },
+              onPayrollTap: () => openPayrollScreen(context),
             ),
         ],
       ),

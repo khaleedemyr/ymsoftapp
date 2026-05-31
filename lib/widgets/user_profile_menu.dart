@@ -10,6 +10,7 @@ class UserProfileMenu extends StatelessWidget {
   final VoidCallback? onProfileTap;
   final VoidCallback? onSignatureTap;
   final VoidCallback? onPinManagementTap;
+  final VoidCallback? onPayrollTap;
 
   const UserProfileMenu({
     super.key,
@@ -17,6 +18,7 @@ class UserProfileMenu extends StatelessWidget {
     this.onProfileTap,
     this.onSignatureTap,
     this.onPinManagementTap,
+    this.onPayrollTap,
   });
 
   String _getInitials(String? name) {
@@ -107,7 +109,9 @@ class UserProfileMenu extends StatelessWidget {
         break;
       case 'pin':
         onPinManagementTap?.call();
-        // TODO: Navigate to PIN management screen
+        break;
+      case 'payroll':
+        onPayrollTap?.call();
         break;
       case 'logout':
         final confirm = await showDialog<bool>(
@@ -298,6 +302,13 @@ class UserProfileMenu extends StatelessWidget {
               child: _buildMenuItem(
                 icon: Icons.vpn_key,
                 title: 'Kelola PIN Outlet',
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'payroll',
+              child: _buildMenuItem(
+                icon: Icons.receipt_long,
+                title: 'Payroll',
               ),
             ),
             const PopupMenuDivider(),

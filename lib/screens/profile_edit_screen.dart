@@ -26,7 +26,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
   File? _selectedFotoKk;
   File? _selectedColorPhoto;
   
-  final _formKey = GlobalKey<FormState>();
+  final _passwordFormKey = GlobalKey<FormState>();
   
   // Personal Tab Controllers
   final _namaLengkapController = TextEditingController();
@@ -263,8 +263,56 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
     }
   }
 
+  String _resolveNamaLengkap() {
+    final fromController = _namaLengkapController.text.trim();
+    if (fromController.isNotEmpty) return fromController;
+    return _toString(_userData?['nama_lengkap']).trim();
+  }
+
+  String _resolvePinPayroll() {
+    final fromController = _pinPayrollController.text.trim();
+    if (fromController.isNotEmpty) return fromController;
+    return _toString(_userData?['pin_payroll']).trim();
+  }
+
+  String? _validateProfileForSave() {
+    if (_resolveNamaLengkap().isEmpty) {
+      return 'Nama lengkap wajib diisi di tab Personal';
+    }
+
+    final email = _emailController.text.trim();
+    if (email.isNotEmpty && !email.contains('@')) {
+      return 'Format email tidak valid';
+    }
+
+    if (_resolvePinPayroll().isEmpty) {
+      return 'PIN Payroll wajib diisi di tab Work';
+    }
+
+    return null;
+  }
+
+  void _showValidationError(String message, {int? tabIndex}) {
+    if (tabIndex != null && _tabController.index != tabIndex) {
+      _tabController.animateTo(tabIndex);
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
   Future<void> _saveProfile() async {
-    if (!_formKey.currentState!.validate()) {
+    final validationError = _validateProfileForSave();
+    if (validationError != null) {
+      final tabIndex = validationError.contains('Personal')
+          ? 0
+          : validationError.contains('Work')
+              ? 1
+              : null;
+      _showValidationError(validationError, tabIndex: tabIndex);
       return;
     }
 
@@ -274,23 +322,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
 
     try {
       final result = await _authService.updateProfile(
-        namaLengkap: _namaLengkapController.text,
-        namaPanggilan: _namaPanggilanController.text.isEmpty ? null : _namaPanggilanController.text,
-        email: _emailController.text.isEmpty ? null : _emailController.text,
-        noHp: _noHpController.text.isEmpty ? null : _noHpController.text,
+        namaLengkap: _resolveNamaLengkap(),
+        namaPanggilan: _namaPanggilanController.text.isEmpty ? null : _namaPanggilanController.text.trim(),
+        email: _emailController.text.isEmpty ? null : _emailController.text.trim(),
+        noHp: _noHpController.text.isEmpty ? null : _noHpController.text.trim(),
         avatar: _selectedAvatar,
         // Personal
         jenisKelamin: _jenisKelamin,
-        tempatLahir: _tempatLahirController.text.isEmpty ? null : _tempatLahirController.text,
-        tanggalLahir: _tanggalLahir?.toIso8601String(),
-        suku: _sukuController.text.isEmpty ? null : _sukuController.text,
+        tempatLahir: _tempatLahirController.text.isEmpty ? null : _tempatLahirController.text.trim(),
+        tanggalLahir: _tanggalLahir != null
+            ? DateFormat('yyyy-MM-dd').format(_tanggalLahir!)
+            : null,
+        suku: _sukuController.text.isEmpty ? null : _sukuController.text.trim(),
         agama: _agama,
         statusPernikahan: _statusPernikahan,
         golonganDarah: _golonganDarah,
         // Work
-        pinPos: _pinPosController.text.isEmpty ? null : _pinPosController.text,
-        pinPayroll: _pinPayrollController.text.isEmpty ? null : _pinPayrollController.text,
-        imei: _imeiController.text.isEmpty ? null : _imeiController.text,
+        pinPos: _pinPosController.text.isEmpty ? null : _pinPosController.text.trim(),
+        pinPayroll: _resolvePinPayroll(),
+        imei: _imeiController.text.isEmpty ? null : _imeiController.text.trim(),
         // Contact
         alamat: _alamatController.text.isEmpty ? null : _alamatController.text,
         alamatKtp: _alamatKtpController.text.isEmpty ? null : _alamatKtpController.text,
@@ -350,25 +400,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
   }
 
   Future<void> _updatePassword() async {
-    if (_currentPasswordController.text.isEmpty ||
-        _newPasswordController.text.isEmpty ||
-        _confirmPasswordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Semua field password harus diisi'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (_newPasswordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password baru dan konfirmasi password tidak sama'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    if (_passwordFormKey.currentState?.validate() != true) {
       return;
     }
 
@@ -468,18 +500,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
                 
                 // Tab Content
                 Expanded(
-                  child: Form(
-                    key: _formKey,
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildPersonalTab(),
-                        _buildWorkTab(),
-                        _buildContactTab(),
-                        _buildDocumentsTab(),
-                        _buildPasswordTab(),
-                      ],
-                    ),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _KeepAliveTab(child: _buildPersonalTab()),
+                      _KeepAliveTab(child: _buildWorkTab()),
+                      _KeepAliveTab(child: _buildContactTab()),
+                      _KeepAliveTab(child: _buildDocumentsTab()),
+                      _KeepAliveTab(child: _buildPasswordTab()),
+                    ],
                   ),
                 ),
               ],
@@ -779,6 +808,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
             icon: Icons.pin,
             maxLength: 10,
             keyboardType: TextInputType.number,
+            obscureText: true,
           ),
           const SizedBox(height: 16),
           _buildTextField(
@@ -787,6 +817,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
             icon: Icons.payment,
             maxLength: 10,
             keyboardType: TextInputType.number,
+            obscureText: true,
             validator: (value) {
               if (value == null || value.isEmpty) {
                 return 'PIN Payroll harus diisi';
@@ -1073,7 +1104,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
   Widget _buildPasswordTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
-      child: Column(
+      child: Form(
+        key: _passwordFormKey,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTextField(
@@ -1151,6 +1184,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -1423,5 +1457,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> with SingleTicker
         ),
       ],
     );
+  }
+}
+
+class _KeepAliveTab extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAliveTab({required this.child});
+
+  @override
+  State<_KeepAliveTab> createState() => _KeepAliveTabState();
+}
+
+class _KeepAliveTabState extends State<_KeepAliveTab> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

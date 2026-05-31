@@ -10,6 +10,7 @@ import '../../services/omnichannel_inbox_service.dart';
 import '../../utils/omni_channel_icon.dart';
 import '../../utils/omni_theme.dart';
 import '../../widgets/omnichannel_composer.dart';
+import '../../widgets/omni_assignment_chips.dart';
 import 'omnichannel_contact_sheet.dart';
 
 class OmnichannelInboxChatScreen extends StatefulWidget {
@@ -452,6 +453,16 @@ class _OmnichannelInboxChatScreenState extends State<OmnichannelInboxChatScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (c.assignees.isNotEmpty || c.assignedTeams.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      OmniAssignmentChips(
+                        assignees: c.assignees,
+                        teams: c.assignedTeams,
+                        style: OmniAssignmentChipStyle.header,
+                        maxAssignees: 3,
+                        maxTeams: 2,
+                      ),
+                    ],
                   ],
                 ),
               ),

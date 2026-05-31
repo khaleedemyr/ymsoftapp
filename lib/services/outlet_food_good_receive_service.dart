@@ -131,6 +131,39 @@ class OutletFoodGoodReceiveService {
     }
   }
 
+  Future<Map<String, dynamic>?> resolveBarcode({
+    required int deliveryOrderId,
+    required String code,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/outlet-food-good-receives/resolve-barcode'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'delivery_order_id': deliveryOrderId,
+          'code': code.trim(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+      }
+
+      return null;
+    } catch (e) {
+      print('Error resolving barcode: $e');
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>> createOutletGoodReceive({
     required int deliveryOrderId,
     required String receiveDate,
