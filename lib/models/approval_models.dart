@@ -1173,6 +1173,43 @@ class LostBreakageApproval {
   }
 }
 
+class Qa2CapApproval {
+  final int id;
+  final String? auditNumber;
+  final String? outletName;
+  final String? templateName;
+  final String? submitterName;
+  final int? ncCount;
+  final String? capSubmittedAt;
+  final String? approverName;
+
+  Qa2CapApproval({
+    required this.id,
+    this.auditNumber,
+    this.outletName,
+    this.templateName,
+    this.submitterName,
+    this.ncCount,
+    this.capSubmittedAt,
+    this.approverName,
+  });
+
+  factory Qa2CapApproval.fromJson(Map<String, dynamic> json) {
+    return Qa2CapApproval(
+      id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      auditNumber: json['audit_number']?.toString(),
+      outletName: json['outlet_name']?.toString(),
+      templateName: json['template_name']?.toString(),
+      submitterName: json['submitter_name']?.toString(),
+      ncCount: json['nc_count'] is int
+          ? json['nc_count']
+          : int.tryParse(json['nc_count']?.toString() ?? ''),
+      capSubmittedAt: json['cap_submitted_at']?.toString(),
+      approverName: json['approver_name']?.toString(),
+    );
+  }
+}
+
 class AssetDisposalApproval {
   final int id;
   final String? number;

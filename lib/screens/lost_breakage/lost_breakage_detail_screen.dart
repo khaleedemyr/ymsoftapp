@@ -21,8 +21,15 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
   Map<String, dynamic>? _header;
   List<Map<String, dynamic>> _details = [];
   List<Map<String, dynamic>> _flows = [];
+  Map<String, dynamic>? _currentApprover;
+  bool _canApprove = false;
   bool _loading = true;
   bool _actionLoading = false;
+
+  String get _status => _header?['status']?.toString().toUpperCase() ?? '';
+  bool get _isDraft => _status == 'DRAFT';
+  bool get _isSubmitted => _status == 'SUBMITTED';
+  bool get _showApprovalActions => _isSubmitted && _canApprove;
   @override
   void initState() {
     super.initState();
@@ -39,6 +46,10 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
           _header = res['header'] is Map ? Map<String, dynamic>.from(res['header']) : null;
           _details = (res['details'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
           _flows = (res['approval_flows'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+          _currentApprover = res['current_approver'] is Map
+              ? Map<String, dynamic>.from(res['current_approver'] as Map)
+              : null;
+          _canApprove = res['can_approve'] == true;
         });
       }
     } catch (e) {
@@ -48,6 +59,7 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
   }
 
   Future<void> _approve() async {
+    if (!_showApprovalActions || _actionLoading) return;
     final noteCtrl = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
@@ -74,7 +86,12 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
     );
     if (confirm != true) return;
     setState(() => _actionLoading = true);
-    final res = await _service.approve(widget.headerId, note: noteCtrl.text);
+    final flowId = int.tryParse(_currentApprover?['id']?.toString() ?? '');
+    final res = await _service.approve(
+      widget.headerId,
+      note: noteCtrl.text,
+      approvalFlowId: flowId,
+    );
     setState(() => _actionLoading = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res?['message'] ?? 'Gagal')));
@@ -85,6 +102,7 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
   }
 
   Future<void> _reject() async {
+    if (!_showApprovalActions || _actionLoading) return;
     final reasonCtrl = TextEditingController();
     final confirm = await showDialog<bool>(
       context: context,
@@ -111,7 +129,12 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
     );
     if (confirm != true || reasonCtrl.text.isEmpty) return;
     setState(() => _actionLoading = true);
-    final res = await _service.reject(widget.headerId, reason: reasonCtrl.text);
+    final flowId = int.tryParse(_currentApprover?['id']?.toString() ?? '');
+    final res = await _service.reject(
+      widget.headerId,
+      reason: reasonCtrl.text,
+      approvalFlowId: flowId,
+    );
     setState(() => _actionLoading = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res?['message'] ?? 'Gagal')));
@@ -120,6 +143,7 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +159,7 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
   }
 
   Widget _buildContent() {
-    final status = _header!['status']?.toString().toUpperCase() ?? '';
+    final status = _status;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
@@ -146,6 +170,26 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
           const SizedBox(height: 16),
           _buildApprovalFlowCard(),
         ],
+        if (_isSubmitted && !_canApprove) ...[
+          const SizedBox(height: 16),
+          _buildActionInfoBanner(
+            icon: Icons.schedule_rounded,
+            bg: const Color(0xFFFFF7ED),
+            border: const Color(0xFFFED7AA),
+            fg: const Color(0xFF9A3412),
+            text: 'Dokumen masih menunggu approver lain atau Anda bukan approver aktif saat ini.',
+          ),
+        ],
+        if (_status == 'APPROVED' || _status == 'REJECTED') ...[
+          const SizedBox(height: 16),
+          _buildActionInfoBanner(
+            icon: Icons.lock_outline_rounded,
+            bg: const Color(0xFFF8FAFC),
+            border: const Color(0xFFE2E8F0),
+            fg: const Color(0xFF475569),
+            text: 'Dokumen status $_status bersifat final. Perubahan dilakukan lewat proses dokumen baru.',
+          ),
+        ],
         if (status == 'APPROVED' && _hasRemainingQty) ...[
           const SizedBox(height: 16),
           _buildReplacementBanner(),
@@ -155,10 +199,40 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
         const SizedBox(height: 10),
         ..._details.map(_buildItemCard),
         const SizedBox(height: 24),
-        if (status == 'SUBMITTED') _buildActionButtons(),
-        if (status == 'DRAFT') _buildEditButton(),
+        if (_showApprovalActions) _buildActionButtons(),
+        if (_isDraft) _buildEditButton(),
         const SizedBox(height: 80),
       ],
+    );
+  }
+
+  Widget _buildActionInfoBanner({
+    required IconData icon,
+    required Color bg,
+    required Color border,
+    required Color fg,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: fg),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 12, color: fg, height: 1.35),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -538,11 +612,11 @@ class _LostBreakageDetailScreenState extends State<LostBreakageDetailScreen> {
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () => _showPhotoDialog(item['photo'].toString()),
-              child: Row(
+              child: const Row(
                 children: [
-                  const Icon(Icons.photo_outlined, size: 14, color: Color(0xFFE65100)),
-                  const SizedBox(width: 4),
-                  const Text('Lihat Foto', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE65100))),
+                  Icon(Icons.photo_outlined, size: 14, color: Color(0xFFE65100)),
+                  SizedBox(width: 4),
+                  Text('Lihat Foto', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE65100))),
                 ],
               ),
             ),

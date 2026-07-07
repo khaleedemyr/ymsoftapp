@@ -151,14 +151,19 @@ class LostBreakageService {
     return null;
   }
 
-  Future<Map<String, dynamic>?> approve(int headerId, {String? note}) async {
+  Future<Map<String, dynamic>?> approve(int headerId, {String? note, int? approvalFlowId}) async {
     try {
       final token = await _getToken();
       if (token == null) return null;
       final uri = Uri.parse('$baseUrl/api/approval-app/lost-breakage/$headerId/approve');
+      final body = <String, dynamic>{
+        'comments': note ?? '',
+        if (note != null && note.isNotEmpty) 'note': note,
+        if (approvalFlowId != null) 'approval_flow_id': approvalFlowId,
+      };
       final resp = await http.post(uri,
           headers: {..._headers(token), 'Content-Type': 'application/json'},
-          body: jsonEncode({'comments': note ?? ''}));
+          body: jsonEncode(body));
       final decoded = jsonDecode(resp.body);
       if (decoded is Map<String, dynamic>) return decoded;
     } catch (e) {
@@ -167,14 +172,19 @@ class LostBreakageService {
     return null;
   }
 
-  Future<Map<String, dynamic>?> reject(int headerId, {String? reason}) async {
+  Future<Map<String, dynamic>?> reject(int headerId, {String? reason, int? approvalFlowId}) async {
     try {
       final token = await _getToken();
       if (token == null) return null;
       final uri = Uri.parse('$baseUrl/api/approval-app/lost-breakage/$headerId/reject');
+      final body = <String, dynamic>{
+        'rejection_reason': reason ?? '',
+        if (reason != null && reason.isNotEmpty) 'comments': reason,
+        if (approvalFlowId != null) 'approval_flow_id': approvalFlowId,
+      };
       final resp = await http.post(uri,
           headers: {..._headers(token), 'Content-Type': 'application/json'},
-          body: jsonEncode({'rejection_reason': reason ?? ''}));
+          body: jsonEncode(body));
       final decoded = jsonDecode(resp.body);
       if (decoded is Map<String, dynamic>) return decoded;
     } catch (e) {

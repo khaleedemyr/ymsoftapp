@@ -110,6 +110,7 @@ class OutletWIPItemOption {
   final String? smallUnitName;
   final String? mediumUnitName;
   final String? largeUnitName;
+  final double smallConversionQty;
 
   OutletWIPItemOption({
     required this.id,
@@ -120,9 +121,11 @@ class OutletWIPItemOption {
     this.smallUnitName,
     this.mediumUnitName,
     this.largeUnitName,
+    this.smallConversionQty = 1,
   });
 
   factory OutletWIPItemOption.fromJson(Map<String, dynamic> json) {
+    final conv = double.tryParse(json['small_conversion_qty']?.toString() ?? '');
     return OutletWIPItemOption(
       id: int.tryParse(json['id'].toString()) ?? 0,
       name: json['name']?.toString() ?? '',
@@ -132,8 +135,16 @@ class OutletWIPItemOption {
       smallUnitName: json['small_unit_name']?.toString(),
       mediumUnitName: json['medium_unit_name']?.toString(),
       largeUnitName: json['large_unit_name']?.toString(),
+      smallConversionQty: (conv != null && conv > 0) ? conv : 1,
     );
   }
+
+  String get recipeUnitName =>
+      (mediumUnitName != null && mediumUnitName!.isNotEmpty)
+          ? mediumUnitName!
+          : ((largeUnitName != null && largeUnitName!.isNotEmpty)
+              ? largeUnitName!
+              : 'recipe');
 }
 
 /// Warehouse outlet option.

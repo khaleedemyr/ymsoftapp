@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../services/serial_tracking_service.dart';
 import '../../widgets/app_loading_indicator.dart';
 import '../delivery_order/delivery_order_detail_screen.dart';
+import 'serial_tracking_serial_card.dart';
 
 class SerialTrackingPendingTab extends StatefulWidget {
   const SerialTrackingPendingTab({
@@ -93,7 +94,9 @@ class SerialTrackingPendingTabState extends State<SerialTrackingPendingTab> {
     }
 
     final list = res['data'] is List
-        ? (res['data'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
+        ? (res['data'] as List)
+            .map((e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .toList()
         : <Map<String, dynamic>>[];
 
     final summary = res['summary'] is Map ? Map<String, dynamic>.from(res['summary'] as Map) : <String, dynamic>{};
@@ -328,166 +331,160 @@ class SerialTrackingPendingTabState extends State<SerialTrackingPendingTab> {
   }
 
   Widget _buildDoTable() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ..._doList.map(_buildDoCard),
+        if (_lastPage > 1) _buildPagination(),
+      ],
+    );
+  }
+
+  Widget _buildDoCard(Map<String, dynamic> doRow) {
+    final id = _doId(doRow);
+    final expanded = _expandedDoIds[id] == true;
+    final days = int.tryParse(doRow['days_pending']?.toString() ?? '') ?? 0;
+    final serials = doRow['serials'] is List
+        ? (doRow['serials'] as List)
+            .map((e) => e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e as Map))
+            .toList()
+        : <Map<String, dynamic>>[];
+    final pendingCount = doRow['pending_serial_count'] ?? serials.length;
+
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
+        border: Border.all(color: expanded ? const Color(0xFFFDE68A) : const Color(0xFFF3F4F6)),
+        boxShadow: const [BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.04), blurRadius: 12, offset: Offset(0, 4))],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 720),
+          InkWell(
+            onTap: () => setState(() => _expandedDoIds[id] = !expanded),
+            child: Container(
+              color: expanded ? const Color(0xFFFFFBEB) : null,
+              padding: const EdgeInsets.all(14),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    color: _amber,
-                    child: const Row(
-                      children: [
-                        SizedBox(width: 40, child: Center(child: SizedBox())),
-                        _Th('Delivery Order', flex: 2),
-                        _Th('Tgl DO / Keluar', flex: 2),
-                        _Th('Outlet', flex: 2),
-                        _Th('Warehouse Outlet', flex: 2),
-                        _Th('Belum GR', flex: 1, center: true),
-                        _Th('Hari', flex: 1, center: true),
-                        _Th('Aksi', flex: 1, center: true),
-                      ],
-                    ),
-                  ),
-                  ..._doList.expand((doRow) {
-                    final id = _doId(doRow);
-                    final expanded = _expandedDoIds[id] == true;
-                    final days = int.tryParse(doRow['days_pending']?.toString() ?? '') ?? 0;
-                    final serials = doRow['serials'] is List
-                        ? (doRow['serials'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
-                        : <Map<String, dynamic>>[];
-
-                    return [
-                      InkWell(
-                        onTap: () => setState(() => _expandedDoIds[id] = !expanded),
-                        child: Container(
-                          color: expanded ? const Color(0xFFFFFBEB) : null,
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 40,
-                                child: Icon(expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, color: _amberDark, size: 20),
-                              ),
-                              _Td(doRow['do_number']?.toString() ?? '—', flex: 2, mono: true, color: _amberDark),
-                              _Td(_formatDt(doRow['display_date']), flex: 2),
-                              _Td(doRow['outlet_name']?.toString() ?? '—', flex: 2),
-                              _Td(doRow['warehouse_outlet_name']?.toString() ?? '—', flex: 2),
-                              Expanded(
-                                flex: 1,
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(999)),
-                                    child: Text(
-                                      '${doRow['pending_serial_count'] ?? serials.length}',
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _amberDark),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: days > 7 ? const Color(0xFFFEE2E2) : const Color(0xFFF3F4F6),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      '${doRow['days_pending'] ?? '-'}',
-                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: days > 7 ? const Color(0xFFB91C1C) : Colors.grey.shade700),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: Center(
-                                  child: TextButton(
-                                    onPressed: id > 0
-                                        ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => DeliveryOrderDetailScreen(id: id)))
-                                        : null,
-                                    child: const Text('Buka DO', style: TextStyle(fontSize: 11, color: _amberDark, fontWeight: FontWeight.w700)),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, color: _amberDark, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              doRow['do_number']?.toString() ?? '—',
+                              style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w800, fontSize: 15, color: _amberDark),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(_formatDt(doRow['display_date']), style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                          ],
                         ),
                       ),
-                      if (expanded) _buildSerialSubTable(serials),
-                    ];
-                  }),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(999)),
+                        child: Text(
+                          '$pendingCount',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _amberDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _doMetaLine('Outlet', doRow['outlet_name']?.toString() ?? '—'),
+                  _doMetaLine('Warehouse Outlet', doRow['warehouse_outlet_name']?.toString() ?? '—'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: days > 7 ? const Color(0xFFFEE2E2) : const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${doRow['days_pending'] ?? '-'} hari',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: days > 7 ? const Color(0xFFB91C1C) : Colors.grey.shade700),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (id > 0)
+                        TextButton(
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DeliveryOrderDetailScreen(id: id))),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Buka DO', style: TextStyle(fontSize: 12, color: _amberDark, fontWeight: FontWeight.w700)),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
-          if (_lastPage > 1) _buildPagination(),
+          if (expanded) _buildSerialSubTable(serials),
         ],
       ),
     );
   }
 
+  Widget _doMetaLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(fontSize: 12, color: Color(0xFF374151)),
+          children: [
+            TextSpan(text: '$label: ', style: TextStyle(color: Colors.grey.shade600)),
+            TextSpan(text: value, style: const TextStyle(fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSerialSubTable(List<Map<String, dynamic>> serials) {
+    if (serials.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFFDE68A)),
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+        ),
+        child: const Text('Tidak ada serial pada DO ini.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
       decoration: BoxDecoration(
         border: Border.all(color: const Color(0xFFFDE68A)),
         borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFFFFBEB),
       ),
-      clipBehavior: Clip.antiAlias,
       child: Column(
-        children: [
-          Container(
-            color: const Color(0xFFFEF3C7),
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-            child: const Row(
-              children: [
-                Expanded(flex: 2, child: Text('Nomor Seri', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E)))),
-                Expanded(flex: 3, child: Text('Item', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E)))),
-                Expanded(flex: 2, child: Text('SKU', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E)))),
-                Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E)))),
-                SizedBox(width: 56, child: Text('Aksi', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E)))),
-              ],
-            ),
-          ),
-          ...serials.map((sn) => Container(
-                decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFFFFBEB)))),
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(sn['serial_number']?.toString() ?? '—', style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w700, color: Color(0xFF4338CA), fontSize: 12)),
-                    ),
-                    Expanded(flex: 3, child: Text(sn['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 12))),
-                    Expanded(flex: 2, child: Text(sn['item_sku']?.toString() ?? '-', style: const TextStyle(fontSize: 12, color: Colors.grey))),
-                    Expanded(flex: 1, child: Text(sn['unit_name']?.toString() ?? '-', style: const TextStyle(fontSize: 12))),
-                    SizedBox(
-                      width: 56,
-                      child: TextButton(
-                        onPressed: () {
-                          final s = sn['serial_number']?.toString() ?? '';
-                          if (s.isNotEmpty) widget.onTrackSerial(s);
-                        },
-                        child: const Text('Lacak', style: TextStyle(fontSize: 11)),
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-        ],
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: serials.map((sn) {
+          final serialNumber = sn['serial_number']?.toString() ?? '';
+          return SerialTrackingSerialCard(
+            serial: sn,
+            onTrack: serialNumber.isNotEmpty ? () => widget.onTrackSerial(serialNumber) : null,
+          );
+        }).toList(),
       ),
     );
   }
@@ -525,47 +522,5 @@ class SerialTrackingPendingTabState extends State<SerialTrackingPendingTab> {
     final d = DateTime.tryParse(v.toString());
     if (d == null) return v.toString();
     return _dtf.format(d.toLocal());
-  }
-}
-
-class _Th extends StatelessWidget {
-  const _Th(this.text, {this.flex = 1, this.center = false});
-  final String text;
-  final int flex;
-  final bool center;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        child: Text(text, textAlign: center ? TextAlign.center : TextAlign.left, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-      ),
-    );
-  }
-}
-
-class _Td extends StatelessWidget {
-  const _Td(this.text, {this.flex = 1, this.mono = false, this.color});
-  final String text;
-  final int flex;
-  final bool mono;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Text(
-          text,
-          style: TextStyle(fontSize: 12, fontFamily: mono ? 'monospace' : null, fontWeight: mono ? FontWeight.w700 : FontWeight.normal, color: color ?? Colors.black87),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
   }
 }

@@ -37,11 +37,11 @@ class _AssetServiceOrderFormScreenState
   List<dynamic> _supplierResults = [];
   Timer? _supplierDebounce;
 
-  List<Map<String, dynamic>> _items = [];
+  final List<Map<String, dynamic>> _items = [];
   List<dynamic> _itemResults = [];
   Timer? _itemDebounce;
 
-  List<Map<String, dynamic>> _selectedApprovers = [];
+  final List<Map<String, dynamic>> _selectedApprovers = [];
   List<dynamic> _approverResults = [];
   Timer? _approverDebounce;
 
@@ -201,12 +201,15 @@ class _AssetServiceOrderFormScreenState
     final qs = item['stock_small'];
     final qm = item['stock_medium'];
     final ql = item['stock_large'];
-    if (qs != null && double.tryParse(qs.toString()) != 0)
-      parts.add('${qs} ${item['small_unit_name']}');
-    if (qm != null && double.tryParse(qm.toString()) != 0)
-      parts.add('${qm} ${item['medium_unit_name']}');
-    if (ql != null && double.tryParse(ql.toString()) != 0)
-      parts.add('${ql} ${item['large_unit_name']}');
+    if (qs != null && double.tryParse(qs.toString()) != 0) {
+      parts.add('$qs ${item['small_unit_name']}');
+    }
+    if (qm != null && double.tryParse(qm.toString()) != 0) {
+      parts.add('$qm ${item['medium_unit_name']}');
+    }
+    if (ql != null && double.tryParse(ql.toString()) != 0) {
+      parts.add('$ql ${item['large_unit_name']}');
+    }
     return parts.isEmpty ? '0' : parts.join(' / ');
   }
 
@@ -255,8 +258,12 @@ class _AssetServiceOrderFormScreenState
   }
 
   Future<void> _submit() async {
+    if (_ownerOutletId == null) {
+      _showError('Pilih outlet pemilik');
+      return;
+    }
     if (_selectedOutletId == null) {
-      _showError('Pilih outlet');
+      _showError('Pilih outlet lokasi');
       return;
     }
     if (_selectedWarehouseId == null) {
@@ -279,6 +286,20 @@ class _AssetServiceOrderFormScreenState
       _showError('Tambahkan minimal 1 approver');
       return;
     }
+    for (final i in _items) {
+      final qty = double.tryParse(
+              (i['qty_controller'] as TextEditingController).text.trim()) ??
+          0;
+      if (qty <= 0) {
+        _showError('Qty item harus lebih dari 0');
+        return;
+      }
+      final unit = i['selected_unit']?.toString() ?? '';
+      if (unit.isEmpty) {
+        _showError('Unit item wajib dipilih');
+        return;
+      }
+    }
 
     setState(() => _isSaving = true);
 
@@ -293,11 +314,6 @@ class _AssetServiceOrderFormScreenState
         'note': (i['note_controller'] as TextEditingController).text,
       };
     }).toList();
-
-    if (_ownerOutletId == null) {
-      _showError('Pilih outlet pemilik');
-      return;
-    }
 
     final result = await _service.createOrder(
       ownerOutletId: _ownerOutletId!,
@@ -401,7 +417,7 @@ class _AssetServiceOrderFormScreenState
             const SizedBox(height: 10),
             if (_isHQ)
               DropdownButtonFormField<int>(
-                value: _ownerOutletId,
+                initialValue: _ownerOutletId,
                 isExpanded: true,
                 decoration: const InputDecoration(
                     labelText: 'Outlet Pemilik *', isDense: true, border: OutlineInputBorder()),
@@ -426,7 +442,7 @@ class _AssetServiceOrderFormScreenState
             const SizedBox(height: 8),
             if (_isHQ)
               DropdownButtonFormField<int>(
-                value: _selectedOutletId,
+                initialValue: _selectedOutletId,
                 isExpanded: true,
                 decoration: const InputDecoration(
                     labelText: 'Lokasi Outlet', isDense: true, border: OutlineInputBorder()),
@@ -460,7 +476,7 @@ class _AssetServiceOrderFormScreenState
               ),
             const SizedBox(height: 10),
             DropdownButtonFormField<int>(
-              value: _selectedWarehouseId,
+              initialValue: _selectedWarehouseId,
               isExpanded: true,
               decoration: const InputDecoration(
                   labelText: 'Warehouse', isDense: true, border: OutlineInputBorder()),
@@ -761,7 +777,7 @@ class _AssetServiceOrderFormScreenState
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: item['selected_unit'],
+                            initialValue: item['selected_unit'],
                             isExpanded: true,
                             decoration: const InputDecoration(
                                 labelText: 'Unit',

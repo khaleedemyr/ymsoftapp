@@ -19,18 +19,37 @@ class _AssetInventoryAdjustmentIndexScreenState
   final _scrollController = ScrollController();
 
   List<AssetInventoryAdjustment> _adjustments = [];
+  List<Map<String, dynamic>> _outlets = [];
+  int? _userOutletId;
   bool _isLoading = false;
+  bool _isPreparing = true;
   bool _hasMore = true;
   int _currentPage = 1;
   String? _dateFrom;
   String? _dateTo;
   String _typeFilter = '';
+  String _statusFilter = '';
+  int? _outletIdFilter;
 
   @override
   void initState() {
     super.initState();
-    _loadAdjustments();
+    _loadCreateData();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _loadCreateData() async {
+    final createData = await _service.getCreateData();
+    if (!mounted) return;
+    setState(() {
+      _outlets = (createData?['outlets'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [];
+      _userOutletId = int.tryParse(createData?['user']?['id_outlet']?.toString() ?? '');
+      _isPreparing = false;
+    });
+    _loadAdjustments();
   }
 
   @override
@@ -64,6 +83,8 @@ class _AssetInventoryAdjustmentIndexScreenState
       dateFrom: _dateFrom,
       dateTo: _dateTo,
       type: _typeFilter.isNotEmpty ? _typeFilter : null,
+      status: _statusFilter.isNotEmpty ? _statusFilter : null,
+      outletId: _outletIdFilter,
       page: _currentPage,
       perPage: 15,
     );
@@ -155,20 +176,54 @@ class _AssetInventoryAdjustmentIndexScreenState
       _dateFrom = null;
       _dateTo = null;
       _typeFilter = '';
+      _statusFilter = '';
+      _outletIdFilter = null;
       _searchController.clear();
     });
     _loadAdjustments();
+  }
+
+  Future<void> _deleteFromIndex(AssetInventoryAdjustment adjustment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Adjustment?'),
+        content: const Text('Data adjustment akan dihapus permanen.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await _service.deleteAdjustment(adjustment.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? (result['success'] == true ? 'Berhasil' : 'Gagal')),
+        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    if (result['success'] == true) {
+      _loadAdjustments();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Asset Inventory Adjustment'),
+        title: const Text('Asset Stock Adjustment'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
-      body: Column(
+      body: _isPreparing
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
@@ -248,6 +303,58 @@ class _AssetInventoryAdjustmentIndexScreenState
                 const SizedBox(height: 8),
                 Row(
                   children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _statusFilter.isEmpty ? null : _statusFilter,
+                        decoration: InputDecoration(
+                          labelText: 'Status',
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('Semua Status')),
+                          DropdownMenuItem(value: 'waiting_approval', child: Text('Waiting Approval')),
+                          DropdownMenuItem(value: 'approved', child: Text('Approved')),
+                          DropdownMenuItem(value: 'rejected', child: Text('Rejected')),
+                        ],
+                        onChanged: (v) => setState(() => _statusFilter = v ?? ''),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (_userOutletId == 1)
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: _outletIdFilter,
+                          decoration: InputDecoration(
+                            labelText: 'Outlet',
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                          ),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('Semua Outlet')),
+                            ..._outlets.map((o) => DropdownMenuItem<int>(
+                                  value: int.tryParse(o['id_outlet']?.toString() ?? ''),
+                                  child: Text(o['nama_outlet']?.toString() ?? '-'),
+                                )),
+                          ],
+                          onChanged: (v) => setState(() => _outletIdFilter = v),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
                     _buildTypeChip('', 'Semua'),
                     const SizedBox(width: 6),
                     _buildTypeChip('in', 'Stock In'),
@@ -265,7 +372,11 @@ class _AssetInventoryAdjustmentIndexScreenState
                       child: const Text('Filter', style: TextStyle(fontSize: 13)),
                     ),
                     const SizedBox(width: 4),
-                    if (_dateFrom != null || _dateTo != null || _typeFilter.isNotEmpty)
+                    if (_dateFrom != null ||
+                        _dateTo != null ||
+                        _typeFilter.isNotEmpty ||
+                        _statusFilter.isNotEmpty ||
+                        _outletIdFilter != null)
                       IconButton(
                         icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
                         onPressed: _clearFilters,
@@ -289,133 +400,102 @@ class _AssetInventoryAdjustmentIndexScreenState
                         ),
                       ],
                     )
-                  : ListView.builder(
+                  : ListView(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(12),
-                      itemCount: _adjustments.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= _adjustments.length) {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        }
-
-                        final a = _adjustments[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      AssetInventoryAdjustmentDetailScreen(adjustmentId: a.id),
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('Nomor')),
+                              DataColumn(label: Text('Tanggal')),
+                              DataColumn(label: Text('Pemilik')),
+                              DataColumn(label: Text('Lokasi')),
+                              DataColumn(label: Text('Warehouse')),
+                              DataColumn(label: Text('Tipe')),
+                              DataColumn(label: Text('Status')),
+                              DataColumn(label: Text('Dibuat Oleh')),
+                              DataColumn(label: Text('Aksi')),
+                            ],
+                            rows: _adjustments.map((a) {
+                              return DataRow(cells: [
+                                DataCell(Text(a.number)),
+                                DataCell(Text(a.date)),
+                                DataCell(Text(a.ownerOutletName ?? '-')),
+                                DataCell(Text(a.outletName ?? '-')),
+                                DataCell(Text(a.warehouseOutletName ?? '-')),
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _typeColor(a.type).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _typeLabel(a.type),
+                                      style: TextStyle(
+                                        color: _typeColor(a.type),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              );
-                              _loadAdjustments();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          a.number,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.teal,
-                                            fontSize: 15,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _statusColor(a.status).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _statusLabel(a.status),
+                                      style: TextStyle(
+                                        color: _statusColor(a.status),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: _typeColor(a.type).withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          _typeLabel(a.type),
-                                          style: TextStyle(
-                                            color: _typeColor(a.type),
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   ),
-                                  const SizedBox(height: 8),
+                                ),
+                                DataCell(Text(a.creatorName ?? '-')),
+                                DataCell(
                                   Row(
                                     children: [
-                                      const Icon(Icons.store, size: 14, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '${a.outletName ?? '-'} - ${a.warehouseOutletName ?? '-'}',
-                                          style: const TextStyle(fontSize: 13, color: Colors.black87),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                      TextButton(
+                                        onPressed: () async {
+                                          await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => AssetInventoryAdjustmentDetailScreen(
+                                                adjustmentId: a.id,
+                                              ),
+                                            ),
+                                          );
+                                          _loadAdjustments();
+                                        },
+                                        child: const Text('Lihat'),
                                       ),
+                                      if (a.status.toLowerCase() == 'waiting_approval')
+                                        TextButton(
+                                          onPressed: () => _deleteFromIndex(a),
+                                          style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                          child: const Text('Hapus'),
+                                        ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        a.date,
-                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: _statusColor(a.status).withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                        child: Text(
-                                          _statusLabel(a.status),
-                                          style: TextStyle(
-                                            color: _statusColor(a.status),
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        a.creatorName ?? '-',
-                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              ]);
+                            }).toList(),
                           ),
-                        );
-                      },
+                        ),
+                        if (_hasMore)
+                          const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          ),
+                      ],
                     ),
             ),
           ),

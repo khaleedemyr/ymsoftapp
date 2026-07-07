@@ -30,12 +30,12 @@ class _AssetInventoryAdjustmentFormScreenState
   DateTime _adjustmentDate = DateTime.now();
   String _type = 'in';
 
-  List<Map<String, dynamic>> _selectedItems = [];
+  final List<Map<String, dynamic>> _selectedItems = [];
   List<Map<String, dynamic>> _itemSearchResults = [];
   bool _isSearchingItems = false;
   Timer? _itemDebounce;
 
-  List<Map<String, dynamic>> _selectedApprovers = [];
+  final List<Map<String, dynamic>> _selectedApprovers = [];
   List<Map<String, dynamic>> _approverResults = [];
   Timer? _approverDebounce;
 
@@ -68,6 +68,9 @@ class _AssetInventoryAdjustmentFormScreenState
                 .toList() ??
             [];
         _warehouseOutlets = (result['warehouse_outlets'] as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            (result['warehouseOutlets'] as List<dynamic>?)
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
             [];
@@ -128,6 +131,12 @@ class _AssetInventoryAdjustmentFormScreenState
         'item_name': item['name'] ?? '',
         'sku': item['sku'] ?? '',
         'unit_name': item['unit_small'] ?? '-',
+        'selected_unit': item['unit_small']?.toString(),
+        'available_units': [
+          item['unit_small']?.toString(),
+          item['unit_medium']?.toString(),
+          item['unit_large']?.toString(),
+        ].whereType<String>().where((u) => u.trim().isNotEmpty).toSet().toList(),
         'stock_small': double.tryParse(item['stock_small']?.toString() ?? '0') ?? 0,
         'qty_controller': TextEditingController(),
         'note_controller': TextEditingController(),
@@ -188,9 +197,15 @@ class _AssetInventoryAdjustmentFormScreenState
   }
 
   Future<void> _submitForm() async {
+    if (_ownerOutletId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih outlet pemilik.')),
+      );
+      return;
+    }
     if (_outletId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih outlet.')),
+        const SnackBar(content: Text('Pilih outlet lokasi.')),
       );
       return;
     }
@@ -217,6 +232,40 @@ class _AssetInventoryAdjustmentFormScreenState
         );
         return;
       }
+      if (_type == 'out') {
+        final stock = (item['stock_small'] is num)
+            ? (item['stock_small'] as num).toDouble()
+            : double.tryParse(item['stock_small']?.toString() ?? '0') ?? 0;
+        if (qty > stock) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Qty untuk ${item['item_name']} melebihi stok ($stock).',
+              ),
+            ),
+          );
+          return;
+        }
+      }
+      final selectedUnit = item['selected_unit']?.toString();
+      if (selectedUnit == null || selectedUnit.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unit untuk ${item['item_name']} wajib dipilih.')),
+        );
+        return;
+      }
+    }
+    if (_reasonController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alasan adjustment wajib diisi.')),
+      );
+      return;
+    }
+    if (_selectedApprovers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih minimal 1 approver.')),
+      );
+      return;
     }
 
     setState(() => _isSubmitting = true);
@@ -227,6 +276,7 @@ class _AssetInventoryAdjustmentFormScreenState
         'qty': double.tryParse(
                 (item['qty_controller'] as TextEditingController).text) ??
             0,
+        'selected_unit': item['selected_unit'],
         'note': (item['note_controller'] as TextEditingController).text,
       };
     }).toList();
@@ -238,13 +288,6 @@ class _AssetInventoryAdjustmentFormScreenState
 
     final dateStr =
         '${_adjustmentDate.year}-${_adjustmentDate.month.toString().padLeft(2, '0')}-${_adjustmentDate.day.toString().padLeft(2, '0')}';
-
-    if (_ownerOutletId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih outlet pemilik.')),
-      );
-      return;
-    }
 
     final result = await _service.createAdjustment(
       ownerOutletId: _ownerOutletId!,
@@ -282,7 +325,7 @@ class _AssetInventoryAdjustmentFormScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Buat Adjustment Asset'),
+        title: const Text('Buat Asset Stock Adjustment'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
@@ -396,7 +439,7 @@ class _AssetInventoryAdjustmentFormScreenState
                           const SizedBox(height: 12),
                           if (_userOutletId == 1)
                             DropdownButtonFormField<int>(
-                              value: _ownerOutletId,
+                              initialValue: _ownerOutletId,
                               decoration: _inputDecoration('Outlet Pemilik *'),
                               items: _outlets.map((o) {
                                 return DropdownMenuItem<int>(
@@ -419,7 +462,7 @@ class _AssetInventoryAdjustmentFormScreenState
                           const SizedBox(height: 8),
                           if (_userOutletId == 1)
                             DropdownButtonFormField<int>(
-                              value: _outletId,
+                              initialValue: _outletId,
                               decoration: _inputDecoration('Lokasi Outlet'),
                               items: _outlets.map((o) {
                                 return DropdownMenuItem<int>(
@@ -444,7 +487,7 @@ class _AssetInventoryAdjustmentFormScreenState
                             ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<int>(
-                            value: _warehouseOutletId,
+                            initialValue: _warehouseOutletId,
                             decoration: _inputDecoration('Warehouse'),
                             items: _getWarehousesForOutlet(_outletId).map((w) {
                               return DropdownMenuItem<int>(
@@ -591,6 +634,18 @@ class _AssetInventoryAdjustmentFormScreenState
                                       ),
                                     ],
                                   ),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                initialValue: item['selected_unit']?.toString(),
+                                decoration: _inputDecoration('Unit'),
+                                items: (item['available_units'] as List<dynamic>? ?? [])
+                                    .map((u) => DropdownMenuItem<String>(
+                                          value: u.toString(),
+                                          child: Text(u.toString(), style: const TextStyle(fontSize: 14)),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) => setState(() => item['selected_unit'] = v),
+                              ),
                                 ],
                               ),
                             );

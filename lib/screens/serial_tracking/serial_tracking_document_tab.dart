@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/serial_tracking_service.dart';
 import '../../widgets/app_loading_indicator.dart';
+import 'serial_tracking_serial_card.dart';
 import 'serial_tracking_ui.dart';
 
 class SerialTrackingDocumentTab extends StatefulWidget {
@@ -367,7 +368,7 @@ class _DocumentSerialsSheetState extends State<_DocumentSerialsSheet> {
     setState(() {
       _loading = false;
       _serials = res?['data'] is List
-          ? (res!['data'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
+          ? List<Map<String, dynamic>>.from(res!['data'] as List)
           : [];
     });
   }
@@ -416,55 +417,14 @@ class _DocumentSerialsSheetState extends State<_DocumentSerialsSheet> {
                     ? const Center(child: Text('Tidak ada serial.', style: TextStyle(color: SerialTrackingUi.slate500)))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                        itemCount: _serials.length + 1,
+                        itemCount: _serials.length,
                         itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                              decoration: BoxDecoration(color: SerialTrackingUi.surface, borderRadius: BorderRadius.circular(10)),
-                              child: const Row(
-                                children: [
-                                  Expanded(flex: 2, child: Text('Serial', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SerialTrackingUi.slate600))),
-                                  Expanded(flex: 2, child: Text('Item', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SerialTrackingUi.slate600))),
-                                  Expanded(child: Text('Unit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SerialTrackingUi.slate600))),
-                                  Expanded(child: Text('Status', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SerialTrackingUi.slate600))),
-                                  SizedBox(width: 52, child: Text('Aksi', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SerialTrackingUi.slate600))),
-                                ],
-                              ),
-                            );
-                          }
-                          final s = _serials[index - 1];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                            decoration: SerialTrackingUi.cardDecoration(),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    s['serial_number']?.toString() ?? '—',
-                                    style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w700, fontSize: 12, color: SerialTrackingUi.indigoDark),
-                                  ),
-                                ),
-                                Expanded(flex: 2, child: Text(s['item_name']?.toString() ?? '-', style: const TextStyle(fontSize: 11))),
-                                Expanded(child: Text(s['unit_name']?.toString() ?? '-', style: const TextStyle(fontSize: 11))),
-                                Expanded(child: SerialTrackingUi.serialStatusBadge(s)),
-                                SizedBox(
-                                  width: 52,
-                                  child: TextButton(
-                                    onPressed: () {
-                                      final sn = s['serial_number']?.toString() ?? '';
-                                      if (sn.isNotEmpty) widget.onTrackSerial(sn);
-                                    },
-                                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(40, 32)),
-                                    child: const Text('Lacak', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                                  ),
-                                ),
-                              ],
-                            ),
+                          final s = _serials[index];
+                          final sn = s['serial_number']?.toString() ?? '';
+                          return SerialTrackingSerialCard(
+                            serial: s,
+                            showStatus: true,
+                            onTrack: sn.isNotEmpty ? () => widget.onTrackSerial(sn) : null,
                           );
                         },
                       ),

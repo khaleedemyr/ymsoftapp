@@ -2,6 +2,7 @@ class AssetGoodReceive {
   final int id;
   final String grNumber;
   final int poId;
+  final int? ownerOutletId;
   final int outletId;
   final int? warehouseOutletId;
   final String receiveDate;
@@ -9,6 +10,8 @@ class AssetGoodReceive {
   final String status;
   final String? notes;
   final String? poNumber;
+  final String? ownerOutletName;
+  final String? locationOutletName;
   final String? outletName;
   final String? warehouseOutletName;
   final String? receivedByName;
@@ -22,6 +25,7 @@ class AssetGoodReceive {
     required this.id,
     required this.grNumber,
     required this.poId,
+    this.ownerOutletId,
     required this.outletId,
     this.warehouseOutletId,
     required this.receiveDate,
@@ -29,6 +33,8 @@ class AssetGoodReceive {
     required this.status,
     this.notes,
     this.poNumber,
+    this.ownerOutletName,
+    this.locationOutletName,
     this.outletName,
     this.warehouseOutletName,
     this.receivedByName,
@@ -44,6 +50,9 @@ class AssetGoodReceive {
       id: int.tryParse(json['id'].toString()) ?? 0,
       grNumber: json['gr_number']?.toString() ?? '',
       poId: int.tryParse(json['po_id']?.toString() ?? '0') ?? 0,
+      ownerOutletId: json['owner_outlet_id'] != null
+          ? int.tryParse(json['owner_outlet_id'].toString())
+          : null,
       outletId: int.tryParse(json['outlet_id']?.toString() ?? '0') ?? 0,
       warehouseOutletId: json['warehouse_outlet_id'] != null
           ? int.tryParse(json['warehouse_outlet_id'].toString())
@@ -53,6 +62,8 @@ class AssetGoodReceive {
       status: json['status']?.toString() ?? 'draft',
       notes: json['notes']?.toString(),
       poNumber: json['po_number']?.toString(),
+      ownerOutletName: json['owner_outlet_name']?.toString(),
+      locationOutletName: json['location_outlet_name']?.toString(),
       outletName: json['outlet_name']?.toString(),
       warehouseOutletName: json['warehouse_outlet_name']?.toString(),
       receivedByName: json['received_by_name']?.toString(),
@@ -184,6 +195,7 @@ class AssetPOItem {
   final int? itemId;
   final String? resolvedItemName;
   final int? unitId;
+  final bool resolveOk;
   final double qtyAlreadyReceived;
   final double qtyRemaining;
 
@@ -199,6 +211,7 @@ class AssetPOItem {
     this.itemId,
     this.resolvedItemName,
     this.unitId,
+    this.resolveOk = false,
     this.qtyAlreadyReceived = 0,
     this.qtyRemaining = 0,
   });
@@ -224,6 +237,9 @@ class AssetPOItem {
       unitId: json['unit_id'] != null
           ? int.tryParse(json['unit_id'].toString())
           : null,
+      resolveOk: json['resolve_ok'] == true ||
+          json['resolve_ok']?.toString() == '1' ||
+          (json['item_id'] != null && json['unit_id'] != null),
       qtyAlreadyReceived:
           double.tryParse(json['qty_already_received']?.toString() ?? '0') ??
               0,

@@ -28,8 +28,13 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
 
   final _service = OmnichannelInboxService();
   final _searchCtrl = TextEditingController();
+  final _listScrollCtrl = ScrollController();
   bool _loading = true;
   bool _pollInFlight = false;
+  bool _loadingMoreConversations = false;
+  bool _hasMoreConversations = false;
+  int? _oldestConversationId;
+  bool _loadedExtraConversations = false;
   String _inbox = 'mine';
   String? _channelFilter;
   String? _leadStageFilter;
@@ -42,6 +47,7 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
     WidgetsBinding.instance.addObserver(this);
     _channelFilter = widget.initialChannel;
     _searchCtrl.addListener(_onSearchChanged);
+    _listScrollCtrl.addListener(_onListScroll);
     _load().then((_) => _startPolling());
   }
 
@@ -49,9 +55,65 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
+    _listScrollCtrl.removeListener(_onListScroll);
+    _listScrollCtrl.dispose();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  List<OmniConversation> _mergePolledConversations(
+    List<OmniConversation> head,
+    List<OmniConversation> existing,
+  ) {
+    final headIds = head.map((c) => c.id).toSet();
+    final tail = existing.where((c) => !headIds.contains(c.id)).toList();
+    return [...head, ...tail];
+  }
+
+  void _onListScroll() {
+    if (_loadingMoreConversations || !_hasMoreConversations || _searchCtrl.text.trim().isNotEmpty) {
+      return;
+    }
+    if (!_listScrollCtrl.hasClients) return;
+    final pos = _listScrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 120) {
+      _loadMoreConversations();
+    }
+  }
+
+  Future<void> _loadMoreConversations() async {
+    if (_loadingMoreConversations || !_hasMoreConversations || _bootstrap == null) return;
+    final beforeId = _oldestConversationId ??
+        (_bootstrap!.conversations.isNotEmpty ? _bootstrap!.conversations.last.id : null);
+    if (beforeId == null) return;
+
+    setState(() => _loadingMoreConversations = true);
+    try {
+      final page = await _service.fetchConversationsMore(
+        inbox: _inbox,
+        leadStage: _leadStageFilter,
+        channel: _channelFilter,
+        beforeId: beforeId,
+      );
+      if (!mounted) return;
+      final existingIds = _bootstrap!.conversations.map((c) => c.id).toSet();
+      final append = page.conversations.where((c) => !existingIds.contains(c.id)).toList();
+      setState(() {
+        if (append.isNotEmpty) {
+          _bootstrap = _bootstrap!.copyWith(
+            conversations: [..._bootstrap!.conversations, ...append],
+          );
+        }
+        _hasMoreConversations = page.hasMore;
+        _oldestConversationId = page.oldestConversationId ?? _oldestConversationId;
+        _loadedExtraConversations = true;
+      });
+    } catch (_) {
+      // Abaikan — user bisa coba scroll lagi
+    } finally {
+      if (mounted) setState(() => _loadingMoreConversations = false);
+    }
   }
 
   @override
@@ -81,8 +143,13 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
       );
       if (!mounted) return;
       final prev = _bootstrap!;
+      final merged = _mergePolledConversations(poll.conversations, prev.conversations);
       setState(() {
-        _bootstrap = prev.copyWith(conversations: poll.conversations, inbox: _inbox);
+        _bootstrap = prev.copyWith(conversations: merged, inbox: _inbox);
+        if (!_loadedExtraConversations) {
+          _hasMoreConversations = poll.hasMoreConversations;
+          _oldestConversationId = poll.oldestConversationId;
+        }
       });
     } catch (_) {
       // Abaikan error poll — user masih bisa pull-to-refresh
@@ -105,6 +172,9 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
         setState(() {
           _bootstrap = data;
           _loading = false;
+          _loadedExtraConversations = false;
+          _hasMoreConversations = data.conversationsHasMore;
+          _oldestConversationId = data.conversationsOldestId;
           if (!data.canSeeAllChats) {
             if (_inbox == 'unassigned') {
               _inbox = 'mine';
@@ -152,10 +222,23 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
   String _formatTime(DateTime? dt) {
     if (dt == null) return '';
     final now = DateTime.now();
-    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-      return DateFormat('HH:mm').format(dt);
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    final diffDays = today.difference(day).inDays;
+
+    if (diffDays == 0) {
+      return DateFormat('HH:mm', 'id_ID').format(dt);
     }
-    return DateFormat('dd MMM').format(dt);
+    if (diffDays == 1) {
+      return 'Kemarin';
+    }
+    if (diffDays < 7 && now.year == dt.year) {
+      return DateFormat('EEE', 'id_ID').format(dt);
+    }
+    if (now.year == dt.year) {
+      return DateFormat('d MMM', 'id_ID').format(dt);
+    }
+    return DateFormat('d MMM yy', 'id_ID').format(dt);
   }
 
   String _leadLabel(String value) {
@@ -328,10 +411,36 @@ class _OmnichannelInboxListScreenState extends State<OmnichannelInboxListScreen>
                           color: OmniTheme.primary,
                           onRefresh: _load,
                           child: ListView.separated(
+                            controller: _listScrollCtrl,
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                            itemCount: conversations.length,
+                            itemCount: conversations.length + 1,
                             separatorBuilder: (_, __) => const SizedBox(height: 10),
                             itemBuilder: (context, index) {
+                              if (index >= conversations.length) {
+                                if (_loadingMoreConversations) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: OmniTheme.primary),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                if (!_hasMoreConversations && _searchCtrl.text.trim().isEmpty) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Text(
+                                      'Semua chat sudah dimuat',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                    ),
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              }
                               final c = conversations[index];
                               return _ChatListTile(
                                 conversation: c,
@@ -834,6 +943,10 @@ class _ChatListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = conversation;
     final unread = c.unreadCount > 0;
+    final hasBadges = (c.channelAccountLabel != null && c.channelAccountLabel!.trim().isNotEmpty) ||
+        c.needsVoiceEscalation ||
+        c.feedbackCaseId != null ||
+        c.member != null;
 
     return Material(
       color: Colors.transparent,
@@ -845,6 +958,7 @@ class _ChatListTile extends StatelessWidget {
           decoration: OmniTheme.cardDecoration(),
           padding: const EdgeInsets.all(14),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               OmniContactAvatar(
                 title: c.title,
@@ -858,8 +972,9 @@ class _ChatListTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
+                        Expanded(
                           child: Text(
                             c.title,
                             style: TextStyle(
@@ -871,44 +986,72 @@ class _ChatListTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (c.channelAccountLabel != null && c.channelAccountLabel!.trim().isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          OmniChannelAccountBadge(channel: c.channel, label: c.channelAccountLabel!.trim()),
-                        ],
-                        if (c.member != null) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.green.shade200),
-                            ),
-                            child: Text(
-                              c.member!.tierLabel.isEmpty
-                                  ? 'Member'
-                                  : 'Member · ${c.member!.tierLabel}',
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              timeLabel.isNotEmpty ? timeLabel : '—',
                               style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.green.shade800,
+                                fontSize: 12,
+                                color: unread ? OmniTheme.primary : OmniTheme.textSecondary,
+                                fontWeight: unread ? FontWeight.w600 : FontWeight.w500,
                               ),
                             ),
-                          ),
-                        ],
-                        if (timeLabel.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            timeLabel,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: unread ? OmniTheme.primary : OmniTheme.textSecondary,
-                              fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
-                            ),
-                          ),
-                        ],
+                            if (unread) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                decoration: BoxDecoration(
+                                  gradient: OmniTheme.gradientHeader,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '${c.unreadCount}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
+                    if (hasBadges) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          if (c.channelAccountLabel != null && c.channelAccountLabel!.trim().isNotEmpty)
+                            OmniChannelAccountBadge(channel: c.channel, label: c.channelAccountLabel!.trim()),
+                          if (c.needsVoiceEscalation || c.feedbackCaseId != null)
+                            _ComplaintBadge(conversation: c),
+                          if (c.member != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.shade200),
+                              ),
+                              child: Text(
+                                c.member!.tierLabel.isEmpty
+                                    ? 'Member'
+                                    : 'Member · ${c.member!.tierLabel}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.green.shade800,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                     if (c.displayPhone.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
@@ -938,22 +1081,53 @@ class _ChatListTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (unread) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: OmniTheme.gradientHeader,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${c.unreadCount}',
-                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComplaintBadge extends StatelessWidget {
+  final OmniConversation conversation;
+
+  const _ComplaintBadge({required this.conversation});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = conversation;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.feedbackCaseId != null
+            ? Colors.indigo.shade50
+            : (c.complaintSeverity == 'critical'
+                ? Colors.red.shade50
+                : Colors.orange.shade50),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: c.feedbackCaseId != null
+              ? Colors.indigo.shade200
+              : (c.complaintSeverity == 'critical'
+                  ? Colors.red.shade300
+                  : Colors.orange.shade300),
+        ),
+      ),
+      child: Text(
+        c.feedbackCaseId != null
+            ? 'CVCC'
+            : (c.complaintSeverity == 'critical'
+                ? 'Kritis'
+                : (c.complaintSeverity == 'major' ? 'Buruk' : 'Komplain')),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: c.feedbackCaseId != null
+              ? Colors.indigo.shade800
+              : (c.complaintSeverity == 'critical'
+                  ? Colors.red.shade800
+                  : Colors.orange.shade900),
         ),
       ),
     );

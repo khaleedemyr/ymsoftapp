@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/ticket_service.dart';
+import '../../utils/ticket_status.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -31,13 +33,21 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
   int? _statusId;
   int? _divisiId;
   int? _outletId;
+  String? _initialStatusSlug;
   final List<File> _newFiles = [];
+  final List<File> _closeEvidenceFiles = [];
+  final _closeNote = TextEditingController();
+  final List<Map<String, dynamic>> _existingTickets = [];
+  int _duplicateCount = 0;
+  bool _loadingExistingTickets = false;
+  Timer? _duplicateDebounce;
 
   bool get _isEdit => widget.initialTicket != null;
 
   @override
   void initState() {
     super.initState();
+    _title.addListener(_scheduleFetchExistingTickets);
     _bootstrap();
   }
 
@@ -62,6 +72,11 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
           (t['priority'] is Map ? (t['priority']['id'] as num?)?.toInt() : null);
       _statusId = (t['status_id'] as num?)?.toInt() ??
           (t['status'] is Map ? (t['status']['id'] as num?)?.toInt() : null);
+      if (t['status'] is Map) {
+        _initialStatusSlug = normalizeTicketStatusSlug(
+          (t['status'] as Map)['slug']?.toString(),
+        );
+      }
       _divisiId = (t['divisi_id'] as num?)?.toInt() ??
           (t['divisi'] is Map ? (t['divisi']['id'] as num?)?.toInt() : null);
       final oid = t['outlet_id'];
@@ -80,9 +95,87 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
 
   @override
   void dispose() {
+    _duplicateDebounce?.cancel();
+    _title.removeListener(_scheduleFetchExistingTickets);
     _title.dispose();
     _desc.dispose();
+    _closeNote.dispose();
     super.dispose();
+  }
+
+  void _scheduleFetchExistingTickets() {
+    if (_isEdit) return;
+    _duplicateDebounce?.cancel();
+    _duplicateDebounce = Timer(const Duration(milliseconds: 350), _fetchExistingTickets);
+  }
+
+  Future<void> _fetchExistingTickets() async {
+    if (_isEdit || _outletId == null) {
+      if (mounted) {
+        setState(() {
+          _existingTickets.clear();
+          _duplicateCount = 0;
+          _loadingExistingTickets = false;
+        });
+      }
+      return;
+    }
+
+    setState(() => _loadingExistingTickets = true);
+    final res = await _svc.getTicketsByOutlet(
+      outletId: _outletId!,
+      title: _title.text.trim(),
+      q: _title.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _loadingExistingTickets = false;
+      _existingTickets
+        ..clear()
+        ..addAll((res['tickets'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>());
+      _duplicateCount = (res['duplicate_count'] as num?)?.toInt() ?? 0;
+    });
+  }
+
+  bool get _isClosingTicket {
+    if (!_isEdit || _statusId == null || _opts == null) return false;
+    if (_initialStatusSlug == 'closed') return false;
+    for (final s in selectableTicketStatuses(_opts!['statuses'] as List<dynamic>)) {
+      final m = s as Map<String, dynamic>;
+      if ((m['id'] as num).toInt() == _statusId) {
+        return normalizeTicketStatusSlug(m['slug']?.toString()) == 'closed';
+      }
+    }
+    return false;
+  }
+
+  Future<void> _pickCloseEvidence() async {
+    final res = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (res == null) return;
+    setState(() {
+      for (final f in res.files) {
+        final p = f.path;
+        if (p != null && _closeEvidenceFiles.length < 5) {
+          _closeEvidenceFiles.add(File(p));
+        }
+      }
+    });
+  }
+
+  Future<void> _captureCloseEvidence() async {
+    try {
+      final x = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 82);
+      if (x == null || !mounted) return;
+      setState(() {
+        if (_closeEvidenceFiles.length < 5) _closeEvidenceFiles.add(File(x.path));
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kamera: ${e.toString()}')),
+        );
+      }
+    }
   }
 
   Future<void> _pickFiles() async {
@@ -162,6 +255,25 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Judul dan deskripsi wajib')));
       return;
     }
+    if (!_isEdit) {
+      final duplicates = _existingTickets.where((e) => e['is_same_title'] == true).toList();
+      if (duplicates.isNotEmpty) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Judul terdeteksi duplikat'),
+            content: Text(
+              'Ditemukan ${duplicates.length} ticket aktif dengan judul sama di outlet ini.\nTetap lanjut simpan?',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Lanjut Simpan')),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
+    }
     if (_isEdit && _statusId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status wajib')));
       return;
@@ -179,6 +291,12 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
         statusId: _statusId!,
         divisiId: _divisiId!,
         outletId: _outletId!,
+        closeNote: _isClosingTicket && _closeNote.text.trim().isNotEmpty
+            ? _closeNote.text.trim()
+            : null,
+        closeEvidenceFiles: _isClosingTicket && _closeEvidenceFiles.isNotEmpty
+            ? _closeEvidenceFiles
+            : null,
       );
     } else {
       res = await _svc.createTicket(
@@ -231,6 +349,101 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      _dropdown<int>(
+                        label: 'Outlet',
+                        value: _outletId,
+                        items: (_opts!['outlets'] as List<dynamic>).map((e) {
+                          final m = e as Map<String, dynamic>;
+                          final id = (m['id_outlet'] ?? m['id']) as num;
+                          return MapEntry(id.toInt(), m['nama_outlet']?.toString() ?? '');
+                        }).toList(),
+                        onChanged: (v) {
+                          setState(() => _outletId = v);
+                          _scheduleFetchExistingTickets();
+                        },
+                      ),
+                      if (!_isEdit && _outletId != null) ...[
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                            color: const Color(0xFFEFF6FF),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Ticket aktif untuk outlet ini',
+                                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                    ),
+                                  ),
+                                  if (_duplicateCount > 0)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEE2E2),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        '$_duplicateCount judul sama',
+                                        style: const TextStyle(
+                                          color: Color(0xFFB91C1C),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Saat isi judul, daftar otomatis tersaring untuk cek duplikat.',
+                                style: TextStyle(fontSize: 11, color: Color(0xFF1D4ED8)),
+                              ),
+                              const SizedBox(height: 8),
+                              if (_loadingExistingTickets)
+                                const Text('Memuat ticket...', style: TextStyle(fontSize: 12))
+                              else if (_existingTickets.isEmpty)
+                                const Text('Belum ada ticket aktif yang cocok.', style: TextStyle(fontSize: 12))
+                              else
+                                SizedBox(
+                                  height: 180,
+                                  child: ListView.separated(
+                                    itemCount: _existingTickets.length,
+                                    separatorBuilder: (_, __) => const Divider(height: 1),
+                                    itemBuilder: (_, i) {
+                                      final t = _existingTickets[i];
+                                      final same = t['is_same_title'] == true;
+                                      return ListTile(
+                                        dense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                        title: Text(
+                                          t['title']?.toString() ?? '-',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: same ? FontWeight.w700 : FontWeight.w500,
+                                            color: same ? const Color(0xFFB91C1C) : null,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          '${t['ticket_number'] ?? '-'} · ${t['status'] is Map ? t['status']['name'] ?? '-' : '-'}',
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                       TextField(
                         controller: _title,
                         decoration: _dec('Judul'),
@@ -264,11 +477,74 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
                         _dropdown<int>(
                           label: 'Status',
                           value: _statusId,
-                          items: (_opts!['statuses'] as List<dynamic>)
+                          items: selectableTicketStatuses(_opts!['statuses'] as List<dynamic>)
                               .map((e) => MapEntry((e['id'] as num).toInt(), e['name']?.toString() ?? ''))
                               .toList(),
                           onChanged: (v) => setState(() => _statusId = v),
                         ),
+                      if (_isClosingTicket) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFBBF7D0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'Evidence penutupan (opsional)',
+                                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _closeNote,
+                                maxLines: 3,
+                                decoration: const InputDecoration(
+                                  labelText: 'Catatan penutupan',
+                                  hintText: 'Contoh: Lampu sudah diganti...',
+                                  border: OutlineInputBorder(),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: _closeEvidenceFiles.length >= 5 ? null : _pickCloseEvidence,
+                                    icon: const Icon(Icons.upload_file, size: 18),
+                                    label: const Text('File'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _closeEvidenceFiles.length >= 5 ? null : _captureCloseEvidence,
+                                    icon: const Icon(Icons.photo_camera, size: 18),
+                                    label: const Text('Kamera'),
+                                  ),
+                                ],
+                              ),
+                              if (_closeEvidenceFiles.isNotEmpty)
+                                ..._closeEvidenceFiles.asMap().entries.map((e) {
+                                  return ListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      _fileName(e.value.path),
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () => setState(() => _closeEvidenceFiles.removeAt(e.key)),
+                                    ),
+                                  );
+                                }),
+                            ],
+                          ),
+                        ),
+                      ],
                       _dropdown<int>(
                         label: 'Divisi',
                         value: _divisiId,
@@ -276,16 +552,6 @@ class _TicketEditorScreenState extends State<TicketEditorScreen> {
                             .map((e) => MapEntry((e['id'] as num).toInt(), e['nama_divisi']?.toString() ?? ''))
                             .toList(),
                         onChanged: (v) => setState(() => _divisiId = v),
-                      ),
-                      _dropdown<int>(
-                        label: 'Outlet',
-                        value: _outletId,
-                        items: (_opts!['outlets'] as List<dynamic>).map((e) {
-                          final m = e as Map<String, dynamic>;
-                          final id = (m['id_outlet'] ?? m['id']) as num;
-                          return MapEntry(id.toInt(), m['nama_outlet']?.toString() ?? '');
-                        }).toList(),
-                        onChanged: (v) => setState(() => _outletId = v),
                       ),
                       if (!_isEdit) ...[
                         const SizedBox(height: 16),

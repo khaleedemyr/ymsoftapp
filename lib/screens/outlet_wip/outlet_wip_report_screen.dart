@@ -81,6 +81,31 @@ class _OutletWIPReportScreenState extends State<OutletWIPReportScreen> {
     }
   }
 
+  String _formatNumber(dynamic value) {
+    final n = value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');
+    if (n == null) return '0,00';
+    return NumberFormat('#,##0.00', 'id_ID').format(n);
+  }
+
+  double get _totalQtyJadi {
+    return _productions.fold<double>(0, (sum, p) {
+      final m = p is Map ? p as Map : const {};
+      final q = double.tryParse(m['qty_jadi']?.toString() ?? '') ?? 0;
+      return sum + q;
+    });
+  }
+
+  int get _uniqueOutlets {
+    final names = <String>{};
+    for (final p in _productions) {
+      if (p is Map) {
+        final name = p['outlet_name']?.toString();
+        if (name != null && name.isNotEmpty) names.add(name);
+      }
+    }
+    return names.length;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -163,6 +188,30 @@ class _OutletWIPReportScreenState extends State<OutletWIPReportScreen> {
               ],
             ),
           ),
+          if (!_loading && _error == null && _productions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: _summaryCard('Total Produksi', '${_productions.length}', Icons.factory_outlined, Colors.blue)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _summaryCard('Total Qty Jadi', _formatNumber(_totalQtyJadi), Icons.inventory_2_outlined, Colors.green)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: _summaryCard('Outlet', '$_uniqueOutlets', Icons.store_outlined, Colors.orange)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _summaryCard('Periode', _periodLabel(), Icons.date_range_outlined, Colors.purple)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
           Expanded(
             child: _loading
                 ? const Center(child: AppLoadingIndicator(size: 32, color: Color(0xFF6366F1)))
@@ -237,6 +286,45 @@ class _OutletWIPReportScreenState extends State<OutletWIPReportScreen> {
                               },
                             ),
                           ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _periodLabel() {
+    if (_startController.text.isNotEmpty && _endController.text.isNotEmpty) {
+      return '${_startController.text}\n${_endController.text}';
+    }
+    return 'Semua';
+  }
+
+  Widget _summaryCard(String title, String value, IconData icon, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: color.shade100,
+            child: Icon(icon, size: 18, color: color.shade700),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              ],
+            ),
           ),
         ],
       ),

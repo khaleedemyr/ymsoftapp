@@ -27,28 +27,24 @@ Map<String, dynamic> ensureCapaShape([Map<String, dynamic>? src]) {
       'guest_name': null,
       'channel': null,
       'channel_other': null,
-      'pic_receiver_name': null,
+      'reported_by': null,
+      'reported_by_position': null,
     },
     'b': <String, dynamic>{
       'types': <dynamic>[],
       'types_other': null,
       'description': null,
+      'area_section': null,
+      'involved_parties': null,
+      'witnesses': null,
+      'involved_party_user_ids': <dynamic>[],
+      'witness_user_ids': <dynamic>[],
     },
     'c': <String, dynamic>{
       'actions': <dynamic>[],
       'actions_other': null,
       'response_time_note': null,
       'pic_user_id': null,
-    },
-    'd': <String, dynamic>{
-      'problem_statement': null,
-      'man': null,
-      'method': null,
-      'machine': null,
-      'material': null,
-      'measurement': null,
-      'environment': null,
-      'root_cause_summary': null,
     },
     'e': <String, dynamic>{
       'action': null,
@@ -63,23 +59,27 @@ Map<String, dynamic> ensureCapaShape([Map<String, dynamic>? src]) {
       'timeline': null,
       'kpi': null,
     },
-    'g': <String, dynamic>{
-      'follow_up_date': null,
-      'verified_by_user_id': null,
-      'result': null,
-      'notes': null,
-    },
-    'h': <String, dynamic>{
-      'contacted': null,
-      'contact_methods': <dynamic>[],
-      'recovery_feedback': null,
-      'satisfaction': null,
-      'documented_severity': null,
-      'documented_impact': <dynamic>[],
-    },
     'evidence': <dynamic>[],
   };
   return deepMerge(base, src ?? {});
+}
+
+Map<String, dynamic> emptyCapaApprovalSummary() {
+  return {
+    'state': 'none',
+    'flows': <dynamic>[],
+    'next_approver_id': null,
+    'can_submit': true,
+    'can_resubmit': false,
+  };
+}
+
+List<int> capaUserIdList(dynamic raw) {
+  if (raw is! List) return [];
+  return raw
+      .map((e) => int.tryParse('$e') ?? 0)
+      .where((id) => id > 0)
+      .toList();
 }
 
 Map<String, dynamic>? asStringKeyedMap(dynamic v) {

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/delivery_order_service.dart';
+import '../../utils/inventory_serial_effective_qty.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -359,7 +360,11 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
   double _getSerialQtySum(Map<String, dynamic> item) {
     final list = _scannedSerials[_itemId(item)];
     if (list == null) return 0;
-    return list.fold<double>(0, (sum, s) => sum + (_num(s['effective_qty']) <= 0 ? 1.0 : _num(s['effective_qty'])));
+    final unit = item['unit']?.toString() ?? '';
+    return list.fold<double>(
+      0,
+      (sum, s) => sum + InventorySerialEffectiveQty.effectiveQtyForPackingList(s, unit, item),
+    );
   }
 
   void _syncItemQtyScan(Map<String, dynamic> item) {
@@ -452,16 +457,22 @@ class _DeliveryOrderCreateScreenState extends State<DeliveryOrderCreateScreen> {
       return;
     }
     final hit = matched;
-    final effectiveQty = _num(sm['effective_qty']) <= 0 ? 1.0 : _num(sm['effective_qty']);
+    final packingUnit = hit['unit']?.toString() ?? '';
+    final effectiveQty = InventorySerialEffectiveQty.effectiveQtyForPackingList(sm, packingUnit, hit);
     final remainingSerial = _num(hit['qty']) - _num(hit['qty_scan_barcode']) - _getSerialQtySum(hit);
     if (effectiveQty > remainingSerial + 0.001) {
-      _setFeedback('Qty serial melebihi sisa (sisa: ${remainingSerial.toStringAsFixed(2)} ${hit['unit']})', Colors.red, scanSound: false);
+      _setFeedback(
+        'Qty serial melebihi sisa (sisa: ${remainingSerial.toStringAsFixed(2)} $packingUnit, scan ini: +${effectiveQty.toStringAsFixed(2)})',
+        Colors.red,
+        scanSound: false,
+      );
       return;
     }
     _scannedSerials.putIfAbsent(itemId, () => []);
     _scannedSerials[itemId]!.add({
       'serial_number': serialNumber,
       'effective_qty': effectiveQty,
+      'physical_qty': sm['physical_qty'] ?? InventorySerialEffectiveQty.resolvePhysical(sm),
       'repack_unit_name': sm['repack_unit_name'],
       'repack_qty': sm['repack_qty'],
       'unit_name': sm['unit_name'],

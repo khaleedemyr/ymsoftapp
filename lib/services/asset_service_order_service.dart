@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
@@ -22,6 +23,7 @@ class AssetServiceOrderService {
     String? dateTo,
     String? status,
     String? serviceType,
+    int? outletId,
     int? page,
     int? perPage,
   }) async {
@@ -37,6 +39,7 @@ class AssetServiceOrderService {
       if (serviceType != null && serviceType.isNotEmpty) {
         qp['service_type'] = serviceType;
       }
+      if (outletId != null) qp['outlet_id'] = outletId.toString();
       if (page != null) qp['page'] = page.toString();
       if (perPage != null) qp['per_page'] = perPage.toString();
 
@@ -298,6 +301,31 @@ class AssetServiceOrderService {
       } catch (_) {
         return {'success': false, 'message': 'Failed (${res.statusCode})'};
       }
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  Future<Map<String, dynamic>> uploadVendorInvoice(int id, File file) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return {'success': false, 'message': 'No token'};
+
+      final req = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/approval-app/asset-service-orders/$id/vendor-invoice'),
+      );
+      req.headers['Authorization'] = 'Bearer $token';
+      req.headers['Accept'] = 'application/json';
+      req.files.add(await http.MultipartFile.fromPath('invoice', file.path));
+
+      final streamed = await req.send();
+      final body = await streamed.stream.bytesToString();
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      return {'success': streamed.statusCode >= 200 && streamed.statusCode < 300};
     } catch (e) {
       return {'success': false, 'message': 'Error: $e'};
     }

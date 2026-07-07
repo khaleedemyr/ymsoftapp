@@ -36,6 +36,8 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
   final List<_ItemRow> _items = [];
   final List<XFile> _invoiceFiles = [];
   final ImagePicker _imagePicker = ImagePicker();
+  final Map<String, String> _priceViolations = {};
+  Timer? _priceGuardTimer;
 
   @override
   void initState() {
@@ -53,6 +55,7 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
     for (final item in _items) {
       item.dispose();
     }
+    _priceGuardTimer?.cancel();
     super.dispose();
   }
 
@@ -186,7 +189,97 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
         _items[index].unitName = defaultUnit?['name'] ?? (units.isNotEmpty ? units.first['name']?.toString() : null);
         _items[index].priceController.text = defaultPrice > 0 ? defaultPrice.toStringAsFixed(0) : '';
       });
+      _schedulePriceGuard();
     }
+  }
+
+  void _schedulePriceGuard() {
+    _priceGuardTimer?.cancel();
+    _priceGuardTimer = Timer(const Duration(milliseconds: 500), _fetchPriceGuard);
+  }
+
+  List<Map<String, dynamic>> _buildPriceGuardItemsPayload() {
+    final payload = <Map<String, dynamic>>[];
+    for (final row in _items) {
+      final price = _parseNum(row.priceController.text);
+      if (row.itemName == null ||
+          row.itemName!.isEmpty ||
+          row.unitId == null ||
+          price <= 0) {
+        continue;
+      }
+      payload.add({
+        'item_name': row.itemName,
+        'unit_id': row.unitId,
+        'price': price,
+      });
+    }
+    return payload;
+  }
+
+  Future<void> _fetchPriceGuard() async {
+    if (_outletId == null || _warehouseOutletId == null) {
+      if (mounted) setState(() => _priceViolations.clear());
+      return;
+    }
+
+    final itemsPayload = _buildPriceGuardItemsPayload();
+    if (itemsPayload.isEmpty) {
+      if (mounted) setState(() => _priceViolations.clear());
+      return;
+    }
+
+    final result = await _service.validateItemPrices(
+      outletId: _outletId!,
+      warehouseOutletId: _warehouseOutletId!,
+      items: itemsPayload,
+    );
+
+    if (!mounted) return;
+
+    final violations = <String, String>{};
+    final raw = result['violations'];
+    if (raw is List) {
+      for (final v in raw) {
+        if (v is Map) {
+          final name = v['item_name']?.toString();
+          final message = v['message']?.toString();
+          if (name != null && message != null && message.isNotEmpty) {
+            violations[name] = message;
+          }
+        }
+      }
+    }
+
+    setState(() {
+      _priceViolations
+        ..clear()
+        ..addAll(violations);
+    });
+  }
+
+  String? _priceViolationForRow(_ItemRow row) {
+    final name = row.itemName;
+    if (name == null || name.isEmpty) return null;
+    return _priceViolations[name];
+  }
+
+  Future<void> _showGuardDialog(String title, String message) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Text(message, style: const TextStyle(fontSize: 13, height: 1.4)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Perbaiki'),
+          ),
+        ],
+      ),
+    );
   }
 
   double _parseNum(dynamic v) {
@@ -234,6 +327,33 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
         'price': price,
         'unit_id': row.unitId,
       });
+    }
+
+    await _fetchPriceGuard();
+    if (_priceViolations.isNotEmpty) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Harga Tidak Wajar'),
+          content: SingleChildScrollView(
+            child: Text(
+              '${_priceViolations.values.join('\n\n')}\n\nSementara Anda tetap bisa menyimpan. Pastikan harga dan unit sudah benar.',
+              style: const TextStyle(fontSize: 13, height: 1.4),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Perbaiki'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Lanjutkan Simpan'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
     }
 
     await _showPreviewDialog(itemsPayload);
@@ -380,7 +500,12 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
         _showMessage(result['message']?.toString() ?? 'Berhasil disimpan', success: true);
         Navigator.pop(context, true);
       } else {
-        _showMessage(result['message']?.toString() ?? 'Gagal menyimpan');
+        final msg = result['message']?.toString() ?? 'Gagal menyimpan';
+        if (msg.length > 120 || msg.contains('\n')) {
+          await _showGuardDialog('Gagal Menyimpan', msg);
+        } else {
+          _showMessage(msg);
+        }
       }
     }
   }
@@ -481,6 +606,7 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
                 _warehouseOutletId = null;
                 _filterWarehouses();
               });
+              _schedulePriceGuard();
             },
           ),
           const SizedBox(height: 10),
@@ -493,7 +619,10 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
                 child: Text(w['name']?.toString() ?? '-'),
               );
             }).toList(),
-            onChanged: (v) => setState(() => _warehouseOutletId = v),
+            onChanged: (v) {
+              setState(() => _warehouseOutletId = v);
+              _schedulePriceGuard();
+            },
           ),
         ],
       ),
@@ -668,6 +797,8 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
   }
 
   Widget _buildItemRow(_ItemRow row, int index) {
+    final priceViolation = _priceViolationForRow(row);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -711,6 +842,7 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
                 child: TextField(
                   controller: row.qtyController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => _schedulePriceGuard(),
                   decoration: InputDecoration(
                     labelText: 'Qty',
                     filled: true,
@@ -728,16 +860,34 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
                 child: TextField(
                   controller: row.priceController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => _schedulePriceGuard(),
                   decoration: InputDecoration(
                     labelText: 'Harga',
                     filled: true,
                     fillColor: Colors.white,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                    errorText: priceViolation != null ? 'Harga tidak wajar' : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: priceViolation != null ? const Color(0xFFEF4444) : Colors.transparent,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
+          if (priceViolation != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              priceViolation,
+              style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626), height: 1.35),
+            ),
+          ],
         ],
       ),
     );
@@ -784,6 +934,7 @@ class _RetailFoodFormScreenState extends State<RetailFoodFormScreen> {
             }
           }
         });
+        _schedulePriceGuard();
       },
     );
   }

@@ -294,6 +294,20 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
         _kebutuhanSearchQuery = '';
         _loading = false;
         _loadingTask = null;
+        final status = result?['status']?.toString();
+        final laporan = result?['laporan_stock'];
+        final list = laporan is List ? laporan : [];
+        if (status == 'success' && list.isNotEmpty) {
+          final totalMinus = _readInt(result?['total_minus']);
+          final totalKurang = _readInt(result?['total_kurang']);
+          if (totalMinus > 0 || totalKurang > 0) {
+            final count = totalMinus > 0 ? totalMinus : totalKurang;
+            _successMsg =
+                'Siap potong stock. $count item akan qty minus (cost tetap full BOM, tercatat di Laporan Minus).';
+          } else {
+            _successMsg = 'Stock cukup, siap untuk potong stock!';
+          }
+        }
       });
     } catch (_) {
       if (mounted) {
@@ -307,11 +321,18 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
 
   Future<void> _potongStock() async {
     if (_effectiveOutletId == null) return;
+    final totalMinus = _readInt(_kebutuhanData?['total_minus']);
+    final totalKurang = _readInt(_kebutuhanData?['total_kurang']);
+    final shortCount = totalMinus > 0 ? totalMinus : totalKurang;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Potong Stock'),
-        content: const Text('Yakin akan memotong stock untuk tanggal dan outlet ini?'),
+        content: Text(
+          shortCount > 0
+              ? '$shortCount item akan qty minus. Cost tetap full BOM dan tercatat di Laporan Minus. Yakin lanjut potong stock?'
+              : 'Yakin akan memotong stock untuk tanggal dan outlet ini?',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Ya')),
@@ -368,11 +389,20 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
 
   bool get _canCut {
     if (_kebutuhanData == null) return false;
-    final totalKurang = _kebutuhanData!['total_kurang'] is int
-        ? _kebutuhanData!['total_kurang'] as int
-        : int.tryParse(_kebutuhanData!['total_kurang']?.toString() ?? '0') ?? 0;
-    return totalKurang == 0;
+    if (_kebutuhanData!['status']?.toString() != 'success') return false;
+    final laporan = _kebutuhanData!['laporan_stock'];
+    final list = laporan is List ? laporan : [];
+    return list.isNotEmpty;
   }
+
+  int _readInt(dynamic raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '0') ?? 0;
+  }
+
+  bool _isShortfallStatus(dynamic status) =>
+      status == 'kurang' || status == 'minus';
 
   bool get _isAlreadyCut {
     if (_statusData == null) return false;
@@ -1267,12 +1297,10 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
     final status = _kebutuhanData!['status']?.toString();
     final laporan = _kebutuhanData!['laporan_stock'];
     final list = laporan is List ? laporan : [];
-    final totalKurang = _kebutuhanData!['total_kurang'] is int
-        ? _kebutuhanData!['total_kurang'] as int
-        : int.tryParse(_kebutuhanData!['total_kurang']?.toString() ?? '0') ?? 0;
-    final totalCukup = _kebutuhanData!['total_cukup'] is int
-        ? _kebutuhanData!['total_cukup'] as int
-        : int.tryParse(_kebutuhanData!['total_cukup']?.toString() ?? '0') ?? 0;
+    final totalKurang = _readInt(_kebutuhanData!['total_kurang']);
+    final totalMinus = _readInt(_kebutuhanData!['total_minus']);
+    final totalShortfall = totalMinus > 0 ? totalMinus : totalKurang;
+    final totalCukup = _readInt(_kebutuhanData!['total_cukup']);
 
     if (status != 'success' || list.isEmpty) {
       final msg = _kebutuhanData!['message']?.toString() ?? 'Tidak ada kebutuhan stock untuk tanggal dan outlet ini.';
@@ -1302,18 +1330,34 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
           children: [
             Row(
               children: [
-                Icon(totalKurang > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded, color: totalKurang > 0 ? Colors.orange : Colors.green, size: 24),
+                Icon(
+                  totalShortfall > 0
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle_rounded,
+                  color: totalShortfall > 0 ? Colors.orange : Colors.green,
+                  size: 24,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    totalKurang > 0 ? 'Stock kurang ($totalKurang item)' : 'Stock cukup, siap potong',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: totalKurang > 0 ? Colors.orange.shade800 : Colors.green.shade800),
+                    totalShortfall > 0
+                        ? 'Siap potong ($totalShortfall item qty minus)'
+                        : 'Stock cukup, siap potong',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: totalShortfall > 0
+                          ? Colors.orange.shade800
+                          : Colors.green.shade800,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
-            Text('Total dicek: ${list.length} • Cukup: $totalCukup • Kurang: $totalKurang', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+            Text(
+              'Total dicek: ${list.length} • Cukup: $totalCukup • Minus: $totalShortfall',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -1372,8 +1416,8 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: _miniSummaryCard(
-                    title: 'Stock Kurang',
-                    value: '$totalKurang',
+                    title: 'Qty Minus',
+                    value: '$totalShortfall',
                     color: Colors.red,
                   ),
                 ),
@@ -1431,7 +1475,7 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
         final total = warehouseItems.length;
         final cukup = warehouseItems.where((e) => e['status'] == 'cukup').length;
         final kurang =
-            warehouseItems.where((e) => e['status'] == 'kurang').length;
+            warehouseItems.where((e) => _isShortfallStatus(e['status'])).length;
         return Container(
           width: (MediaQuery.of(context).size.width - 56) / 2,
           padding: const EdgeInsets.all(10),
@@ -1544,7 +1588,7 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
             .expand((subMap) => subMap.values.expand((rows) => rows))
             .toList();
         final warehouseCukup = warehouseItems.where((e) => e['status'] == 'cukup').length;
-        final warehouseKurang = warehouseItems.where((e) => e['status'] == 'kurang').length;
+        final warehouseKurang = warehouseItems.where((e) => _isShortfallStatus(e['status'])).length;
         final warehouseHasKurang = warehouseKurang > 0;
 
         return Container(
@@ -1602,7 +1646,7 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
                   final categoryCukup =
                       categoryItems.where((e) => e['status'] == 'cukup').length;
                   final categoryKurang =
-                      categoryItems.where((e) => e['status'] == 'kurang').length;
+                      categoryItems.where((e) => _isShortfallStatus(e['status'])).length;
                   final categoryHasKurang = categoryKurang > 0;
                   return Padding(
                     padding: const EdgeInsets.only(left: 12, right: 8, bottom: 6),
@@ -1670,7 +1714,7 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
                               final subCukup =
                                   items.where((e) => e['status'] == 'cukup').length;
                               final subKurang =
-                                  items.where((e) => e['status'] == 'kurang').length;
+                                  items.where((e) => _isShortfallStatus(e['status'])).length;
                               final subHasKurang = subKurang > 0;
                               return Padding(
                                 padding:
@@ -1749,7 +1793,9 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
 
   Widget _buildStockItemRows(Map<String, dynamic> item) {
     final itemName = item['item_name']?.toString() ?? '-';
-    final isKurang = item['status'] == 'kurang';
+    final status = item['status']?.toString();
+    final isMinus = status == 'minus';
+    final isKurang = _isShortfallStatus(status);
     final hasMenus = (item['contributing_menus'] as List? ?? const []).isNotEmpty;
     final rowKey = _itemKey(item);
     final isExpanded = _expandedKebutuhanKeys.contains(rowKey);
@@ -1792,12 +1838,14 @@ class _StockCutFormScreenState extends State<StockCutFormScreen> {
               width: 70,
               child: showStatus
                   ? Text(
-                      isKurang ? 'Kurang' : 'Cukup',
+                      isMinus ? 'Minus' : (isKurang ? 'Kurang' : 'Cukup'),
                       textAlign: TextAlign.right,
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: isKurang ? Colors.red.shade700 : Colors.green.shade700,
+                        color: isKurang
+                            ? (isMinus ? Colors.amber.shade800 : Colors.red.shade700)
+                            : Colors.green.shade700,
                       ),
                     )
                   : const SizedBox.shrink(),

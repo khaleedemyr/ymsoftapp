@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/asset_inventory_adjustment_service.dart';
 import '../../models/asset_inventory_adjustment_models.dart';
+import '../../utils/asset_qty_format.dart';
 
 class AssetInventoryAdjustmentDetailScreen extends StatefulWidget {
   final int adjustmentId;
@@ -71,24 +72,37 @@ class _AssetInventoryAdjustmentDetailScreenState
   }
 
   Future<void> _handleApprove() async {
-    final confirmed = await showDialog<bool>(
+    final comments = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Approve Adjustment?'),
-        content: const Text('Anda yakin ingin menyetujui adjustment ini?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-            child: const Text('Approve', style: TextStyle(color: Colors.white)),
+      builder: (ctx) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Approve Adjustment?'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: 'Komentar (opsional)',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
           ),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+              child: const Text('Approve', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
-    if (confirmed != true) return;
+    if (comments == null) return;
 
-    final result = await _service.approve(widget.adjustmentId);
+    final result = await _service.approve(
+      widget.adjustmentId,
+      comments: comments.isEmpty ? null : comments,
+    );
     if (mounted) {
       if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -203,7 +217,7 @@ class _AssetInventoryAdjustmentDetailScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Detail Adjustment'),
+        title: const Text('Detail Asset Stock Adjustment'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
         actions: [
@@ -250,7 +264,7 @@ class _AssetInventoryAdjustmentDetailScreenState
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: _statusColor(_adjustment!.status).withOpacity(0.15),
+                                        color: _statusColor(_adjustment!.status).withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
@@ -268,7 +282,7 @@ class _AssetInventoryAdjustmentDetailScreenState
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: _typeColor(_adjustment!.type).withOpacity(0.15),
+                                    color: _typeColor(_adjustment!.type).withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
@@ -281,6 +295,7 @@ class _AssetInventoryAdjustmentDetailScreenState
                                   ),
                                 ),
                                 const SizedBox(height: 12),
+                                _infoRow('Pemilik', _adjustment!.ownerOutletName ?? '-'),
                                 _infoRow('Tanggal', _adjustment!.date),
                                 _infoRow('Outlet', _adjustment!.outletName ?? '-'),
                                 _infoRow('Warehouse', _adjustment!.warehouseOutletName ?? '-'),
@@ -352,9 +367,9 @@ class _AssetInventoryAdjustmentDetailScreenState
                                       margin: const EdgeInsets.only(bottom: 8),
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
-                                        border: Border.all(color: _statusColor(flow.status).withOpacity(0.3)),
+                                        border: Border.all(color: _statusColor(flow.status).withValues(alpha: 0.3)),
                                         borderRadius: BorderRadius.circular(10),
-                                        color: _statusColor(flow.status).withOpacity(0.05),
+                                        color: _statusColor(flow.status).withValues(alpha: 0.05),
                                       ),
                                       child: Row(
                                         children: [
@@ -396,11 +411,11 @@ class _AssetInventoryAdjustmentDetailScreenState
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                             decoration: BoxDecoration(
-                                              color: _statusColor(flow.status).withOpacity(0.15),
+                                              color: _statusColor(flow.status).withValues(alpha: 0.15),
                                               borderRadius: BorderRadius.circular(12),
                                             ),
                                             child: Text(
-                                              flow.status,
+                                              flow.status.toUpperCase(),
                                               style: TextStyle(
                                                 color: _statusColor(flow.status),
                                                 fontWeight: FontWeight.w600,
@@ -429,46 +444,31 @@ class _AssetInventoryAdjustmentDetailScreenState
                                 const Text('Item Adjustment',
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
                                 const SizedBox(height: 12),
-                                ..._adjustment!.items.asMap().entries.map((entry) {
-                                  final idx = entry.key;
-                                  final item = entry.value;
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.grey.shade200),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 14,
-                                          backgroundColor: Colors.teal.shade100,
-                                          child: Text('${idx + 1}',
-                                              style: TextStyle(fontSize: 12, color: Colors.teal.shade700)),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(item.itemName ?? '-',
-                                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                              Text(
-                                                'Qty: ${item.qty} ${item.unit ?? ''}',
-                                                style: const TextStyle(fontSize: 13, color: Colors.black87),
-                                              ),
-                                              if (item.note != null && item.note!.isNotEmpty)
-                                                Text(item.note!,
-                                                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columns: const [
+                                      DataColumn(label: Text('#')),
+                                      DataColumn(label: Text('Item')),
+                                      DataColumn(label: Text('Unit')),
+                                      DataColumn(label: Text('Qty'), numeric: true),
+                                      DataColumn(label: Text('Catatan')),
+                                    ],
+                                    rows: _adjustment!.items.asMap().entries.map((entry) {
+                                      final idx = entry.key;
+                                      final item = entry.value;
+                                      return DataRow(cells: [
+                                        DataCell(Text('${idx + 1}')),
+                                        DataCell(Text(item.itemName ?? '-')),
+                                        DataCell(Text(item.unit ?? '-')),
+                                        DataCell(Text(formatAssetQtyWithUnit(item.qty, null))),
+                                        DataCell(Text(
+                                          (item.note != null && item.note!.isNotEmpty) ? item.note! : '-',
+                                        )),
+                                      ]);
+                                    }).toList(),
+                                  ),
+                                ),
                               ],
                             ),
                           ),

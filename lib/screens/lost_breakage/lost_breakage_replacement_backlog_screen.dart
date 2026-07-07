@@ -69,9 +69,46 @@ class _LostBreakageReplacementBacklogScreenState
       if (_isAdmin && _outlets.isEmpty) {
         _outlets = await _service.getOutlets();
         if (mounted) setState(() {});
+      } else if (!_isAdmin && _outlets.isEmpty) {
+        _outlets = await _service.getOutlets();
+        if (mounted) setState(() {});
       }
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _pickDate(bool isFrom) async {
+    final now = DateTime.now();
+    final initialRaw = isFrom ? _dateFrom : _dateTo;
+    final initial = DateTime.tryParse(initialRaw ?? '') ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (picked == null) return;
+    final v = '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    setState(() {
+      if (isFrom) {
+        _dateFrom = v;
+      } else {
+        _dateTo = v;
+      }
+    });
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _searchController.clear();
+      _typeFilter = '';
+      _ownerFilter = null;
+      _locationFilter = null;
+      _dateFrom = null;
+      _dateTo = null;
+      _selectedIds.clear();
+    });
+    _load();
   }
 
   Future<void> _createPr() async {
@@ -123,10 +160,16 @@ class _LostBreakageReplacementBacklogScreenState
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: 'No. dokumen, item, SKU...',
@@ -137,13 +180,98 @@ class _LostBreakageReplacementBacklogScreenState
                     ),
                     onSubmitted: (_) => _load(),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _load,
-                  icon: const Icon(Icons.search, color: _primaryColor),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  if (_isAdmin) ...[
+                    DropdownButtonFormField<int?>(
+                      initialValue: _ownerFilter,
+                      decoration: InputDecoration(
+                        labelText: 'Pemilik',
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('Semua')),
+                        ..._outlets.map((o) => DropdownMenuItem<int?>(
+                              value: int.tryParse(o['id'].toString()),
+                              child: Text(o['name']?.toString() ?? '-'),
+                            )),
+                      ],
+                      onChanged: (v) => setState(() => _ownerFilter = v),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  DropdownButtonFormField<int?>(
+                    initialValue: _locationFilter,
+                    decoration: InputDecoration(
+                      labelText: 'Lokasi',
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(value: null, child: Text('Semua')),
+                      ..._outlets.map((o) => DropdownMenuItem<int?>(
+                            value: int.tryParse(o['id'].toString()),
+                            child: Text(o['name']?.toString() ?? '-'),
+                          )),
+                    ],
+                    onChanged: (v) => setState(() => _locationFilter = v),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: _typeFilter,
+                    decoration: InputDecoration(
+                      labelText: 'Tipe',
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: '', child: Text('Semua')),
+                      DropdownMenuItem(value: 'lost', child: Text('Hilang')),
+                      DropdownMenuItem(value: 'breakage', child: Text('Rusak')),
+                    ],
+                    onChanged: (v) => setState(() => _typeFilter = v ?? ''),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _pickDate(true),
+                          icon: const Icon(Icons.date_range, size: 16),
+                          label: Text(_dateFrom ?? 'Dari'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _pickDate(false),
+                          icon: const Icon(Icons.event, size: 16),
+                          label: Text(_dateTo ?? 'Sampai'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _load,
+                          style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
+                          child: const Text('Filter', style: TextStyle(color: Colors.white)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _resetFilters,
+                          child: const Text('Reset'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -238,6 +366,42 @@ class _LostBreakageReplacementBacklogScreenState
         '$label $number$extra',
         style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: _statusColor(doc['status']?.toString())),
       ),
+    );
+  }
+
+  Widget _pipelineDocList(List<Map<String, dynamic>> docs) {
+    if (docs.isEmpty) {
+      return const Text('—', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: docs.map((doc) {
+        final number = doc['number']?.toString() ?? '#${doc['id'] ?? '-'}';
+        final status = doc['status']?.toString() ?? '-';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  number,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _tealColor),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                status,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: _statusColor(status),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -348,6 +512,61 @@ class _LostBreakageReplacementBacklogScreenState
                       ),
                     const SizedBox(height: 8),
                     _buildPipelineRow(r),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Qty: ${r['qty'] ?? '-'} ${r['unit_name'] ?? ''}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'Diganti: ${r['qty_replaced'] ?? '-'}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'Sisa: ${r['qty_remaining'] ?? '-'}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: _primaryColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('PR Asset', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                          _pipelineDocList(_docList(r['pipeline_prs'])),
+                          const SizedBox(height: 6),
+                          const Text('PO', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                          _pipelineDocList(_docList(r['pipeline_pos'])),
+                          const SizedBox(height: 6),
+                          const Text('NFP', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                          _pipelineDocList(_docList(r['pipeline_nfps'])),
+                          const SizedBox(height: 6),
+                          const Text('GR Asset', style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                          _pipelineDocList(_docList(r['pipeline_grs'])),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Row(
                       children: [

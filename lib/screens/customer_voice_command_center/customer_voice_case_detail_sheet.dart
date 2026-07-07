@@ -71,6 +71,15 @@ class _CustomerVoiceCaseDetailSheetState
     }
   }
 
+  Future<void> _reloadBrief() async {
+    try {
+      final brief = await widget.service.getCaseBrief(widget.item.id);
+      if (!mounted) return;
+      setState(() => _brief = brief);
+      widget.onCaseUpdated();
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
@@ -203,6 +212,7 @@ class _CustomerVoiceCaseDetailSheetState
                                     caseRow: _brief!,
                                     assignees: widget.dashboard.assignees,
                                     authUser: _authUser,
+                                    onChanged: _reloadBrief,
                                   ),
                                 if (_brief != null) const SizedBox(height: 18),
                                 _timelineCard(activities),

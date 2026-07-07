@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/asset_disposal_service.dart';
-import '../../services/auth_service.dart';
 
 class AssetDisposalFormScreen extends StatefulWidget {
   const AssetDisposalFormScreen({super.key});
@@ -34,15 +33,15 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
   String _selectedDate = '';
   String _selectedType = 'discard';
 
-  List<Map<String, dynamic>> _items = [];
+  final List<Map<String, dynamic>> _items = [];
   List<dynamic> _itemResults = [];
   Timer? _itemDebounce;
 
-  List<Map<String, dynamic>> _selectedApprovers = [];
+  final List<Map<String, dynamic>> _selectedApprovers = [];
   List<dynamic> _approverResults = [];
   Timer? _approverDebounce;
 
-  List<Map<String, dynamic>> _uploadedPhotos = [];
+  final List<Map<String, dynamic>> _uploadedPhotos = [];
   bool _isUploadingPhoto = false;
 
   @override
@@ -128,10 +127,11 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
       return;
     }
 
-    final units = <String>[];
-    if (item['small_unit_name'] != null) units.add(item['small_unit_name']);
-    if (item['medium_unit_name'] != null) units.add(item['medium_unit_name']);
-    if (item['large_unit_name'] != null) units.add(item['large_unit_name']);
+    final units = <String>{
+      item['unit_small']?.toString() ?? item['small_unit_name']?.toString() ?? '',
+      item['unit_medium']?.toString() ?? item['medium_unit_name']?.toString() ?? '',
+      item['unit_large']?.toString() ?? item['large_unit_name']?.toString() ?? '',
+    }.where((u) => u.trim().isNotEmpty).toList();
 
     setState(() {
       _items.add({
@@ -142,12 +142,12 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
         'qty': 1.0,
         'note': '',
         'sale_price': 0.0,
-        'stock_small': item['stock_qty_small'] ?? 0,
-        'stock_medium': item['stock_qty_medium'] ?? 0,
-        'stock_large': item['stock_qty_large'] ?? 0,
-        'small_unit_name': item['small_unit_name'] ?? '',
-        'medium_unit_name': item['medium_unit_name'] ?? '',
-        'large_unit_name': item['large_unit_name'] ?? '',
+        'stock_small': item['stock_qty_small'] ?? item['stock_small'] ?? 0,
+        'stock_medium': item['stock_qty_medium'] ?? item['stock_medium'] ?? 0,
+        'stock_large': item['stock_qty_large'] ?? item['stock_large'] ?? 0,
+        'small_unit_name': item['small_unit_name'] ?? item['unit_small'] ?? '',
+        'medium_unit_name': item['medium_unit_name'] ?? item['unit_medium'] ?? '',
+        'large_unit_name': item['large_unit_name'] ?? item['unit_large'] ?? '',
         'qty_controller': TextEditingController(text: '1'),
         'note_controller': TextEditingController(),
         'price_controller': TextEditingController(text: '0'),
@@ -291,7 +291,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
       final data = <String, dynamic>{
         'item_id': i['item_id'],
         'qty': qty,
-        'unit': i['selected_unit'],
+        'selected_unit': i['selected_unit'],
         'note': (i['note_controller'] as TextEditingController).text,
       };
       if (_selectedType == 'sold') {
@@ -458,7 +458,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
             const SizedBox(height: 10),
             if (_isHQ)
               DropdownButtonFormField<int>(
-                value: _ownerOutletId,
+                initialValue: _ownerOutletId,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Outlet Pemilik *', isDense: true, border: OutlineInputBorder()),
                 items: _outlets.map((o) => DropdownMenuItem<int>(
@@ -479,7 +479,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
             const SizedBox(height: 8),
             if (_isHQ)
               DropdownButtonFormField<int>(
-                value: _selectedOutletId,
+                initialValue: _selectedOutletId,
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Lokasi Outlet', isDense: true, border: OutlineInputBorder()),
                 items: _outlets.map((o) => DropdownMenuItem<int>(
@@ -505,7 +505,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
               ),
             const SizedBox(height: 10),
             DropdownButtonFormField<int>(
-              value: _selectedWarehouseId,
+              initialValue: _selectedWarehouseId,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Warehouse', isDense: true, border: OutlineInputBorder()),
               items: _filteredWarehouses.map((w) => DropdownMenuItem<int>(
@@ -772,7 +772,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: (item['units'] as List).contains(item['selected_unit']) ? item['selected_unit'] as String : null,
+                            initialValue: (item['units'] as List).contains(item['selected_unit']) ? item['selected_unit'] as String : null,
                             isExpanded: true,
                             decoration: const InputDecoration(labelText: 'Unit', isDense: true, border: OutlineInputBorder()),
                             items: (item['units'] as List<String>).map((u) => DropdownMenuItem(value: u, child: Text(u, style: const TextStyle(fontSize: 13)))).toList(),
@@ -872,7 +872,7 @@ class _AssetDisposalFormScreenState extends State<AssetDisposalFormScreen> {
                       Container(
                         width: 24, height: 24,
                         alignment: Alignment.center,
-                        decoration: BoxDecoration(color: Colors.teal, shape: BoxShape.circle),
+                        decoration: const BoxDecoration(color: Colors.teal, shape: BoxShape.circle),
                         child: Text('${idx + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
                       const SizedBox(width: 8),

@@ -13,6 +13,29 @@ class SerialTrackingService {
         'Accept': 'application/json',
       };
 
+  List<Map<String, dynamic>> _parseMapList(dynamic value) {
+    if (value is! List) return [];
+    return value
+        .map((e) {
+          if (e is Map<String, dynamic>) return e;
+          if (e is Map) return Map<String, dynamic>.from(e);
+          return <String, dynamic>{};
+        })
+        .where((m) => m.isNotEmpty)
+        .toList();
+  }
+
+  Map<String, dynamic>? _decodeBody(http.Response resp) {
+    try {
+      final body = jsonDecode(resp.body);
+      if (body is Map<String, dynamic>) return body;
+      if (body is Map) return Map<String, dynamic>.from(body);
+    } catch (e) {
+      print('SerialTrackingService decode error (${resp.statusCode}): $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> getMeta() async {
     try {
       final token = await _getToken();
@@ -55,9 +78,15 @@ class SerialTrackingService {
 
       final uri = Uri.parse('$_base/pending-outlet-receive').replace(queryParameters: qp);
       final resp = await http.get(uri, headers: _headers(token));
-      if (resp.statusCode == 200) {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
+      final body = _decodeBody(resp);
+      if (resp.statusCode == 200 && body != null) {
+        final rows = _parseMapList(body['data']).map((row) {
+          final serials = _parseMapList(row['serials']);
+          return {...row, 'serials': serials};
+        }).toList();
+        return {...body, 'data': rows};
       }
+      print('SerialTrackingService.getPendingOutletReceive status=${resp.statusCode} body=${resp.body}');
     } catch (e) {
       print('SerialTrackingService.getPendingOutletReceive error: $e');
     }
@@ -86,9 +115,11 @@ class SerialTrackingService {
 
       final uri = Uri.parse('$_base/documents').replace(queryParameters: qp);
       final resp = await http.get(uri, headers: _headers(token));
-      if (resp.statusCode == 200) {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
+      final body = _decodeBody(resp);
+      if (resp.statusCode == 200 && body != null) {
+        return {...body, 'data': _parseMapList(body['data'])};
       }
+      print('SerialTrackingService.searchDocuments status=${resp.statusCode} body=${resp.body}');
     } catch (e) {
       print('SerialTrackingService.searchDocuments error: $e');
     }
@@ -113,9 +144,11 @@ class SerialTrackingService {
 
       final uri = Uri.parse('$_base/document-serials').replace(queryParameters: qp);
       final resp = await http.get(uri, headers: _headers(token));
-      if (resp.statusCode == 200) {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
+      final body = _decodeBody(resp);
+      if (resp.statusCode == 200 && body != null) {
+        return {...body, 'data': _parseMapList(body['data'])};
       }
+      print('SerialTrackingService.getDocumentSerials status=${resp.statusCode} body=${resp.body}');
     } catch (e) {
       print('SerialTrackingService.getDocumentSerials error: $e');
     }
@@ -130,10 +163,11 @@ class SerialTrackingService {
         queryParameters: {'serial_number': serialNumber.trim()},
       );
       final resp = await http.get(uri, headers: _headers(token));
-      final body = jsonDecode(resp.body);
-      if (body is Map<String, dynamic>) {
+      final body = _decodeBody(resp);
+      if (body != null) {
         return {...body, '_status': resp.statusCode};
       }
+      print('SerialTrackingService.lookupSerial status=${resp.statusCode} body=${resp.body}');
     } catch (e) {
       print('SerialTrackingService.lookupSerial error: $e');
     }

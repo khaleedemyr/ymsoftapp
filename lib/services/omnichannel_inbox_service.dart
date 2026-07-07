@@ -26,6 +26,29 @@ class OmnichannelInboxService {
   }
 
   /// Poll inbox (8s di web) — trigger sync IG/Messenger + refresh daftar/pesan tanpa reload penuh.
+  Future<OmniConversationsMoreResult> fetchConversationsMore({
+    String inbox = 'all',
+    String? leadStage,
+    String? channel,
+    required int beforeId,
+  }) async {
+    final q = <String, String>{
+      'inbox': inbox,
+      'before_id': '$beforeId',
+    };
+    if (leadStage != null && leadStage.isNotEmpty) q['lead_stage'] = leadStage;
+    if (channel != null && channel.isNotEmpty && channel != 'all') {
+      q['channel'] = channel;
+    }
+    final uri = Uri.parse('$_root/conversations-more').replace(queryParameters: q);
+    final res = await http.get(uri, headers: await _authHeaders());
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw Exception(body['message'] ?? 'Gagal memuat chat lebih lama');
+    }
+    return OmniConversationsMoreResult.fromJson(body);
+  }
+
   Future<OmniInboxPollResult> fetchPoll({
     String inbox = 'all',
     String? leadStage,
@@ -109,6 +132,20 @@ class OmnichannelInboxService {
 
   static const int maxAttachments = 10;
 
+  Future<OmniConversation?> escalateToCustomerVoice(int conversationId) async {
+    final uri = Uri.parse('$_root/conversations/$conversationId/escalate-to-voice');
+    final res = await http.post(uri, headers: await _authHeaders());
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200 || body['success'] != true) {
+      throw Exception(body['message'] ?? 'Gagal eskalasi ke Customer Voice');
+    }
+    final convRaw = body['conversation'];
+    if (convRaw is Map) {
+      return OmniConversation.fromJson(Map<String, dynamic>.from(convRaw));
+    }
+    return null;
+  }
+
   Future<List<OmniMessage>> sendMessage(
     int conversationId, {
     String? body,
@@ -171,13 +208,13 @@ class OmnichannelInboxService {
     );
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200 || body['success'] != true) {
-      throw Exception(body['message'] ?? 'Gagal memperbaiki ejaan');
+      throw Exception(body['message'] ?? 'Gagal memperbaiki ejaan (HTTP ${res.statusCode})');
     }
     final corrected = body['text'];
-    if (corrected is String && corrected.trim().isNotEmpty) {
-      return corrected.trim();
+    if (corrected is! String || corrected.trim().isEmpty) {
+      throw Exception('AI tidak mengembalikan teks perbaikan.');
     }
-    return text;
+    return corrected.trim();
   }
 
   Future<List<OmniMessage>> _sendMultipart(

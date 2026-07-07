@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/asset_inventory_transfer_service.dart';
 import '../../models/asset_inventory_transfer_models.dart';
+import '../../utils/asset_qty_format.dart';
 
 class AssetInventoryTransferDetailScreen extends StatefulWidget {
   final int transferId;
@@ -407,7 +408,7 @@ class _AssetInventoryTransferDetailScreenState
                                               Text(item.itemName ?? '-',
                                                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                                               Text(
-                                                'Qty: ${item.qty} ${item.unitName ?? ''}',
+                                                'Qty: ${formatAssetQtyWithUnit(item.qty, item.unitName)}',
                                                 style: const TextStyle(fontSize: 13, color: Colors.black87),
                                               ),
                                               if (item.note != null && item.note!.isNotEmpty)

@@ -362,6 +362,47 @@ class _OutletWIPIndexScreenState extends State<OutletWIPIndexScreen> {
     );
   }
 
+  void _navigateToEdit(OutletWIPListItem item) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => OutletWIPCreateScreen(draftHeaderId: item.id),
+      ),
+    );
+    if (result == true) _loadList(isRefresh: true);
+  }
+
+  Future<void> _deleteItem(OutletWIPListItem item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Produksi'),
+        content: const Text('Yakin hapus data produksi ini?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final result = await _service.destroy(item.id);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data dihapus'), backgroundColor: Colors.green),
+      );
+      _loadList(isRefresh: true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Gagal hapus')),
+      );
+    }
+  }
+
   Widget _buildCard(OutletWIPListItem item) {
     final number = item.number ?? 'Legacy #${item.id}';
     final dateText = _formatDate(item.productionDate);
@@ -370,29 +411,32 @@ class _OutletWIPIndexScreenState extends State<OutletWIPIndexScreen> {
     final creator = item.createdByName ?? '-';
     final lines = _productionsByHeader[item.id] ?? [];
     final status = item.status ?? 'PROCESSED';
+    final isDraft = status.toUpperCase() == 'DRAFT';
+    final canEditDraft = isDraft && item.sourceType != 'old';
 
-    return GestureDetector(
-      onTap: () => _navigateToDetail(item),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildAvatar(item),
-            const SizedBox(width: 12),
-            Expanded(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAvatar(item),
+          const SizedBox(width: 12),
+          Expanded(
+            child: InkWell(
+              onTap: () => _navigateToDetail(item),
+              borderRadius: BorderRadius.circular(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -429,8 +473,29 @@ class _OutletWIPIndexScreenState extends State<OutletWIPIndexScreen> {
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+          Column(
+            children: [
+              IconButton(
+                onPressed: () => _navigateToDetail(item),
+                icon: const Icon(Icons.visibility_outlined, color: Color(0xFF2563EB)),
+                tooltip: 'Detail',
+              ),
+              if (canEditDraft)
+                IconButton(
+                  onPressed: () => _navigateToEdit(item),
+                  icon: const Icon(Icons.edit_outlined, color: Color(0xFF16A34A)),
+                  tooltip: 'Edit',
+                ),
+              if (_canDelete)
+                IconButton(
+                  onPressed: () => _deleteItem(item),
+                  icon: const Icon(Icons.delete_outline, color: Color(0xFFDC2626)),
+                  tooltip: 'Hapus',
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -21,6 +21,8 @@ class AssetInventoryAdjustmentService {
     String? dateFrom,
     String? dateTo,
     String? type,
+    String? status,
+    int? outletId,
     int? page,
     int? perPage,
   }) async {
@@ -33,6 +35,8 @@ class AssetInventoryAdjustmentService {
       if (dateFrom != null && dateFrom.isNotEmpty) qp['date_from'] = dateFrom;
       if (dateTo != null && dateTo.isNotEmpty) qp['date_to'] = dateTo;
       if (type != null && type.isNotEmpty) qp['type'] = type;
+      if (status != null && status.isNotEmpty) qp['status'] = status;
+      if (outletId != null) qp['outlet_id'] = outletId.toString();
       if (page != null) qp['page'] = page.toString();
       if (perPage != null) qp['per_page'] = perPage.toString();
 

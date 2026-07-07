@@ -297,6 +297,15 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
     });
   }
 
+  String _approverMeta(Map<String, dynamic> u) {
+    final parts = <String>[];
+    final jabatan = u['jabatan']?.toString();
+    final outlet = u['outlet']?.toString();
+    if (jabatan != null && jabatan.isNotEmpty) parts.add(jabatan);
+    if (outlet != null && outlet.isNotEmpty) parts.add(outlet);
+    return parts.isEmpty ? '-' : parts.join(' · ');
+  }
+
   void _toggleApprover(Map<String, dynamic> user) {
     final userId = int.tryParse(user['id'].toString()) ?? 0;
     setState(() {
@@ -307,6 +316,16 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
       } else {
         _selectedApprovers.add(user);
       }
+    });
+  }
+
+  void _moveApprover(int idx, int dir) {
+    final newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= _selectedApprovers.length) return;
+    setState(() {
+      final tmp = _selectedApprovers[idx];
+      _selectedApprovers[idx] = _selectedApprovers[newIdx];
+      _selectedApprovers[newIdx] = tmp;
     });
   }
 
@@ -346,6 +365,12 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
     if (_selectedItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tambahkan minimal 1 item.')),
+      );
+      return;
+    }
+    if (_selectedApprovers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih minimal 1 approver.')),
       );
       return;
     }
@@ -715,31 +740,67 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Approver (opsional)',
+                          const Text('Approver *',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                   color: _violet)),
                           const SizedBox(height: 8),
                           if (_selectedApprovers.isNotEmpty)
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
+                            Column(
                               children: _selectedApprovers.asMap().entries.map((entry) {
                                 final idx = entry.key;
                                 final a = entry.value;
-                                return Chip(
-                                  avatar: CircleAvatar(
-                                    radius: 12,
-                                    backgroundColor: _violet,
-                                    child: Text('${idx + 1}',
-                                        style: const TextStyle(
-                                            color: Colors.white, fontSize: 11)),
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: _violet.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: _violet.withOpacity(0.25)),
                                   ),
-                                  label: Text('${a['name']} (${a['jabatan'] ?? '-'})',
-                                      style: const TextStyle(fontSize: 12)),
-                                  deleteIcon: const Icon(Icons.close, size: 16),
-                                  onDeleted: () => _toggleApprover(a),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 13,
+                                        backgroundColor: _violet,
+                                        child: Text('${idx + 1}',
+                                            style: const TextStyle(
+                                                color: Colors.white, fontSize: 11)),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(a['name']?.toString() ?? '',
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 13)),
+                                            Text(_approverMeta(a),
+                                                style: const TextStyle(
+                                                    fontSize: 11, color: Colors.grey)),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+                                        onPressed: idx == 0 ? null : () => _moveApprover(idx, -1),
+                                        color: _violet,
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+                                        onPressed: idx == _selectedApprovers.length - 1
+                                            ? null
+                                            : () => _moveApprover(idx, 1),
+                                        color: _violet,
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                                        onPressed: () => _toggleApprover(a),
+                                      ),
+                                    ],
+                                  ),
                                 );
                               }).toList(),
                             ),
@@ -747,7 +808,7 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
                           TextField(
                             controller: _approverSearchController,
                             decoration: InputDecoration(
-                              hintText: 'Cari approver...',
+                              hintText: 'Cari approver (nama / jabatan / outlet)...',
                               prefixIcon: const Icon(Icons.person_search, size: 20),
                               border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10)),
@@ -780,7 +841,7 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
                                     ),
                                     title: Text(u['name']?.toString() ?? '',
                                         style: const TextStyle(fontSize: 13)),
-                                    subtitle: Text(u['jabatan']?.toString() ?? '-',
+                                    subtitle: Text(_approverMeta(u),
                                         style: const TextStyle(fontSize: 11)),
                                     onTap: () => _toggleApprover(u),
                                   );
@@ -789,7 +850,7 @@ class _AssetOwnerTransferFormScreenState extends State<AssetOwnerTransferFormScr
                             ),
                           const SizedBox(height: 4),
                           const Text(
-                            'Isi approver untuk langsung submit. Kosongkan untuk simpan draft.',
+                            'Approver wajib dipilih saat create. Disimpan bersama draft — tidak perlu pilih ulang saat submit.',
                             style: TextStyle(fontSize: 11, color: Colors.grey),
                           ),
                         ],

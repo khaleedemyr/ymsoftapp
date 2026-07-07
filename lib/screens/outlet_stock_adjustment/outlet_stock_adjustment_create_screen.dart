@@ -35,6 +35,8 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
 
   final List<_AdjustmentItemInput> _items = [];
   final List<OutletStockAdjustmentApprover> _approvers = [];
+  final Map<int, String> _referenceViolations = {};
+  Timer? _referenceGuardTimer;
 
   @override
   void initState() {
@@ -51,6 +53,7 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
     for (final item in _items) {
       item.dispose();
     }
+    _referenceGuardTimer?.cancel();
     super.dispose();
   }
 
@@ -118,6 +121,7 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
       _loadOutletDetail(value);
       _loadWarehouseOutlets(value);
     }
+    _scheduleReferenceGuard();
   }
 
   void _resetItems() {
@@ -127,6 +131,87 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
     _items
       ..clear()
       ..add(_AdjustmentItemInput());
+    _referenceViolations.clear();
+  }
+
+  void _scheduleReferenceGuard() {
+    _referenceGuardTimer?.cancel();
+    _referenceGuardTimer = Timer(const Duration(milliseconds: 500), _fetchReferenceGuard);
+  }
+
+  List<Map<String, dynamic>> _buildReferenceGuardItemsPayload() {
+    return _items
+        .where((item) => item.itemId != null)
+        .map((item) => {
+              'item_id': item.itemId,
+              'item_name': item.nameController.text,
+            })
+        .toList();
+  }
+
+  Future<void> _fetchReferenceGuard() async {
+    if (_type != 'in' || _outletId == null || _warehouseOutletId == null) {
+      if (mounted) setState(() => _referenceViolations.clear());
+      return;
+    }
+
+    final itemsPayload = _buildReferenceGuardItemsPayload();
+    if (itemsPayload.isEmpty) {
+      if (mounted) setState(() => _referenceViolations.clear());
+      return;
+    }
+
+    final result = await _service.validateItems(
+      outletId: _outletId!,
+      warehouseOutletId: _warehouseOutletId!,
+      type: _type!,
+      items: itemsPayload,
+    );
+
+    if (!mounted) return;
+
+    final violations = <int, String>{};
+    final raw = result['violations'];
+    if (raw is List) {
+      for (final v in raw) {
+        if (v is Map) {
+          final itemId = _parseInt(v['item_id']);
+          final message = v['message']?.toString();
+          if (itemId != null && message != null && message.isNotEmpty) {
+            violations[itemId] = message;
+          }
+        }
+      }
+    }
+
+    setState(() {
+      _referenceViolations
+        ..clear()
+        ..addAll(violations);
+    });
+  }
+
+  String? _referenceViolationForItem(_AdjustmentItemInput item) {
+    if (item.itemId == null) return null;
+    return _referenceViolations[item.itemId];
+  }
+
+  Future<void> _showGuardDialog(String title, String message) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Text(message, style: const TextStyle(fontSize: 13, height: 1.4)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Perbaiki'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _addItem() {
@@ -189,6 +274,7 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
         item.unit = item.availableUnits.isNotEmpty ? item.availableUnits.first : null;
         item.unitController.text = item.unit ?? '';
       });
+      _scheduleReferenceGuard();
     }
   }
 
@@ -241,6 +327,17 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
       return;
     }
 
+    if (_type == 'in') {
+      await _fetchReferenceGuard();
+      if (_referenceViolations.isNotEmpty) {
+        await _showGuardDialog(
+          'Belum Ada Harga Referensi',
+          _referenceViolations.values.join('\n\n'),
+        );
+        return;
+      }
+    }
+
     await _showPreview();
   }
 
@@ -283,7 +380,12 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
       _showMessage('Outlet stock adjustment berhasil disimpan', success: true);
       Navigator.pop(context, true);
     } else {
-      _showMessage(result['message']?.toString() ?? 'Gagal menyimpan data');
+      final msg = result['message']?.toString() ?? 'Gagal menyimpan data';
+      if (msg.length > 120 || msg.contains('\n')) {
+        await _showGuardDialog('Gagal Menyimpan', msg);
+      } else {
+        _showMessage(msg);
+      }
     }
   }
 
@@ -671,9 +773,18 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
             onChanged: (value) {
               setState(() {
                 _type = value;
+                _referenceViolations.clear();
               });
+              _scheduleReferenceGuard();
             },
           ),
+          if (_type == 'in') ...[
+            const SizedBox(height: 12),
+            _buildInfoBox(
+              'Stock In: item harus sudah pernah diterima (GR / Retail Food / transfer masuk) '
+              'di outlet + warehouse outlet yang dipilih agar ada harga referensi MAC.',
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _reasonController,
@@ -780,7 +891,9 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
                           : (value) {
                               setState(() {
                                 _warehouseOutletId = value;
+                                _referenceViolations.clear();
                               });
+                              _scheduleReferenceGuard();
                             },
                     ),
                   ],
@@ -842,6 +955,7 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
 
   Widget _buildItemRow(_AdjustmentItemInput item, int index) {
     final canSearch = _outletId != null && _warehouseOutletId != null;
+    final referenceViolation = _referenceViolationForItem(item);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -890,6 +1004,13 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
               child: Text('SKU: ${item.sku}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
             ),
           ],
+          if (referenceViolation != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              referenceViolation,
+              style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626), height: 1.35),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -906,6 +1027,7 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
                       borderSide: BorderSide.none,
                     ),
                   ),
+                  onChanged: (_) => _scheduleReferenceGuard(),
                 ),
               ),
               const SizedBox(width: 10),
@@ -930,6 +1052,7 @@ class _OutletStockAdjustmentCreateScreenState extends State<OutletStockAdjustmen
                             item.unit = value;
                             item.unitController.text = value ?? '';
                           });
+                          _scheduleReferenceGuard();
                         },
                       )
                     : TextField(

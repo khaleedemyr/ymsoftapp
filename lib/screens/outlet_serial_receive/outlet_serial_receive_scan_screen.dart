@@ -38,7 +38,16 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
   void initState() {
     super.initState();
     _loadUserInfo();
+    _requestSerialFocus();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _requestSerialFocus();
+    });
+  }
+
+  void _requestSerialFocus() {
+    if (_cameraMode || _saving || !mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _cameraMode || _saving) return;
       _serialFocus.requestFocus();
     });
   }
@@ -64,7 +73,7 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
       } else {
         _cameraController?.dispose();
         _cameraController = null;
-        _serialFocus.requestFocus();
+        _requestSerialFocus();
       }
     });
   }
@@ -250,6 +259,8 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
         );
       },
     );
+
+    _requestSerialFocus();
   }
 
   Uint8List _generateToneWav({required double frequency, required int durationMs, double volume = 0.5}) {
@@ -309,10 +320,14 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
 
   Future<void> _onScan() async {
     final input = _serialController.text.trim();
-    if (input.isEmpty) return;
+    if (input.isEmpty) {
+      _requestSerialFocus();
+      return;
+    }
     await _processScannedValue(input);
+    if (!mounted) return;
     _serialController.clear();
-    _serialFocus.requestFocus();
+    _requestSerialFocus();
   }
 
   Future<void> _processScannedValue(String input, {bool fromCamera = false}) async {
@@ -330,6 +345,7 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
         message: 'Nomor seri ini sudah ada di daftar scan.',
         serialNumber: input,
       );
+      _requestSerialFocus();
       return;
     }
 
@@ -378,6 +394,7 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
     } finally {
       if (mounted && !fromCamera) {
         setState(() => _scanning = false);
+        _requestSerialFocus();
       }
     }
   }
@@ -660,7 +677,12 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
             TextField(
               controller: _serialController,
               focusNode: _serialFocus,
-              enabled: !_scanning && !_saving,
+              autofocus: true,
+              enabled: !_saving,
+              readOnly: _scanning,
+              keyboardType: TextInputType.none,
+              enableInteractiveSelection: false,
+              textInputAction: TextInputAction.done,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
               decoration: InputDecoration(
@@ -675,6 +697,7 @@ class _OutletSerialReceiveScanScreenState extends State<OutletSerialReceiveScanS
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
               onSubmitted: (_) => _onScan(),
+              onTap: _requestSerialFocus,
             ),
           ],
 

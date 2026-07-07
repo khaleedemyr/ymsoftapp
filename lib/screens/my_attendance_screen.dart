@@ -65,18 +65,21 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
 
   int _toInt(dynamic value) {
     if (value is int) return value;
-    if (value is double) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
+    if (value is double) return value.round();
+    if (value is String) return (num.tryParse(value) ?? 0).round();
     return 0;
   }
 
-  /// Sama logic dengan web: `available_leave_days` (sisa cuti PH global), fallback lama: `total_days` (hanya periode).
+  /// Sama logic dengan web: `available_leave_days` = saldo PH (bonus) yang masih bisa dipakai.
   int _phBalanceForLeaveFromPhData(Map<String, dynamic>? ph) {
     if (ph == null) return 0;
     if (ph['available_leave_days'] != null) {
       return _toInt(ph['available_leave_days']);
     }
-    return _toInt(ph['total_days']);
+    if (ph['total_bonus_balance'] != null) {
+      return _toInt(ph['total_bonus_balance']);
+    }
+    return 0;
   }
 
   String _formatPhAmount(dynamic v) {

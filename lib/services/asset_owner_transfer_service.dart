@@ -20,6 +20,7 @@ class AssetOwnerTransferService {
     String? search,
     String? dateFrom,
     String? dateTo,
+    String? status,
     int? ownerOutletId,
     int? page,
     int? perPage,
@@ -32,6 +33,7 @@ class AssetOwnerTransferService {
       if (search != null && search.isNotEmpty) qp['search'] = search;
       if (dateFrom != null && dateFrom.isNotEmpty) qp['date_from'] = dateFrom;
       if (dateTo != null && dateTo.isNotEmpty) qp['date_to'] = dateTo;
+      if (status != null && status.isNotEmpty) qp['status'] = status;
       if (ownerOutletId != null) qp['owner_outlet_id'] = ownerOutletId.toString();
       if (page != null) qp['page'] = page.toString();
       if (perPage != null) qp['per_page'] = perPage.toString();
@@ -267,15 +269,20 @@ class AssetOwnerTransferService {
     }
   }
 
-  Future<Map<String, dynamic>> submit(int id, List<int> approvers) async {
+  Future<Map<String, dynamic>> submit(int id, {List<int>? approvers}) async {
     try {
       final token = await _getToken();
       if (token == null) return {'success': false, 'message': 'No token'};
 
+      final body = <String, dynamic>{};
+      if (approvers != null && approvers.isNotEmpty) {
+        body['approvers'] = approvers;
+      }
+
       final res = await http.post(
         Uri.parse('$baseUrl/api/approval-app/asset-owner-transfers/$id/submit'),
         headers: _headers(token),
-        body: jsonEncode({'approvers': approvers}),
+        body: jsonEncode(body),
       );
       final data = jsonDecode(res.body);
       return {

@@ -8,6 +8,7 @@ class AssetDisposal {
   final String? buyerContact;
   final double totalSalePrice;
   final String status;
+  final String? ownerOutletName;
   final String? outletName;
   final String? warehouseOutletName;
   final String? creatorName;
@@ -26,6 +27,7 @@ class AssetDisposal {
     this.buyerContact,
     this.totalSalePrice = 0,
     required this.status,
+    this.ownerOutletName,
     this.outletName,
     this.warehouseOutletName,
     this.creatorName,
@@ -46,6 +48,7 @@ class AssetDisposal {
       buyerContact: json['buyer_contact'],
       totalSalePrice: double.tryParse(json['total_sale_price']?.toString() ?? '0') ?? 0,
       status: json['status'] ?? '',
+      ownerOutletName: json['owner_outlet_name'],
       outletName: json['outlet_name'],
       warehouseOutletName: json['warehouse_outlet_name'],
       creatorName: json['creator_name'],

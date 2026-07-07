@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/asset_owner_transfer_service.dart';
 import '../../models/asset_owner_transfer_models.dart';
+import '../../utils/asset_qty_format.dart';
 
 class AssetOwnerTransferDetailScreen extends StatefulWidget {
   final int transferId;
@@ -55,6 +56,15 @@ class _AssetOwnerTransferDetailScreenState extends State<AssetOwnerTransferDetai
     }
   }
 
+  String _approverMeta(Map<String, dynamic> u) {
+    final parts = <String>[];
+    final jabatan = u['jabatan']?.toString();
+    final outlet = u['outlet']?.toString();
+    if (jabatan != null && jabatan.isNotEmpty) parts.add(jabatan);
+    if (outlet != null && outlet.isNotEmpty) parts.add(outlet);
+    return parts.isEmpty ? '-' : parts.join(' · ');
+  }
+
   Future<List<int>?> _pickApprovers() async {
     final selected = <Map<String, dynamic>>[];
     final searchController = TextEditingController();
@@ -76,27 +86,44 @@ class _AssetOwnerTransferDetailScreenState extends State<AssetOwnerTransferDetai
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            void moveApprover(int idx, int dir) {
+              final newIdx = idx + dir;
+              if (newIdx < 0 || newIdx >= selected.length) return;
+              final tmp = selected[idx];
+              selected[idx] = selected[newIdx];
+              selected[newIdx] = tmp;
+              setModalState(() {});
+            }
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).viewInsets.bottom,
               ),
               child: SizedBox(
-                height: MediaQuery.of(context).size.height * 0.65,
+                height: MediaQuery.of(context).size.height * 0.75,
                 child: Column(
                   children: [
                     const Padding(
                       padding: EdgeInsets.all(16),
                       child: Text(
-                        'Pilih Approver (urutan = level)',
+                        'Submit untuk Approval',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                     ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'Pilih approver berurutan (level 1 = pertama).',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
                         controller: searchController,
                         decoration: const InputDecoration(
-                          hintText: 'Cari approver...',
+                          hintText: 'Cari approver (nama / jabatan / outlet)...',
                           prefixIcon: Icon(Icons.search),
                           border: OutlineInputBorder(),
                         ),
@@ -112,16 +139,62 @@ class _AssetOwnerTransferDetailScreenState extends State<AssetOwnerTransferDetai
                     if (selected.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Wrap(
-                          spacing: 6,
+                        child: Column(
                           children: selected.asMap().entries.map((e) {
+                            final idx = e.key;
                             final a = e.value;
-                            return Chip(
-                              label: Text('${e.key + 1}. ${a['name']}',
-                                  style: const TextStyle(fontSize: 11)),
-                              onDeleted: () {
-                                setModalState(() => selected.removeAt(e.key));
-                              },
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: _violet.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: _violet.withOpacity(0.25)),
+                              ),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: _violet,
+                                    child: Text(
+                                      '${idx + 1}',
+                                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          a['name']?.toString() ?? '',
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                        ),
+                                        Text(
+                                          _approverMeta(a),
+                                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+                                    onPressed: idx == 0 ? null : () => moveApprover(idx, -1),
+                                    color: _violet,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+                                    onPressed: idx == selected.length - 1
+                                        ? null
+                                        : () => moveApprover(idx, 1),
+                                    color: _violet,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                                    onPressed: () => setModalState(() => selected.removeAt(idx)),
+                                  ),
+                                ],
+                              ),
                             );
                           }).toList(),
                         ),
@@ -140,7 +213,7 @@ class _AssetOwnerTransferDetailScreenState extends State<AssetOwnerTransferDetai
                               color: isSel ? _violet : Colors.grey,
                             ),
                             title: Text(u['name']?.toString() ?? ''),
-                            subtitle: Text(u['jabatan']?.toString() ?? '-'),
+                            subtitle: Text(_approverMeta(u)),
                             onTap: () {
                               setModalState(() {
                                 final idx = selected.indexWhere(
@@ -206,11 +279,38 @@ class _AssetOwnerTransferDetailScreenState extends State<AssetOwnerTransferDetai
   }
 
   Future<void> _submitDraft() async {
-    final approvers = await _pickApprovers();
-    if (approvers == null || approvers.isEmpty) return;
+    final savedFlows = _transfer?.approvalFlows ?? [];
+    List<int>? approvers;
+
+    if (savedFlows.isEmpty) {
+      approvers = await _pickApprovers();
+      if (approvers == null || approvers.isEmpty) return;
+    } else {
+      final flowLines = savedFlows
+          .map((f) => 'Level ${f.approvalLevel}: ${f.approverName ?? '-'}')
+          .join('\n');
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Submit untuk Approval?'),
+          content: Text(
+            'Approver sudah dipilih saat create:\n\n$flowLines',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: _violet),
+              child: const Text('Submit', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
 
     setState(() => _actionLoading = true);
-    final result = await _service.submit(widget.transferId, approvers);
+    final result = await _service.submit(widget.transferId, approvers: approvers);
     if (mounted) {
       setState(() => _actionLoading = false);
       if (result['success'] == true) {
@@ -641,7 +741,7 @@ class _AssetOwnerTransferDetailScreenState extends State<AssetOwnerTransferDetai
                                                       fontWeight: FontWeight.w600,
                                                       fontSize: 14)),
                                               Text(
-                                                'Qty: ${item.qty} ${item.unitName ?? ''}',
+                                                'Qty: ${formatAssetQtyWithUnit(item.qty, item.unitName)}',
                                                 style: const TextStyle(
                                                     fontSize: 13,
                                                     color: Colors.black87),

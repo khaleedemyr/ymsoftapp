@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
 import '../models/approval_models.dart';
+import '../utils/hrd_approval_access.dart';
 
 class ApprovalService {
   static const String baseUrl = AuthService.baseUrl;
@@ -29,12 +30,20 @@ class ApprovalService {
     try {
       final authService = AuthService();
       final userData = await authService.getUserData();
-      if (userData != null && userData['id_role'] == '5af56935b011a') {
-        return true;
-      }
-      return false;
+      return HrdApprovalAccess.isSuperadmin(userData);
     } catch (e) {
       print('Error checking superadmin status: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _canAccessHrdApprovals() async {
+    try {
+      final authService = AuthService();
+      final userData = await authService.getUserData();
+      return HrdApprovalAccess.canAccessHrdApprovals(userData);
+    } catch (e) {
+      print('Error checking HR approval access: $e');
       return false;
     }
   }
@@ -1232,6 +1241,10 @@ class ApprovalService {
   // Get Pending Correction Approvals
   Future<List<CorrectionApproval>> getPendingCorrectionApprovals() async {
     try {
+      if (!await _canAccessHrdApprovals()) {
+        return [];
+      }
+
       final token = await _getToken();
       if (token == null) {
         print('Correction Approvals: No token found');
@@ -1285,6 +1298,10 @@ class ApprovalService {
   // Get Pending HRD Approvals
   Future<List<LeaveApproval>> getPendingHrdApprovals() async {
     try {
+      if (!await _canAccessHrdApprovals()) {
+        return [];
+      }
+
       final token = await _getToken();
       if (token == null) {
         print('HRD Approvals: No token found');
@@ -2955,6 +2972,126 @@ class ApprovalService {
       return {
         'success': false,
         'message': errorData['message'] ?? 'Failed to reject',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<List<Qa2CapApproval>> getPendingQa2CapApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final url = '$baseUrl/api/approval-app/qa2-audits/cap-approvals/pending';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['audits'] != null) {
+          final List<dynamic> approvalsJson = data['audits'];
+          _rawJsonCache['qa2_cap'] = approvalsJson;
+          return approvalsJson
+              .map((json) => Qa2CapApproval.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading QA2 CAP approvals: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getQa2CapApprovalDetails(int auditId) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+
+      final url = '$baseUrl/api/approval-app/qa2-audits/$auditId/cap-approval-details';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['success'] == true) {
+          return data;
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error loading QA2 CAP approval details: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> approveQa2Cap(int auditId, {String? note}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final url = '$baseUrl/api/approval-app/qa2-audits/$auditId/cap-approve';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({if (note != null && note.isNotEmpty) 'note': note}),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Gagal approve CAP',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> rejectQa2Cap(int auditId, {required String note}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final url = '$baseUrl/api/approval-app/qa2-audits/$auditId/cap-reject';
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'note': note}),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Gagal reject CAP',
       };
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};

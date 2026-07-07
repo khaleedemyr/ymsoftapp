@@ -9,6 +9,13 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../services/auth_service.dart';
 import '../services/approval_service.dart';
+import '../services/npd_plan_report_service.dart';
+import '../models/npd_plan_report_models.dart';
+import 'npd_plan_report/npd_plan_report_show_screen.dart';
+import '../services/employee_onboarding_service.dart';
+import '../models/employee_onboarding_models.dart';
+import 'employee_onboarding/employee_onboarding_show_screen.dart';
+import 'employee_onboarding/employee_onboarding_ui.dart';
 import '../models/approval_models.dart';
 import '../widgets/approvals/pr_approval_card.dart';
 import '../widgets/approvals/po_ops_approval_card.dart';
@@ -31,6 +38,9 @@ import '../widgets/approvals/po_food_approval_card.dart';
 import '../widgets/approvals/ro_khusus_approval_card.dart';
 import '../widgets/approvals/employee_resignation_approval_card.dart';
 import '../widgets/approvals/lost_breakage_approval_card.dart';
+import '../widgets/approvals/qa2_cap_approval_card.dart';
+import '../widgets/approvals/npd_plan_report_approval_card.dart';
+import '../widgets/approvals/employee_onboarding_approval_card.dart';
 import '../widgets/approvals/asset_transfer_approval_card.dart';
 import '../widgets/approvals/asset_owner_transfer_approval_card.dart';
 import '../widgets/approvals/asset_adjustment_approval_card.dart';
@@ -62,6 +72,7 @@ import 'asset_inventory_adjustment/asset_inventory_adjustment_detail_screen.dart
 import 'asset_service_order/asset_service_order_detail_screen.dart';
 import 'asset_disposal/asset_disposal_detail_screen.dart';
 import 'lost_breakage/lost_breakage_detail_screen.dart';
+import 'approvals/qa2_cap_approval_detail_screen.dart';
 import '../widgets/approval_list_modal.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/customer_voice/capa_home_verification_card.dart';
@@ -91,6 +102,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   
   // Approval states
   final ApprovalService _approvalService = ApprovalService();
+  final NpdPlanReportService _npdPlanReportService = NpdPlanReportService();
+  final EmployeeOnboardingService _employeeOnboardingService = EmployeeOnboardingService();
   List<PurchaseRequisitionApproval> _prApprovals = [];
   List<PurchaseOrderOpsApproval> _poOpsApprovals = [];
   List<LeaveApproval> _leaveApprovals = [];
@@ -112,6 +125,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<ROKhususApproval> _roKhususApprovals = [];
   List<EmployeeResignationApproval> _employeeResignationApprovals = [];
   List<LostBreakageApproval> _lostBreakageApprovals = [];
+  List<Qa2CapApproval> _qa2CapApprovals = [];
+  List<NpdPendingApproval> _npdPlanReportApprovals = [];
+  int? _npdApprovalBusyId;
+  List<EoPendingApproval> _employeeOnboardingApprovals = [];
+  int? _eoApprovalBusyId;
   List<AssetInventoryTransferApproval> _assetTransferApprovals = [];
   List<AssetOwnerTransferApproval> _assetOwnerTransferApprovals = [];
   List<AssetInventoryAdjustmentApproval> _assetAdjustmentApprovals = [];
@@ -730,6 +748,140 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingQa2CapApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingQa2CapApprovals();
+      final rawCache = _approvalService.getRawJsonCache();
+      if (rawCache.containsKey('qa2_cap')) {
+        _cachedApprovalsJson['qa2_cap'] = rawCache['qa2_cap']!;
+      }
+      if (mounted) {
+        setState(() {
+          _qa2CapApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading QA2 CAP approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingNpdPlanReportApprovals() async {
+    try {
+      final approvals = await _npdPlanReportService.getPendingApprovals();
+      if (mounted) {
+        setState(() => _npdPlanReportApprovals = approvals);
+      }
+    } catch (e) {
+      print('Error loading NPD Plan Report approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingEmployeeOnboardingApprovals() async {
+    try {
+      final approvals = await _employeeOnboardingService.getPendingApprovals();
+      if (mounted) {
+        setState(() => _employeeOnboardingApprovals = approvals);
+      }
+    } catch (e) {
+      print('Error loading Employee Onboarding approvals: $e');
+    }
+  }
+
+  Future<void> _handleNpdApproval(NpdPendingApproval approval, String action) async {
+    final requireComment = action == 'reject' || action == 'requires_revision';
+    final commentCtrl = TextEditingController();
+    if (requireComment) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(action == 'requires_revision' ? 'Requires Revision' : 'Not Approved'),
+          content: TextField(
+            controller: commentCtrl,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: action == 'requires_revision' ? 'Catatan revisi *' : 'Alasan penolakan *',
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            FilledButton(
+              onPressed: () {
+                if (commentCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Konfirmasi'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
+    setState(() => _npdApprovalBusyId = approval.id);
+    final res = await _npdPlanReportService.approve(
+      id: approval.id,
+      action: action,
+      comments: commentCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _npdApprovalBusyId = null);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(res['message']?.toString() ?? 'Selesai')),
+    );
+    if (res['success'] == true) {
+      await _loadPendingNpdPlanReportApprovals();
+    }
+  }
+
+  Future<void> _handleEoApproval(EoPendingApproval approval, String action) async {
+    final requireComment = action == 'reject' || action == 'requires_revision';
+    final commentCtrl = TextEditingController();
+    if (requireComment) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(action == 'requires_revision' ? 'Requires Revision' : 'Not Approved'),
+          content: TextField(
+            controller: commentCtrl,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: action == 'requires_revision' ? 'Catatan revisi *' : 'Alasan penolakan *',
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            FilledButton(
+              onPressed: () {
+                if (commentCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Konfirmasi'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
+    setState(() => _eoApprovalBusyId = approval.submissionId);
+    final res = await _employeeOnboardingService.approve(
+      id: approval.id,
+      weekNumber: approval.weekNumber,
+      action: action,
+      comments: commentCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _eoApprovalBusyId = null);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(res['message']?.toString() ?? 'Selesai')),
+    );
+    if (res['success'] == true) {
+      await _loadPendingEmployeeOnboardingApprovals();
+    }
+  }
+
   Future<void> _loadPendingAssetTransferApprovals() async {
     try {
       final approvals = await _approvalService.getPendingAssetTransferApprovals();
@@ -962,6 +1114,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               _lostBreakageApprovals = (_cachedApprovalsJson['lost_breakage'] as List<dynamic>?)
                       ?.map((e) => LostBreakageApproval.fromJson(e))
                       .toList() ?? [];
+              _qa2CapApprovals = (_cachedApprovalsJson['qa2_cap'] as List<dynamic>?)
+                      ?.map((e) => Qa2CapApproval.fromJson(e as Map<String, dynamic>))
+                      .toList() ?? [];
               _assetTransferApprovals = (_cachedApprovalsJson['asset_transfer'] as List<dynamic>?)
                       ?.map((e) => AssetInventoryTransferApproval.fromJson(e))
                       .toList() ?? [];
@@ -1072,6 +1227,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'lost_breakage':
           await _loadPendingLostBreakageApprovals();
           break;
+        case 'qa2_cap':
+          await _loadPendingQa2CapApprovals();
+          break;
+        case 'npd_plan_report':
+          await _loadPendingNpdPlanReportApprovals();
+          break;
+        case 'employee_onboarding':
+          await _loadPendingEmployeeOnboardingApprovals();
+          break;
         case 'asset_transfer':
           await _loadPendingAssetTransferApprovals();
           break;
@@ -1160,6 +1324,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       // Batch 5: Asset approvals
       await Future.wait([
         _loadPendingLostBreakageApprovals(),
+        _loadPendingQa2CapApprovals(),
+        _loadPendingNpdPlanReportApprovals(),
+        _loadPendingEmployeeOnboardingApprovals(),
         _loadPendingAssetTransferApprovals(),
         _loadPendingAssetOwnerTransferApprovals(),
         _loadPendingAssetAdjustmentApprovals(),
@@ -1206,6 +1373,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _roKhususApprovals.length +
         _employeeResignationApprovals.length +
         _lostBreakageApprovals.length +
+        _qa2CapApprovals.length +
+        _npdPlanReportApprovals.length +
+        _employeeOnboardingApprovals.length +
         _assetTransferApprovals.length +
         _assetOwnerTransferApprovals.length +
         _assetAdjustmentApprovals.length +
@@ -3387,6 +3557,84 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ],
 
+            // NPD Plan & Report Approvals
+            if (_npdPlanReportApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'NPD Plan & Report',
+                _npdPlanReportApprovals.length,
+                const Color(0xFFF59E0B),
+                _npdPlanReportApprovals.take(3).map((approval) => NpdPlanReportApprovalCard(
+                  approval: approval,
+                  busy: _npdApprovalBusyId == approval.id,
+                  onOpen: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => NpdPlanReportShowScreen(recordId: approval.id),
+                      ),
+                    ).then((_) => _refreshApprovalType('npd_plan_report'));
+                  },
+                  onApprove: () => _handleNpdApproval(approval, 'approve'),
+                  onRevision: () => _handleNpdApproval(approval, 'requires_revision'),
+                  onReject: () => _handleNpdApproval(approval, 'reject'),
+                )).toList(),
+                'npd_plan_report',
+              ),
+            ],
+
+            // Employee Onboarding Approvals
+            if (_employeeOnboardingApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Employee Onboarding',
+                _employeeOnboardingApprovals.length,
+                EmployeeOnboardingUi.primary,
+                _employeeOnboardingApprovals.take(3).map((approval) => EmployeeOnboardingApprovalCard(
+                  approval: approval,
+                  busy: _eoApprovalBusyId == approval.submissionId,
+                  onOpen: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => EmployeeOnboardingShowScreen(recordId: approval.id),
+                      ),
+                    ).then((_) => _refreshApprovalType('employee_onboarding'));
+                  },
+                  onApprove: () => _handleEoApproval(approval, 'approve'),
+                  onRevision: () => _handleEoApproval(approval, 'requires_revision'),
+                  onReject: () => _handleEoApproval(approval, 'reject'),
+                )).toList(),
+                'employee_onboarding',
+              ),
+            ],
+
+            // QA2 CAP Approvals
+            if (_qa2CapApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'QA2 CAP',
+                _qa2CapApprovals.length,
+                const Color(0xFF4F46E5),
+                _qa2CapApprovals.map((approval) => Qa2CapApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => Qa2CapApprovalDetailScreen(auditId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('qa2_cap');
+                      }
+                    });
+                  },
+                )).toList(),
+                'qa2_cap',
+              ),
+            ],
+
             // Asset Inventory Transfer Approvals
             if (_assetTransferApprovals.isNotEmpty) ...[
               const SizedBox(height: 20),
@@ -3752,6 +4000,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         break;
       case 'lost_breakage':
         approvals = _lostBreakageApprovals;
+        break;
+      case 'qa2_cap':
+        approvals = _qa2CapApprovals;
+        break;
+      case 'npd_plan_report':
+        approvals = _npdPlanReportApprovals;
+        break;
+      case 'employee_onboarding':
+        approvals = _employeeOnboardingApprovals;
         break;
       case 'asset_transfer':
         approvals = _assetTransferApprovals;

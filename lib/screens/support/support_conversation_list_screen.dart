@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
+import '../../services/auth_service.dart';
 import '../../services/support_service.dart';
 import '../../models/support_models.dart';
 import '../../widgets/app_scaffold.dart';
@@ -17,6 +19,8 @@ class SupportConversationListScreen extends StatefulWidget {
 }
 
 class _SupportConversationListScreenState extends State<SupportConversationListScreen> {
+  static const _hrdWhatsAppNumber = '6282297806524';
+
   final SupportService _supportService = SupportService();
   final ImagePicker _imagePicker = ImagePicker();
   
@@ -479,6 +483,23 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
     }
   }
 
+  Future<void> _openHrdWhatsApp() async {
+    final user = await AuthService().getUserData();
+    final name = (user?['nama_lengkap'] as String?)?.trim() ?? '';
+    final greeting = name.isNotEmpty
+        ? 'Halo HRD, saya $name. Saya membutuhkan bantuan terkait administrasi karyawan. Mohon bantuannya.'
+        : 'Halo HRD, saya membutuhkan bantuan terkait administrasi karyawan. Mohon bantuannya.';
+    final uri = Uri.parse(
+      'https://wa.me/$_hrdWhatsAppNumber?text=${Uri.encodeComponent(greeting)}',
+    );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak dapat membuka WhatsApp')),
+      );
+    }
+  }
+
   String _formatDate(DateTime? date) {
     if (date == null) return '';
     final now = DateTime.now();
@@ -500,7 +521,7 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
         children: [
           // New Conversation Button
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             color: Colors.white,
             child: SizedBox(
               width: double.infinity,
@@ -516,6 +537,79 @@ class _SupportConversationListScreenState extends State<SupportConversationListS
               ),
             ),
           ),
+          // HRD WhatsApp Call Center
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            color: Colors.white,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade600,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.support_agent, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Butuh bantuan terkait HRD?',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green.shade900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Untuk keperluan SDM, penggajian, cuti, dan administrasi karyawan, silakan hubungi Call Center HRD melalui WhatsApp.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: Colors.green.shade800.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _openHrdWhatsApp,
+                            icon: const Icon(Icons.chat, size: 18),
+                            label: const Text('Chat HRD via WhatsApp'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '+62 822-9780-6524',
+                          style: TextStyle(fontSize: 11, color: Colors.green.shade700.withValues(alpha: 0.75)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1),
           // Conversations List
           Expanded(
             child: _isLoading

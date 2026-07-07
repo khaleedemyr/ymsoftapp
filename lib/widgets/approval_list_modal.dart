@@ -19,6 +19,7 @@ import '../screens/approvals/pr_food_approval_detail_screen.dart';
 import '../screens/approvals/po_food_approval_detail_screen.dart';
 import '../screens/approvals/ro_khusus_approval_detail_screen.dart';
 import '../screens/approvals/employee_resignation_approval_detail_screen.dart';
+import '../screens/approvals/qa2_cap_approval_detail_screen.dart';
 import 'approvals/pr_approval_card.dart';
 import 'approvals/po_ops_approval_card.dart';
 import 'approvals/leave_approval_card.dart';
@@ -39,6 +40,7 @@ import 'approvals/pr_food_approval_card.dart';
 import 'approvals/po_food_approval_card.dart';
 import 'approvals/ro_khusus_approval_card.dart';
 import 'approvals/employee_resignation_approval_card.dart';
+import 'approvals/qa2_cap_approval_card.dart';
 import 'approvals/pos_void_item_approval_card.dart';
 import '../services/approval_service.dart';
 
@@ -160,6 +162,9 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           break;
         case 'employee_resignation':
           approvals = await _approvalService.getPendingEmployeeResignationApprovals();
+          break;
+        case 'qa2_cap':
+          approvals = await _approvalService.getPendingQa2CapApprovals();
           break;
         case 'pos_void_item':
           approvals = await _approvalService.getPendingPosVoidItemApprovals();
@@ -816,6 +821,12 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
         );
         break;
+      case 'qa2_cap':
+        card = Qa2CapApprovalCard(
+          approval: approval as Qa2CapApproval,
+          onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
+        );
+        break;
       case 'pos_void_item':
         final pv = approval as PosVoidItemApproval;
         card = PosVoidItemApprovalCard(
@@ -919,6 +930,9 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         break;
       case 'employee_resignation':
         detailScreen = EmployeeResignationApprovalDetailScreen(resignationId: (approval as EmployeeResignationApproval).id);
+        break;
+      case 'qa2_cap':
+        detailScreen = Qa2CapApprovalDetailScreen(auditId: (approval as Qa2CapApproval).id);
         break;
     }
 

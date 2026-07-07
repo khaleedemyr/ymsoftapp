@@ -331,6 +331,46 @@ class StockCutService {
     }
   }
 
+  /// GET laporan qty minus stock cut
+  Future<Map<String, dynamic>?> getVarianceReport({
+    int page = 1,
+    int perPage = 25,
+    String? status,
+    int? outletId,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return null;
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (outletId != null) 'outlet_id': outletId.toString(),
+        if (dateFrom != null && dateFrom.isNotEmpty) 'date_from': dateFrom,
+        if (dateTo != null && dateTo.isNotEmpty) 'date_to': dateTo,
+      };
+      final uri = Uri.parse('$baseUrl/api/approval-app/stock-cut/variance-report')
+          .replace(queryParameters: queryParams);
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 503) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+      }
+      return null;
+    } catch (e) {
+      print('Error getVarianceReport stock cut: $e');
+      return null;
+    }
+  }
+
   /// DELETE rollback log stock cut
   Future<Map<String, dynamic>?> rollback(int logId) async {
     try {

@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../utils/asset_qty_format.dart';
+import '../../services/auth_service.dart';
 import '../../services/asset_service_order_service.dart';
 import '../../models/asset_service_order_models.dart';
 
@@ -16,6 +21,7 @@ class _AssetServiceOrderDetailScreenState
   final _service = AssetServiceOrderService();
   AssetServiceOrder? _order;
   bool _isLoading = true;
+  bool _isUploadingInvoice = false;
 
   @override
   void initState() {
@@ -56,11 +62,11 @@ class _AssetServiceOrderDetailScreenState
   String _statusLabel(String status) {
     switch (status) {
       case 'waiting_approval':
-        return 'WAITING';
+        return 'WAITING APPROVAL';
       case 'in_service':
         return 'IN SERVICE';
       case 'partially_returned':
-        return 'PARTIAL RETURN';
+        return 'PARTIALLY RETURNED';
       case 'returned':
         return 'RETURNED';
       case 'rejected':
@@ -79,6 +85,46 @@ class _AssetServiceOrderDetailScreenState
       default:
         return Colors.grey;
     }
+  }
+
+  Color _paymentStatusColor(String? status) {
+    switch ((status ?? '').toLowerCase()) {
+      case 'paid':
+      case 'completed':
+      case 'approved':
+        return Colors.green;
+      case 'waiting_approval':
+      case 'pending':
+      case 'draft':
+        return Colors.orange;
+      case 'rejected':
+      case 'cancelled':
+      case 'canceled':
+        return Colors.red;
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  String _paymentStatusLabel(String? status) {
+    final normalized = (status ?? '').trim().toLowerCase();
+    if (normalized.isEmpty) return '-';
+    switch (normalized) {
+      case 'waiting_approval':
+        return 'WAITING APPROVAL';
+      case 'partially_paid':
+        return 'PARTIALLY PAID';
+      default:
+        return normalized.replaceAll('_', ' ').toUpperCase();
+    }
+  }
+
+  double? _linkedPaymentAmount(Map<String, dynamic> linked) {
+    final raw = linked['amount'] ?? linked['total_amount'] ?? linked['grand_total'];
+    if (raw == null) return null;
+    final value = double.tryParse(raw.toString());
+    if (value == null || value <= 0) return null;
+    return value;
   }
 
   String _formatCurrency(double val) {
@@ -296,6 +342,71 @@ class _AssetServiceOrderDetailScreenState
     }
   }
 
+  Future<void> _pickAndUploadInvoice() async {
+    if (_order == null || _isUploadingInvoice) return;
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      allowMultiple: false,
+    );
+    final path = picked?.files.single.path;
+    if (path == null || path.isEmpty) return;
+    setState(() => _isUploadingInvoice = true);
+    final result = await _service.uploadVendorInvoice(_order!.id, File(path));
+    if (mounted) {
+      setState(() => _isUploadingInvoice = false);
+    }
+    if (result['success'] == true) {
+      _showSnack('Invoice vendor berhasil diunggah', Colors.green);
+      _loadDetail();
+    } else {
+      _showSnack(result['message']?.toString() ?? 'Upload gagal', Colors.red);
+    }
+  }
+
+  Future<void> _openInvoiceFile() async {
+    if (_order == null || (_order!.vendorInvoicePath ?? '').isEmpty) return;
+    final path = _order!.vendorInvoicePath!;
+    const base = AuthService.storageUrl;
+    final normalized = path.startsWith('/') ? path.substring(1) : path;
+    final fileUrl = normalized.startsWith('storage/')
+        ? '$base/$normalized'
+        : '$base/storage/$normalized';
+    final uri = Uri.parse(fileUrl);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showSnack('Tidak bisa membuka file invoice', Colors.red);
+    }
+  }
+
+  Future<void> _openErpPath(String path) async {
+    final normalized = path.startsWith('/') ? path : '/$path';
+    final uri = Uri.parse('${AuthService.baseUrl}$normalized');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showSnack('Tidak bisa membuka halaman ERP', Colors.red);
+    }
+  }
+
+  Future<void> _openCreateNonFoodPayment() async {
+    if (_order == null) return;
+    await _openErpPath(
+      '/non-food-payments/create-from-asset-service/${_order!.id}',
+    );
+  }
+
+  Future<void> _openLinkedNonFoodPayment() async {
+    final linked = _order?.linkedNonFoodPayment;
+    if (linked == null) return;
+    final dynamic idRaw =
+        linked['id'] ?? linked['non_food_payment_id'] ?? linked['payment_id'];
+    final id = int.tryParse(idRaw?.toString() ?? '');
+    if (id != null && id > 0) {
+      await _openErpPath('/non-food-payments/$id');
+      return;
+    }
+    // Fallback: open list page if API does not expose linked NFP id.
+    await _openErpPath('/non-food-payments');
+  }
+
   Future<String?> _showInputDialog(String title,
       {String? hintText, bool required = false}) async {
     final controller = TextEditingController();
@@ -362,6 +473,8 @@ class _AssetServiceOrderDetailScreenState
                       children: [
                         _buildInfoCard(),
                         const SizedBox(height: 16),
+                        _buildInvoiceAndPaymentCard(),
+                        const SizedBox(height: 16),
                         _buildApprovalFlow(),
                         const SizedBox(height: 16),
                         _buildItems(),
@@ -398,7 +511,7 @@ class _AssetServiceOrderDetailScreenState
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
-                    color: _statusColor(o.status).withOpacity(0.1),
+                    color: _statusColor(o.status).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -415,6 +528,7 @@ class _AssetServiceOrderDetailScreenState
             const Divider(height: 20),
             _infoRow('Tipe', o.serviceType == 'internal' ? 'Internal' : 'External'),
             _infoRow('Tanggal', o.date),
+            _infoRow('Pemilik', o.ownerOutletName ?? '-'),
             _infoRow('Supplier', o.serviceType == 'internal' ? '—' : (o.supplierName ?? '-')),
             _infoRow('Outlet', o.outletName ?? '-'),
             _infoRow('Warehouse', o.warehouseOutletName ?? '-'),
@@ -513,7 +627,7 @@ class _AssetServiceOrderDetailScreenState
                                     horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
                                   color:
-                                      _flowColor(flow.status).withOpacity(0.1),
+                                      _flowColor(flow.status).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(flow.status,
@@ -560,6 +674,144 @@ class _AssetServiceOrderDetailScreenState
     );
   }
 
+  Widget _buildInvoiceAndPaymentCard() {
+    if (_order == null || _order!.serviceType != 'external') {
+      return const SizedBox.shrink();
+    }
+    final o = _order!;
+    final linked = o.linkedNonFoodPayment;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Invoice & Pembayaran Vendor',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            const SizedBox(height: 10),
+            if ((o.vendorInvoicePath ?? '').isNotEmpty)
+              TextButton.icon(
+                onPressed: _openInvoiceFile,
+                icon: const Icon(Icons.picture_as_pdf, color: Colors.teal),
+                label: const Text('Lihat file invoice'),
+              ),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: _isUploadingInvoice ? null : _pickAndUploadInvoice,
+              icon: _isUploadingInvoice
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_file),
+              label: Text(_isUploadingInvoice ? 'Mengunggah...' : 'Upload invoice vendor'),
+            ),
+            const SizedBox(height: 12),
+            if (linked != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            linked['payment_number']?.toString() ?? '-',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _paymentStatusColor(
+                                    linked['status']?.toString())
+                                .withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            _paymentStatusLabel(linked['status']?.toString()),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: _paymentStatusColor(
+                                  linked['status']?.toString()),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_linkedPaymentAmount(linked) != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Nominal: ${_formatCurrency(_linkedPaymentAmount(linked)!)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.teal,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _openLinkedNonFoodPayment,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Lihat Non Food Payment'),
+              ),
+            ] else ...[
+              const Text(
+                'Belum ada Non Food Payment terhubung.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: o.canCreateNonFoodPayment
+                    ? _openCreateNonFoodPayment
+                    : null,
+                icon: const Icon(Icons.add_card, size: 18),
+                label: const Text('Buat Non Food Payment'),
+              ),
+              if (o.canCreateNonFoodPayment && o.actualCost > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Referensi biaya aktual: ${_formatCurrency(o.actualCost)}',
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                ),
+              if (!o.canCreateNonFoodPayment)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Aktif setelah status in service/returned dan syarat ERP terpenuhi.',
+                    style: TextStyle(fontSize: 11, color: Colors.orange),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildItems() {
     final items = _order!.items;
     if (items.isEmpty) return const SizedBox.shrink();
@@ -598,12 +850,12 @@ class _AssetServiceOrderDetailScreenState
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Text('${item.unit ?? '-'}',
+                        Text(item.unit ?? '-',
                             style: const TextStyle(
                                 fontSize: 12, color: Colors.grey)),
                         const Spacer(),
                         Text(
-                            'Out: ${item.qtyOut}  |  Returned: ${item.qtyReturned}',
+                            'Out: ${formatAssetQty(item.qtyOut)}  |  Returned: ${formatAssetQty(item.qtyReturned)}',
                             style: const TextStyle(fontSize: 12)),
                       ],
                     ),

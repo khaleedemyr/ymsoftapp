@@ -23,6 +23,7 @@ class _AssetGoodReceiveIndexScreenState
   final TextEditingController _dateToController = TextEditingController();
 
   List<AssetGoodReceive> _goodReceives = [];
+  List<Map<String, dynamic>> _outlets = [];
   bool _isLoading = false;
   bool _hasMore = true;
   int _currentPage = 1;
@@ -31,6 +32,8 @@ class _AssetGoodReceiveIndexScreenState
   String _searchQuery = '';
   String? _dateFrom;
   String? _dateTo;
+  String _statusFilter = '';
+  int? _outletFilter;
 
   @override
   void initState() {
@@ -75,6 +78,8 @@ class _AssetGoodReceiveIndexScreenState
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
         dateFrom: _dateFrom,
         dateTo: _dateTo,
+        status: _statusFilter.isNotEmpty ? _statusFilter : null,
+        outletId: _outletFilter,
         page: _currentPage,
         perPage: 20,
       );
@@ -101,6 +106,10 @@ class _AssetGoodReceiveIndexScreenState
           _hasMore = newItems.length >= 20;
           _isLoading = false;
         });
+        if (_outlets.isEmpty) {
+          _outlets = await _service.getOutlets();
+          if (mounted) setState(() {});
+        }
       } else {
         if (mounted) {
           setState(() {
@@ -150,6 +159,8 @@ class _AssetGoodReceiveIndexScreenState
       _searchQuery = '';
       _dateFrom = null;
       _dateTo = null;
+      _statusFilter = '';
+      _outletFilter = null;
     });
     _loadGoodReceives(isRefresh: true);
   }
@@ -192,6 +203,53 @@ class _AssetGoodReceiveIndexScreenState
       ),
     );
     if (result == true) {
+      _loadGoodReceives(isRefresh: true);
+    }
+  }
+
+  void _navigateToEdit(AssetGoodReceive gr) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AssetGoodReceiveFormScreen(goodReceiveId: gr.id),
+      ),
+    );
+    if (result == true) {
+      _loadGoodReceives(isRefresh: true);
+    }
+  }
+
+  Future<void> _deleteFromIndex(AssetGoodReceive gr) async {
+    if (gr.status != 'draft') return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Good Receive?'),
+        content: Text('Yakin hapus ${gr.grNumber}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final result = await _service.deleteGoodReceive(gr.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] ?? 'Gagal menghapus data'),
+        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    if (result['success'] == true) {
       _loadGoodReceives(isRefresh: true);
     }
   }
@@ -282,6 +340,69 @@ class _AssetGoodReceiveIndexScreenState
                 Row(
                   children: [
                     Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _statusFilter,
+                        decoration: InputDecoration(
+                          labelText: 'Status',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: '', child: Text('Semua')),
+                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                          DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _statusFilter = value ?? '';
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<int?>(
+                        initialValue: _outletFilter,
+                        decoration: InputDecoration(
+                          labelText: 'Outlet',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Semua Outlet'),
+                          ),
+                          ..._outlets.map((outlet) => DropdownMenuItem<int?>(
+                                value: int.tryParse(
+                                    outlet['id']?.toString() ??
+                                        outlet['id_outlet']?.toString() ??
+                                        ''),
+                                child: Text(
+                                    outlet['name']?.toString() ??
+                                        outlet['nama_outlet']?.toString() ??
+                                        '-'),
+                              )),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _outletFilter = value;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
                       child: ElevatedButton.icon(
                         onPressed: _applyFilters,
                         icon: const Icon(Icons.filter_list),
@@ -339,22 +460,116 @@ class _AssetGoodReceiveIndexScreenState
                               ),
                             ],
                           )
-                        : ListView.builder(
+                        : ListView(
                             controller: _scrollController,
                             padding: const EdgeInsets.all(16),
-                            itemCount:
-                                _goodReceives.length + (_hasMore ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (index == _goodReceives.length) {
-                                return const Padding(
+                            children: [
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  columns: const [
+                                    DataColumn(label: Text('GR Number')),
+                                    DataColumn(label: Text('PO Number')),
+                                    DataColumn(label: Text('Pemilik')),
+                                    DataColumn(label: Text('Lokasi')),
+                                    DataColumn(label: Text('Warehouse')),
+                                    DataColumn(label: Text('Tanggal')),
+                                    DataColumn(label: Text('Status')),
+                                    DataColumn(
+                                        label: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Text('Total'),
+                                    )),
+                                    DataColumn(label: Text('Actions')),
+                                  ],
+                                  rows: _goodReceives.map((gr) {
+                                    final statusColor =
+                                        gr.status == 'completed'
+                                            ? Colors.green
+                                            : Colors.orange;
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(gr.grNumber)),
+                                        DataCell(Text(gr.poNumber ?? '-')),
+                                        DataCell(
+                                            Text(gr.ownerOutletName ?? '-')),
+                                        DataCell(Text(gr.locationOutletName ??
+                                            gr.outletName ??
+                                            '-')),
+                                        DataCell(
+                                            Text(gr.warehouseOutletName ?? '-')),
+                                        DataCell(Text(gr.receiveDate.isNotEmpty
+                                            ? DateFormat('dd MMM yyyy').format(
+                                                DateTime.parse(gr.receiveDate))
+                                            : '-')),
+                                        DataCell(
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: statusColor
+                                                  .withOpacity(0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              gr.status,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: statusColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Align(
+                                            alignment: Alignment.centerRight,
+                                            child: Text(
+                                              _formatCurrency(gr.total),
+                                              textAlign: TextAlign.right,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    _navigateToDetail(gr),
+                                                child: const Text('View'),
+                                              ),
+                                              if (gr.status == 'draft')
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      _navigateToEdit(gr),
+                                                  child: const Text('Edit'),
+                                                ),
+                                              if (gr.status == 'draft')
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      _deleteFromIndex(gr),
+                                                  style: TextButton.styleFrom(
+                                                      foregroundColor:
+                                                          Colors.red),
+                                                  child: const Text('Delete'),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                              if (_hasMore)
+                                const Padding(
                                   padding: EdgeInsets.all(16),
                                   child: Center(
                                       child: CircularProgressIndicator()),
-                                );
-                              }
-                              return _buildGoodReceiveCard(
-                                  _goodReceives[index]);
-                            },
+                                ),
+                            ],
                           ),
                   ),
           ),
@@ -370,127 +585,4 @@ class _AssetGoodReceiveIndexScreenState
     );
   }
 
-  Widget _buildGoodReceiveCard(AssetGoodReceive gr) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        onTap: () => _navigateToDetail(gr),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      gr.grNumber,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: gr.status == 'completed'
-                          ? Colors.green.shade50
-                          : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: gr.status == 'completed'
-                            ? Colors.green.shade200
-                            : Colors.orange.shade200,
-                      ),
-                    ),
-                    child: Text(
-                      gr.status.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: gr.status == 'completed'
-                            ? Colors.green.shade700
-                            : Colors.orange.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (gr.poNumber != null) ...[
-                Row(
-                  children: [
-                    Icon(Icons.receipt_long,
-                        size: 16, color: Colors.grey.shade600),
-                    const SizedBox(width: 4),
-                    Text(
-                      'PO: ${gr.poNumber}',
-                      style:
-                          TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              Row(
-                children: [
-                  Icon(Icons.store, size: 16, color: Colors.grey.shade600),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      gr.outletName ?? '-',
-                      style:
-                          TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(Icons.calendar_today,
-                      size: 16, color: Colors.grey.shade600),
-                  const SizedBox(width: 4),
-                  Text(
-                    gr.receiveDate.isNotEmpty
-                        ? DateFormat('dd MMM yyyy')
-                            .format(DateTime.parse(gr.receiveDate))
-                        : '-',
-                    style:
-                        TextStyle(fontSize: 14, color: Colors.grey.shade700),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatCurrency(gr.total),
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.teal.shade700,
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_ios,
-                      size: 14, color: Colors.grey.shade400),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

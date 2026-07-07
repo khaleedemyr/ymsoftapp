@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../models/outlet_wip_models.dart';
 import '../../services/outlet_wip_service.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
@@ -53,41 +52,6 @@ class _OutletWIPDetailScreenState extends State<OutletWIPDetailScreen> {
           _error = e.toString();
         });
       }
-    }
-  }
-
-  Future<void> _submit() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Submit Produksi'),
-        content: const Text('Proses produksi WIP dan kurangi stok bahan baku?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya, Submit'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    final result = await _service.submit(widget.headerId);
-    if (!mounted) return;
-    if (result['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Produksi berhasil disubmit'), backgroundColor: Colors.green),
-      );
-      _load();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message']?.toString() ?? 'Gagal submit'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -215,6 +179,7 @@ class _OutletWIPDetailScreenState extends State<OutletWIPDetailScreen> {
 
   Widget _buildProductionsCard() {
     final productions = _data!['productions'] as List<dynamic>? ?? [];
+    final bomData = _data!['bom_data'] as Map<String, dynamic>? ?? {};
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -230,24 +195,46 @@ class _OutletWIPDetailScreenState extends State<OutletWIPDetailScreen> {
             const SizedBox(height: 12),
             ...productions.map((e) {
               final m = Map<String, dynamic>.from(e as Map);
+              final itemId = m['item_id']?.toString() ?? '';
               final name = m['item_name']?.toString() ?? '-';
               final qty = m['qty']?.toString() ?? '0';
               final qtyJadi = m['qty_jadi']?.toString() ?? '0';
               final unit = m['unit_name']?.toString() ?? '';
+              final bomList = bomData[itemId] is List ? bomData[itemId] as List : const [];
               return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(fontSize: 14),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text(
+                          '$qty → $qtyJadi $unit',
+                          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                        ),
+                      ],
                     ),
-                    Text(
-                      '$qty → $qtyJadi $unit',
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                    ),
+                    if (bomList.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Text('Bill of Materials (BOM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      ...bomList.map((b) {
+                        final bm = Map<String, dynamic>.from(b as Map);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '• ${bm['material_name'] ?? '-'}: ${bm['qty'] ?? '-'} ${bm['unit_name'] ?? ''}',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          ),
+                        );
+                      }),
+                    ],
                   ],
                 ),
               );
@@ -334,7 +321,7 @@ class _OutletWIPDetailScreenState extends State<OutletWIPDetailScreen> {
         OutlinedButton.icon(
           onPressed: _editDraft,
           icon: const Icon(Icons.edit_outlined, size: 20),
-          label: const Text('Edit / Tambah Inputan'),
+          label: const Text('Edit Draft'),
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFF6366F1),
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -343,31 +330,15 @@ class _OutletWIPDetailScreenState extends State<OutletWIPDetailScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _submit,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Submit Produksi'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _delete,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Hapus'),
-              ),
-            ),
-          ],
+        OutlinedButton(
+          onPressed: _delete,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            side: const BorderSide(color: Colors.red),
+          ),
+          child: const Text('Hapus'),
         ),
       ],
     );

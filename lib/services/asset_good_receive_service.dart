@@ -14,6 +14,9 @@ class AssetGoodReceiveService {
     String? search,
     String? dateFrom,
     String? dateTo,
+    String? status,
+    int? outletId,
+    int? ownerOutletId,
     int? page,
     int? perPage,
   }) async {
@@ -27,6 +30,11 @@ class AssetGoodReceiveService {
         queryParams['from'] = dateFrom;
       }
       if (dateTo != null && dateTo.isNotEmpty) queryParams['to'] = dateTo;
+      if (status != null && status.isNotEmpty) queryParams['status'] = status;
+      if (outletId != null) queryParams['outlet_id'] = outletId.toString();
+      if (ownerOutletId != null) {
+        queryParams['owner_outlet_id'] = ownerOutletId.toString();
+      }
       if (page != null) queryParams['page'] = page.toString();
       if (perPage != null) queryParams['per_page'] = perPage.toString();
 
@@ -185,6 +193,48 @@ class AssetGoodReceiveService {
     }
   }
 
+  Future<Map<String, dynamic>> updateGoodReceive({
+    required int id,
+    required String receiveDate,
+    required int ownerOutletId,
+    required int outletId,
+    int? warehouseOutletId,
+    String? notes,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No authentication token'};
+      }
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/approval-app/asset-good-receives/$id'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'receive_date': receiveDate,
+          'owner_outlet_id': ownerOutletId,
+          'outlet_id': outletId,
+          if (warehouseOutletId != null)
+            'warehouse_outlet_id': warehouseOutletId,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+          'items': items,
+        }),
+      );
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {'success': false, 'message': 'Invalid response'};
+    } catch (e) {
+      print('Error updating Asset Good Receive: $e');
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
   Future<Map<String, dynamic>> deleteGoodReceive(int id) async {
     try {
       final token = await _getToken();
@@ -234,5 +284,55 @@ class AssetGoodReceiveService {
       print('Error deleting Asset Good Receive: $e');
       return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
+  }
+
+  Future<Map<String, dynamic>> completeGoodReceive(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No authentication token'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/asset-good-receives/$id/complete'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {'success': false, 'message': 'Invalid response'};
+    } catch (e) {
+      print('Error completing Asset Good Receive: $e');
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getOutlets() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+      final uri = Uri.parse('$baseUrl/api/approval-app/outlets');
+      final resp = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+        if (decoded is Map && decoded['outlets'] is List) {
+          return (decoded['outlets'] as List)
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+        }
+      }
+    } catch (e) {
+      print('Error getting outlets: $e');
+    }
+    return [];
   }
 }

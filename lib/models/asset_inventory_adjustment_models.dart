@@ -8,6 +8,7 @@ class AssetInventoryAdjustment {
   final String? reason;
   final String status;
   final String? creatorName;
+  final String? ownerOutletName;
   final String? outletName;
   final String? warehouseOutletName;
   final bool canApprove;
@@ -25,6 +26,7 @@ class AssetInventoryAdjustment {
     this.reason,
     required this.status,
     this.creatorName,
+    this.ownerOutletName,
     this.outletName,
     this.warehouseOutletName,
     this.canApprove = false,
@@ -46,6 +48,7 @@ class AssetInventoryAdjustment {
       reason: json['reason']?.toString(),
       status: json['status']?.toString() ?? 'draft',
       creatorName: json['creator_name']?.toString(),
+      ownerOutletName: json['owner_outlet_name']?.toString(),
       outletName: json['outlet_name']?.toString(),
       warehouseOutletName: json['warehouse_outlet_name']?.toString(),
       canApprove: json['can_approve'] == true,

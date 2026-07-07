@@ -7,8 +7,10 @@ import '../../services/auth_service.dart';
 import '../../services/ticket_service.dart';
 import '../../utils/ticket_due_date.dart';
 import '../../utils/ticket_permissions.dart';
+import '../../utils/ticket_status.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/tickets/ticket_status_change_dialog.dart';
 import 'ticket_editor_screen.dart';
 
 class TicketDetailScreen extends StatefulWidget {
@@ -29,8 +31,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
   List<dynamic> _comments = [];
   bool _loading = true;
   bool _sending = false;
+  bool _workExecutorSaving = false;
   String? _error;
   bool _canManageTickets = false;
+  Map<String, dynamic>? _userData;
   late TabController _tab;
   List<File> _commentFiles = [];
 
@@ -68,7 +72,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
       canManage = v == true || v == 1;
     } else {
       final u = await AuthService().getUserData();
+      _userData = u;
       canManage = TicketPermissions.userCanManage(u);
+    }
+    if (_userData == null) {
+      _userData = await AuthService().getUserData();
     }
     _ticket = r['ticket'] as Map<String, dynamic>?;
     _canManageTickets = canManage;
@@ -88,27 +96,29 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     }
   }
 
-  Future<void> _changeStatus() async {
-    final opt = await _svc.getFormOptions();
-    if (opt['success'] != true || !mounted) return;
-    final statuses = opt['statuses'] as List<dynamic>? ?? [];
-    final current = _ticket?['status'] is Map ? (_ticket!['status']['id'] as num?)?.toInt() : null;
-    int? picked = current;
-    final ok = await showDialog<bool>(
+  bool get _canUpdateStatus =>
+      TicketPermissions.ticketCanUpdateStatus(_ticket, _userData);
+
+  bool get _canManageTicket =>
+      TicketPermissions.ticketCanManage(_ticket, _userData);
+
+  bool get _canUpdateVendorName =>
+      TicketPermissions.ticketCanUpdateVendorName(_ticket, _userData);
+
+  bool get _canSetWorkExecutorType =>
+      TicketPermissions.ticketCanSetWorkExecutorType(_ticket, _userData);
+
+  Future<void> _promptVendorName() async {
+    final ctrl = TextEditingController(text: _ticket?['vendor_name']?.toString() ?? '');
+    final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Ubah status'),
-        content: StatefulBuilder(
-          builder: (ctx, setSt) => DropdownButtonFormField<int>(
-            value: picked,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
-            items: statuses
-                .map((s) => DropdownMenuItem(
-                      value: (s['id'] as num).toInt(),
-                      child: Text(s['name']?.toString() ?? ''),
-                    ))
-                .toList(),
-            onChanged: (v) => setSt(() => picked = v),
+        title: const Text('Nama Vendor'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            labelText: 'Nama vendor (opsional)',
+            border: OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -117,9 +127,44 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
         ],
       ),
     );
-    if (ok != true || picked == null || !mounted) return;
-    final statusId = picked!;
-    final res = await _svc.updateStatus(widget.ticketId, statusId);
+    if (saved != true || !mounted) return;
+
+    final name = ctrl.text.trim();
+    final res = await _svc.updateVendorName(widget.ticketId, name.isEmpty ? null : name);
+    if (!mounted) return;
+    if (res['success'] == true) {
+      setState(() => _ticket!['vendor_name'] = name.isEmpty ? null : name);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nama vendor diperbarui')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message']?.toString() ?? 'Gagal')),
+      );
+    }
+  }
+
+  Future<void> _changeStatus() async {
+    final opt = await _svc.getFormOptions();
+    if (opt['success'] != true || !mounted) return;
+    final statuses = opt['statuses'] as List<dynamic>? ?? [];
+    final current = _ticket?['status'] is Map ? (_ticket!['status']['id'] as num?)?.toInt() : null;
+    final currentSlug =
+        _ticket?['status'] is Map ? _ticket!['status']['slug']?.toString() : null;
+
+    final chosen = await showTicketStatusChangeDialog(
+      context: context,
+      statuses: statuses,
+      currentStatusId: current,
+      currentStatusSlug: currentSlug,
+    );
+    if (chosen == null || chosen.statusId == current || !mounted) return;
+
+    final res = await _svc.updateStatus(
+      widget.ticketId,
+      chosen.statusId,
+      closeNote: chosen.closeNote,
+      closeEvidenceFiles:
+          chosen.closeEvidenceFiles.isEmpty ? null : chosen.closeEvidenceFiles,
+    );
     if (!mounted) return;
     if (res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status diperbarui')));
@@ -127,6 +172,59 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(res['message']?.toString() ?? 'Gagal')),
+      );
+    }
+  }
+
+  Future<void> _updateWorkExecutorType(String? value) async {
+    if (_ticket == null || _workExecutorSaving) return;
+    final current = _ticket!['work_executor_type']?.toString();
+    if ((current ?? '') == (value ?? '')) return;
+
+    String? vendorName = _ticket!['vendor_name']?.toString();
+    if (value == 'external_vendor') {
+      final ctrl = TextEditingController(text: vendorName ?? '');
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('External Vendor'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: 'Nama vendor (opsional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Simpan')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      vendorName = ctrl.text.trim().isEmpty ? null : ctrl.text.trim();
+    }
+
+    setState(() => _workExecutorSaving = true);
+    final res = await _svc.updateWorkExecutorType(
+      widget.ticketId,
+      value,
+      vendorName: value == 'external_vendor' ? vendorName : null,
+    );
+    if (!mounted) return;
+    setState(() => _workExecutorSaving = false);
+    if (res['success'] == true) {
+      setState(() {
+        _ticket!['work_executor_type'] = value;
+        _ticket!['work_executor_type_label'] = TicketPermissions.workExecutorTypeLabel(value);
+        _ticket!['vendor_name'] = value == 'external_vendor' ? vendorName : null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message']?.toString() ?? 'Dikerjakan oleh diperbarui')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message']?.toString() ?? 'Gagal memperbarui')),
       );
     }
   }
@@ -261,31 +359,32 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     return AppScaffold(
       title: 'Detail ticket',
       showDrawer: false,
-      actions: _loading || _ticket == null || !_canManageTickets
+      actions: _loading || _ticket == null || (!_canManageTicket && !_canUpdateStatus)
           ? null
           : [
-              IconButton(
-                icon: const Icon(Icons.edit_rounded),
-                onPressed: () async {
-                  final ok = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TicketEditorScreen(initialTicket: _ticket),
-                    ),
-                  );
-                  if (ok == true && mounted) _load();
-                },
-              ),
+              if (_canManageTicket)
+                IconButton(
+                  icon: const Icon(Icons.edit_rounded),
+                  onPressed: () async {
+                    final ok = await Navigator.push<bool>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TicketEditorScreen(initialTicket: _ticket),
+                      ),
+                    );
+                    if (ok == true && mounted) _load();
+                  },
+                ),
               PopupMenuButton<String>(
                 onSelected: (v) {
                   if (v == 'status') _changeStatus();
-                  if (v == 'assign') _assignTeam();
                   if (v == 'del') _delete();
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'status', child: Text('Ubah status')),
-                  PopupMenuItem(value: 'assign', child: Text('Assign tim')),
-                  PopupMenuItem(value: 'del', child: Text('Hapus ticket')),
+                itemBuilder: (_) => [
+                  if (_canUpdateStatus)
+                    const PopupMenuItem(value: 'status', child: Text('Ubah status')),
+                  if (_canManageTickets)
+                    const PopupMenuItem(value: 'del', child: Text('Hapus ticket')),
                 ],
               ),
             ],
@@ -331,8 +430,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     final t = _ticket!;
     final num = t['ticket_number']?.toString() ?? '';
     final title = t['title']?.toString() ?? '';
-    final st = t['status'] is Map ? t['status']['name']?.toString() : null;
-    final statusSlug = t['status'] is Map ? t['status']['slug']?.toString() : null;
+    final statusSlugRaw = t['status'] is Map ? t['status']['slug']?.toString() : null;
+    final statusSlug = normalizeTicketStatusSlug(statusSlugRaw);
+    final st = displayTicketStatusName(
+      t['status'] is Map ? t['status']['name']?.toString() : null,
+      statusSlugRaw,
+    );
     final pr = t['priority'] is Map ? t['priority']['name']?.toString() : null;
     final div = t['divisi'] is Map ? t['divisi']['nama_divisi']?.toString() : null;
     final out = t['outlet'] is Map ? t['outlet']['nama_outlet']?.toString() : null;
@@ -384,6 +487,71 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Text(desc, style: const TextStyle(height: 1.45, fontSize: 14)),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Dikerjakan Oleh', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 8),
+                if (_canSetWorkExecutorType)
+                  DropdownButtonFormField<String?>(
+                    value: t['work_executor_type']?.toString(),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    items: const [
+                      DropdownMenuItem<String?>(value: null, child: Text('— Pilih —')),
+                      DropdownMenuItem<String?>(value: 'internal', child: Text('Internal')),
+                      DropdownMenuItem<String?>(value: 'external_vendor', child: Text('External Vendor')),
+                    ],
+                    onChanged: _workExecutorSaving ? null : _updateWorkExecutorType,
+                  )
+                else
+                  Text(
+                    t['work_executor_type_label']?.toString() ?? '-',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                if (_canSetWorkExecutorType)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Hanya divisi terkait yang dapat mengisi.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                  ),
+                if (t['work_executor_type']?.toString() == 'external_vendor') ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t['vendor_name']?.toString().isNotEmpty == true
+                              ? t['vendor_name'].toString()
+                              : '— belum ada nama vendor —',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      if (_canUpdateVendorName)
+                        TextButton(
+                          onPressed: _workExecutorSaving ? null : _promptVendorName,
+                          child: Text(t['vendor_name']?.toString().isNotEmpty == true ? 'Ubah' : 'Input'),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
           ),
           if (assignees.isNotEmpty) ...[
             const SizedBox(height: 14),

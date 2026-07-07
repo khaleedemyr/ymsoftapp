@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'ticket_status.dart';
+
 /// Selaras dengan `getDueDateStatus` / `getDueDateBadgeClass` di `Tickets/Index.vue`.
 class TicketDueDateStyle {
   final String badgeLabel;
@@ -40,13 +42,12 @@ class TicketDueDateStyle {
       );
     }
 
-    final normalizedStatus = (statusSlug ?? '').toLowerCase();
-    final isResolved = normalizedStatus == 'resolved';
+    final normalizedStatus = normalizeTicketStatusSlug(statusSlug);
     final isClosed = normalizedStatus == 'closed';
-    final isCompleted = isResolved || isClosed;
+    final isCompleted = isClosed;
 
     DateTime? completedAt;
-    final completedRaw = isClosed ? closedAtIso : (isResolved ? resolvedAtIso : null);
+    final completedRaw = isClosed ? (closedAtIso ?? resolvedAtIso) : null;
     if (completedRaw != null && completedRaw.isNotEmpty) {
       try {
         completedAt = DateTime.parse(completedRaw);
@@ -57,23 +58,23 @@ class TicketDueDateStyle {
 
     if (isCompleted) {
       if (completedAt != null && !completedAt.isAfter(due)) {
-        return TicketDueDateStyle(
-          badgeLabel: isResolved ? 'Resolved On Time' : 'Closed On Time',
-          backgroundColor: const Color(0xFFDCFCE7),
-          foregroundColor: const Color(0xFF15803D),
+        return const TicketDueDateStyle(
+          badgeLabel: 'Closed On Time',
+          backgroundColor: Color(0xFFDCFCE7),
+          foregroundColor: Color(0xFF15803D),
         );
       }
       if (completedAt != null && completedAt.isAfter(due)) {
-        return TicketDueDateStyle(
-          badgeLabel: isResolved ? 'Resolved Late' : 'Closed Late',
-          backgroundColor: const Color(0xFFFEE2E2),
-          foregroundColor: const Color(0xFFDC2626),
+        return const TicketDueDateStyle(
+          badgeLabel: 'Closed Late',
+          backgroundColor: Color(0xFFFEE2E2),
+          foregroundColor: Color(0xFFDC2626),
         );
       }
-      return TicketDueDateStyle(
-        badgeLabel: isResolved ? 'Resolved' : 'Closed',
-        backgroundColor: const Color(0xFFD1FAE5),
-        foregroundColor: const Color(0xFF065F46),
+      return const TicketDueDateStyle(
+        badgeLabel: 'Closed',
+        backgroundColor: Color(0xFFD1FAE5),
+        foregroundColor: Color(0xFF065F46),
       );
     }
 

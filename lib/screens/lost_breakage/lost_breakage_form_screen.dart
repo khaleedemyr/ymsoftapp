@@ -149,6 +149,24 @@ class _LostBreakageFormScreenState extends State<LostBreakageFormScreen> {
             item.units = await _service.getItemUnits(item.itemId!);
           }
         }
+
+        final status = h['status']?.toString().toUpperCase() ?? '';
+        if (status == 'DRAFT') {
+          final flows = res['approval_flows'] as List? ?? [];
+          _approvers
+            ..clear()
+            ..addAll(
+              flows.map((f) {
+                final fm = Map<String, dynamic>.from(f as Map);
+                return {
+                  'id': fm['approver_id'],
+                  'name': fm['approver_name']?.toString() ?? '',
+                  'email': fm['approver_email']?.toString() ?? '',
+                  'jabatan': fm['approver_jabatan']?.toString() ?? '',
+                };
+              }),
+            );
+        }
       }
     }
 

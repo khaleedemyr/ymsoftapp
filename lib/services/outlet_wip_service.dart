@@ -125,6 +125,7 @@ class OutletWIPService {
     String? batchNumber,
     String? notes,
     required List<Map<String, dynamic>> productions,
+    bool autosave = false,
   }) async {
     try {
       final token = await _getToken();
@@ -139,6 +140,7 @@ class OutletWIPService {
         'batch_number': batchNumber ?? '',
         'notes': notes ?? '',
         'productions': productions,
+        'autosave': autosave,
       };
 
       final response = await http.post(
@@ -206,12 +208,28 @@ class OutletWIPService {
   }
 
   /// POST submit (draft -> processed).
-  Future<Map<String, dynamic>> submit(int headerId) async {
+  Future<Map<String, dynamic>> submit(
+    int headerId, {
+    int? outletId,
+    int? warehouseOutletId,
+    String? productionDate,
+    String? batchNumber,
+    String? notes,
+    List<Map<String, dynamic>>? productions,
+  }) async {
     try {
       final token = await _getToken();
       if (token == null) {
         return {'success': false, 'message': 'No authentication token'};
       }
+
+      final payload = <String, dynamic>{};
+      if (outletId != null) payload['outlet_id'] = outletId;
+      if (warehouseOutletId != null) payload['warehouse_outlet_id'] = warehouseOutletId;
+      if (productionDate != null) payload['production_date'] = productionDate;
+      if (batchNumber != null) payload['batch_number'] = batchNumber;
+      if (notes != null) payload['notes'] = notes;
+      if (productions != null) payload['productions'] = productions;
 
       final response = await http.post(
         Uri.parse('$_prefix/$headerId/submit'),
@@ -220,7 +238,7 @@ class OutletWIPService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({}),
+        body: jsonEncode(payload),
       );
 
       final decoded = response.statusCode == 200

@@ -164,6 +164,41 @@ class RetailFoodService {
     return null;
   }
 
+  /// Pre-check harga vs MAC referensi outlet (alert sebelum simpan).
+  Future<Map<String, dynamic>> validateItemPrices({
+    required int outletId,
+    required int warehouseOutletId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'ok': true, 'violations': <dynamic>[]};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/retail-food/validate-item-prices'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'outlet_id': outletId,
+          'warehouse_outlet_id': warehouseOutletId,
+          'items': items,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('Error validating retail food prices: $e');
+    }
+    return {'ok': true, 'violations': <dynamic>[]};
+  }
+
   Future<Map<String, dynamic>> store({
     required int outletId,
     required String transactionDate,

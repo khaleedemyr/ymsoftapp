@@ -349,6 +349,7 @@ class CustomerVoiceCommandCenterService {
     required int caseId,
     required Map<String, dynamic> capa,
     String? capaDivision,
+    List<int>? approvers,
   }) async {
     final headers = await _headers(withJsonBody: true);
     final uri = Uri.parse(
@@ -359,6 +360,7 @@ class CustomerVoiceCommandCenterService {
       'capa': capa,
       if (capaDivision != null && capaDivision.isNotEmpty)
         'capa_division': capaDivision,
+      if (approvers != null && approvers.isNotEmpty) 'approvers': approvers,
     };
 
     final response = await http.post(
@@ -373,6 +375,75 @@ class CustomerVoiceCommandCenterService {
     }
 
     return jsonBody['message']?.toString() ?? 'Form CAPA tersimpan';
+  }
+
+  Future<List<Map<String, dynamic>>> searchCapaApprovers(String search) async {
+    final headers = await _headers();
+    final uri = Uri.parse(
+      '$baseUrl/customer-voice-command-center/capa/approvers',
+    ).replace(queryParameters: {
+      if (search.trim().isNotEmpty) 'search': search.trim(),
+    });
+
+    final response = await http.get(uri, headers: headers);
+    final jsonBody = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || jsonBody['success'] != true) {
+      throw Exception(
+        jsonBody['message']?.toString() ?? 'Gagal mencari approver',
+      );
+    }
+
+    final users = jsonBody['users'];
+    if (users is! List) return [];
+
+    return users
+        .whereType<Map>()
+        .map((u) => u.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> approveCapaDivision({
+    required int caseId,
+    required String division,
+    required bool approved,
+    String? comments,
+  }) async {
+    final headers = await _headers(withJsonBody: true);
+    final uri = Uri.parse(
+      '$baseUrl/customer-voice-command-center/cases/$caseId/capa/approve',
+    );
+
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode({
+        'division': division,
+        'approved': approved,
+        if (comments != null && comments.trim().isNotEmpty)
+          'comments': comments.trim(),
+      }),
+    );
+    final jsonBody = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || jsonBody['success'] != true) {
+      throw Exception(jsonBody['message'] ?? 'Gagal memproses approval');
+    }
+
+    final summary = jsonBody['summary'];
+    if (summary is Map<String, dynamic>) {
+      return summary;
+    }
+    if (summary is Map) {
+      return summary.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return {
+      'state': 'none',
+      'flows': <dynamic>[],
+      'next_approver_id': null,
+      'can_submit': true,
+      'can_resubmit': false,
+    };
   }
 
   Future<Map<String, dynamic>> uploadCapaEvidence({

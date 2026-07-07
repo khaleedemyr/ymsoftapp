@@ -23,6 +23,7 @@ class _AssetGoodReceiveDetailScreenState
   AssetGoodReceive? _goodReceive;
   bool _isLoading = true;
   bool _isDeleting = false;
+  bool _isCompleting = false;
 
   @override
   void initState() {
@@ -140,6 +141,51 @@ class _AssetGoodReceiveDetailScreenState
     }
   }
 
+  Future<void> _completeGoodReceive() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Konfirmasi Complete'),
+        content: const Text(
+            'Setelah complete, GR tidak bisa diedit atau dihapus. Lanjutkan?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.blue),
+            child: const Text('Complete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isCompleting = true);
+    final result = await _service.completeGoodReceive(widget.goodReceiveId);
+    if (!mounted) return;
+    setState(() => _isCompleting = false);
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Asset Good Receive berhasil di-complete'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      _loadGoodReceive();
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] ?? 'Gagal complete Asset Good Receive'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
   String _formatCurrency(double amount) {
     return NumberFormat.currency(
       locale: 'id_ID',
@@ -155,7 +201,18 @@ class _AssetGoodReceiveDetailScreenState
       actions: [
         if (_goodReceive != null && _goodReceive!.status == 'draft')
           IconButton(
-            onPressed: _isDeleting ? null : _deleteGoodReceive,
+            onPressed: (_isDeleting || _isCompleting) ? null : _completeGoodReceive,
+            icon: _isCompleting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_circle, color: Colors.blue),
+          ),
+        if (_goodReceive != null && _goodReceive!.status == 'draft')
+          IconButton(
+            onPressed: (_isDeleting || _isCompleting) ? null : _deleteGoodReceive,
             icon: _isDeleting
                 ? const SizedBox(
                     width: 20,
@@ -277,7 +334,13 @@ class _AssetGoodReceiveDetailScreenState
               _buildInfoRow(
                   'PO Number', _goodReceive!.poNumber!, Icons.shopping_cart),
             _buildInfoRow(
-                'Outlet', _goodReceive!.outletName ?? '-', Icons.store),
+                'Outlet Pemilik',
+                _goodReceive!.ownerOutletName ?? '-',
+                Icons.business),
+            _buildInfoRow(
+                'Outlet Lokasi Simpan',
+                _goodReceive!.locationOutletName ?? _goodReceive!.outletName ?? '-',
+                Icons.store),
             if (_goodReceive!.warehouseOutletName != null)
               _buildInfoRow('Warehouse',
                   _goodReceive!.warehouseOutletName!, Icons.warehouse),

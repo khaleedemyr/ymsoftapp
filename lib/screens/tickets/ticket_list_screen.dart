@@ -1,12 +1,15 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/ticket_service.dart';
 import '../../services/auth_service.dart';
 import '../../utils/ticket_due_date.dart';
 import '../../utils/ticket_permissions.dart';
+import '../../utils/ticket_status.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../widgets/tickets/ticket_status_change_dialog.dart';
 import '../purchase_requisition_create_screen.dart';
 import 'ticket_detail_screen.dart';
 import 'ticket_editor_screen.dart';
@@ -40,6 +43,8 @@ class _TicketListScreenState extends State<TicketListScreen> {
   String _paymentStatus = 'all';
   String _issueType = 'all';
   bool _canManageTickets = false;
+  Map<String, dynamic>? _userData;
+  int? _sharingTicketId;
   bool _viewAllOutlets = true;
 
   @override
@@ -100,7 +105,12 @@ class _TicketListScreenState extends State<TicketListScreen> {
       canManage = v == true || v == 1;
     } else {
       final u = await AuthService().getUserData();
+      _userData = u;
       canManage = TicketPermissions.userCanManage(u);
+    }
+
+    if (_userData == null) {
+      _userData = await AuthService().getUserData();
     }
 
     bool viewAllOutlets = true;
@@ -135,57 +145,39 @@ class _TicketListScreenState extends State<TicketListScreen> {
     final ticketId = (ticket['id'] as num?)?.toInt();
     if (ticketId == null || !mounted) return;
 
-    var statuses = _filterOptions?['statuses'] as List<dynamic>? ?? [];
+    var statuses = selectableTicketStatuses(
+      _filterOptions?['statuses'] as List<dynamic>? ?? [],
+    );
     if (statuses.isEmpty) {
       final opt = await _svc.getFormOptions();
       if (!mounted || opt['success'] != true) return;
-      statuses = opt['statuses'] as List<dynamic>? ?? [];
+      statuses = selectableTicketStatuses(opt['statuses'] as List<dynamic>? ?? []);
     }
     if (statuses.isEmpty || !mounted) return;
 
-    int? picked = (ticket['status_id'] as num?)?.toInt();
-    if (picked == null && ticket['status'] is Map) {
-      picked = ((ticket['status'] as Map)['id'] as num?)?.toInt();
+    int? currentId = (ticket['status_id'] as num?)?.toInt();
+    String? currentSlug;
+    if (ticket['status'] is Map) {
+      final st = ticket['status'] as Map;
+      currentId ??= (st['id'] as num?)?.toInt();
+      currentSlug = st['slug']?.toString();
     }
 
-    final initialId = picked;
-    final chosen = await showDialog<int>(
+    final chosen = await showTicketStatusChangeDialog(
       context: context,
-      builder: (ctx) {
-        int? sel = initialId;
-        return StatefulBuilder(
-          builder: (ctx, setSt) {
-            return AlertDialog(
-              title: const Text('Ubah status'),
-              content: DropdownButtonFormField<int>(
-                value: sel,
-                decoration: const InputDecoration(border: OutlineInputBorder()),
-                items: statuses
-                    .map((s) {
-                      final m = s as Map<String, dynamic>;
-                      return DropdownMenuItem<int>(
-                        value: (m['id'] as num).toInt(),
-                        child: Text(m['name']?.toString() ?? ''),
-                      );
-                    })
-                    .toList(),
-                onChanged: (v) => setSt(() => sel = v),
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
-                FilledButton(
-                  onPressed: sel == null ? null : () => Navigator.pop(ctx, sel),
-                  child: const Text('Simpan'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      statuses: statuses,
+      currentStatusId: currentId,
+      currentStatusSlug: currentSlug,
     );
-    if (chosen == null || chosen == initialId || !mounted) return;
+    if (chosen == null || chosen.statusId == currentId || !mounted) return;
 
-    final res = await _svc.updateStatus(ticketId, chosen);
+    final res = await _svc.updateStatus(
+      ticketId,
+      chosen.statusId,
+      closeNote: chosen.closeNote,
+      closeEvidenceFiles:
+          chosen.closeEvidenceFiles.isEmpty ? null : chosen.closeEvidenceFiles,
+    );
     if (!mounted) return;
     if (res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status diperbarui')));
@@ -381,6 +373,40 @@ class _TicketListScreenState extends State<TicketListScreen> {
     if (mounted) _load(reset: true);
   }
 
+  Future<void> _shareToWhatsApp(Map<String, dynamic> ticket) async {
+    final ticketId = (ticket['id'] as num?)?.toInt();
+    if (ticketId == null || _sharingTicketId != null) return;
+
+    setState(() => _sharingTicketId = ticketId);
+    final res = await _svc.getShareLink(ticketId);
+    if (!mounted) return;
+    setState(() => _sharingTicketId = null);
+
+    if (res['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message']?.toString() ?? 'Gagal membuat link share')),
+      );
+      return;
+    }
+
+    final url = res['url']?.toString();
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Link share tidak tersedia')),
+      );
+      return;
+    }
+
+    final message = res['message']?.toString() ?? url;
+    final waUri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(message)}');
+    if (!await launchUrl(waUri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak dapat membuka WhatsApp')),
+      );
+    }
+  }
+
   Future<void> _deleteTicketRow(Map<String, dynamic> ticket) async {
     final ticketId = (ticket['id'] as num?)?.toInt();
     final numStr = ticket['ticket_number']?.toString() ?? '';
@@ -559,10 +585,13 @@ class _TicketListScreenState extends State<TicketListScreen> {
                                     return _TicketCard(
                                       data: t,
                                       canManageTickets: _canManageTickets,
+                                      canManageTicket: TicketPermissions.ticketCanManage(t, _userData),
+                                      canUpdateStatus: TicketPermissions.ticketCanUpdateStatus(t, _userData),
+                                      isSharing: _sharingTicketId == tid,
                                       onOpenDetail: () => _openTicketDetail(tid),
                                       onChangeStatus: () => _quickChangeStatus(t),
+                                      onShare: () => _shareToWhatsApp(t),
                                       onEdit: () => _openTicketEdit(t),
-                                      onAssign: () => _openAssignForTicket(t),
                                       onPayment: () => _openCreatePaymentForTicket(t),
                                       onDelete: () => _deleteTicketRow(t),
                                     );
@@ -648,7 +677,6 @@ class _TicketListScreenState extends State<TicketListScreen> {
       ('Semua', v('total'), 'all', const Color(0xFF64748B)),
       ('Open', v('open'), 'open', const Color(0xFF0EA5E9)),
       ('Proses', v('in_progress'), 'in_progress', const Color(0xFFF59E0B)),
-      ('Resolved', v('resolved'), 'resolved', const Color(0xFF10B981)),
       ('Closed', v('closed'), 'closed', const Color(0xFF94A3B8)),
     ];
     return SizedBox(
@@ -687,20 +715,26 @@ class _TicketListScreenState extends State<TicketListScreen> {
 class _TicketCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final bool canManageTickets;
+  final bool canManageTicket;
+  final bool canUpdateStatus;
+  final bool isSharing;
   final VoidCallback onOpenDetail;
   final VoidCallback onChangeStatus;
+  final VoidCallback onShare;
   final VoidCallback onEdit;
-  final VoidCallback onAssign;
   final VoidCallback onPayment;
   final VoidCallback onDelete;
 
   const _TicketCard({
     required this.data,
     required this.canManageTickets,
+    required this.canManageTicket,
+    required this.canUpdateStatus,
+    this.isSharing = false,
     required this.onOpenDetail,
     required this.onChangeStatus,
+    required this.onShare,
     required this.onEdit,
-    required this.onAssign,
     required this.onPayment,
     required this.onDelete,
   });
@@ -709,8 +743,12 @@ class _TicketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ticketNum = data['ticket_number']?.toString() ?? '';
     final title = data['title']?.toString() ?? '';
-    final status = data['status'] is Map ? data['status']['name']?.toString() : null;
-    final statusSlug = data['status'] is Map ? data['status']['slug']?.toString() : null;
+    final statusSlugRaw = data['status'] is Map ? data['status']['slug']?.toString() : null;
+    final statusSlug = normalizeTicketStatusSlug(statusSlugRaw);
+    final status = displayTicketStatusName(
+      data['status'] is Map ? data['status']['name']?.toString() : null,
+      statusSlugRaw,
+    );
     final priority = data['priority'] is Map ? data['priority']['name']?.toString() : null;
     final level = data['priority'] is Map ? (data['priority']['level'] as num?)?.toInt() : null;
     final category = data['category'] is Map ? data['category']['name']?.toString() : null;
@@ -724,6 +762,8 @@ class _TicketCard extends StatelessWidget {
     final assigned = data['assigned_users'] as List<dynamic>? ?? [];
     final issueRaw = data['issue_type']?.toString();
     final issueLabel = issueRaw != null && issueRaw.isNotEmpty ? issueRaw : null;
+    final workExecutor = data['work_executor_type_label']?.toString();
+    final vendorName = data['vendor_name']?.toString();
     final createdAt = data['created_at']?.toString();
     Color bar;
     if (level != null && level >= 4) {
@@ -742,8 +782,8 @@ class _TicketCard extends StatelessWidget {
       case 'in_progress':
         statusBg = const Color(0xFFFEF3C7);
         break;
-      case 'resolved':
-        statusBg = const Color(0xFFD1FAE5);
+      case 'closed':
+        statusBg = const Color(0xFFE2E8F0);
         break;
       default:
         statusBg = const Color(0xFFE2E8F0);
@@ -816,7 +856,7 @@ class _TicketCard extends StatelessWidget {
                                                 child: Material(
                                                   color: Colors.transparent,
                                                   child: InkWell(
-                                                    onTap: canManageTickets ? onChangeStatus : null,
+                                                    onTap: canUpdateStatus ? onChangeStatus : null,
                                                     borderRadius: BorderRadius.circular(8),
                                                     child: Container(
                                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -835,7 +875,7 @@ class _TicketCard extends StatelessWidget {
                                                               style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
                                                             ),
                                                           ),
-                                                          if (canManageTickets) ...[
+                                                          if (canUpdateStatus) ...[
                                                             const SizedBox(width: 4),
                                                             Icon(
                                                               Icons.arrow_drop_down_rounded,
@@ -928,7 +968,36 @@ class _TicketCard extends StatelessWidget {
                                           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey.shade900),
                                         ),
                                       ),
+                                    if (workExecutor != null && workExecutor.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: data['work_executor_type']?.toString() == 'external_vendor'
+                                              ? const Color(0xFFFFEDD5)
+                                              : const Color(0xFFE0E7FF),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          workExecutor,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: data['work_executor_type']?.toString() == 'external_vendor'
+                                                ? const Color(0xFF9A3412)
+                                                : const Color(0xFF3730A3),
+                                          ),
+                                        ),
+                                      ),
                                   ],
+                                ),
+                              ],
+                              if (data['work_executor_type']?.toString() == 'external_vendor') ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  vendorName != null && vendorName.isNotEmpty ? vendorName : '— vendor —',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
                                 ),
                               ],
                               if (outlet != null || divisi != null) ...[
@@ -1051,19 +1120,21 @@ class _TicketCard extends StatelessWidget {
                               color: const Color(0xFF2563EB),
                               onTap: onOpenDetail,
                             ),
-                            if (canManageTickets) ...[
+                            _aksiIcon(
+                              tooltip: 'Share ke WhatsApp',
+                              icon: isSharing ? Icons.hourglass_top_rounded : Icons.share_rounded,
+                              color: const Color(0xFF25D366),
+                              onTap: isSharing ? () {} : onShare,
+                            ),
+                            if (canManageTicket) ...[
                               _aksiIcon(
                                 tooltip: 'Edit',
                                 icon: Icons.edit_rounded,
                                 color: const Color(0xFF16A34A),
                                 onTap: onEdit,
                               ),
-                              _aksiIcon(
-                                tooltip: 'Assign tim',
-                                icon: Icons.groups_rounded,
-                                color: const Color(0xFF4F46E5),
-                                onTap: onAssign,
-                              ),
+                            ],
+                            if (canManageTickets) ...[
                               _aksiIcon(
                                 tooltip: 'Payment (PR) — terisi nomor ticket',
                                 icon: Icons.account_balance_wallet_outlined,

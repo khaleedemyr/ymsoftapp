@@ -50,6 +50,7 @@ class _OmnichannelInboxChatScreenState extends State<OmnichannelInboxChatScreen>
   bool _hasMoreOlder = false;
   int? _oldestMessageId;
   bool _sending = false;
+  bool _escalatingToVoice = false;
   bool _replyMode = true;
   bool _pollInFlight = false;
   Timer? _pollTimer;
@@ -300,6 +301,43 @@ class _OmnichannelInboxChatScreenState extends State<OmnichannelInboxChatScreen>
     );
   }
 
+  Future<void> _escalateToCustomerVoice() async {
+    if (_escalatingToVoice) return;
+    final c = _conversation;
+    if (c.feedbackCaseId != null && c.voiceCaseUrl != null && c.voiceCaseUrl!.isNotEmpty) {
+      await launchUrl(Uri.parse(c.voiceCaseUrl!), mode: LaunchMode.externalApplication);
+      return;
+    }
+    setState(() => _escalatingToVoice = true);
+    try {
+      final updated = await _service.escalateToCustomerVoice(_conversation.id);
+      if (!mounted) return;
+      if (updated != null) {
+        setState(() => _conversation = updated);
+      }
+      final url = updated?.voiceCaseUrl ?? c.voiceCaseUrl;
+      if (url != null && url.isNotEmpty) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chat dimasukkan ke Customer Voice Command Center'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _escalatingToVoice = false);
+    }
+  }
+
   Future<void> _send({
     String? body,
     List<String> filePaths = const [],
@@ -470,6 +508,22 @@ class _OmnichannelInboxChatScreenState extends State<OmnichannelInboxChatScreen>
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: c.feedbackCaseId != null ? 'Lihat di Customer Voice' : 'Kirim ke Customer Voice',
+            onPressed: _escalatingToVoice ? null : _escalateToCustomerVoice,
+            icon: _escalatingToVoice
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Icon(
+                    Icons.headset_mic_rounded,
+                    color: c.feedbackCaseId != null
+                        ? Colors.white
+                        : (c.needsVoiceEscalation ? const Color(0xFFFFE082) : Colors.white70),
+                  ),
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline_rounded),
             onPressed: _openContactSheet,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/outlet_wip_models.dart';
@@ -23,7 +24,13 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
 
   bool _loadingData = true;
   bool _saving = false;
+  bool _isSubmitting = false;
+  bool _autosaveInProgress = false;
   String? _error;
+
+  int? _headerId;
+  DateTime? _lastSaved;
+  Timer? _autosaveTimer;
 
   List<OutletWIPItemOption> _items = [];
   List<OutletWIPWarehouseOption> _warehouseOutlets = [];
@@ -39,12 +46,18 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
   @override
   void initState() {
     super.initState();
+    _headerId = widget.draftHeaderId;
     _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    _batchController.addListener(_scheduleAutosave);
+    _notesController.addListener(_scheduleAutosave);
     _loadCreateData();
   }
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
+    _batchController.removeListener(_scheduleAutosave);
+    _notesController.removeListener(_scheduleAutosave);
     _dateController.dispose();
     _batchController.dispose();
     _notesController.dispose();
@@ -128,8 +141,14 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
       _rows.add(row);
     }
     if (_rows.isEmpty) _rows.add(_ProductionRow());
+    _headerId = headerId;
     _draftFormSeed = DateTime.now().millisecondsSinceEpoch;
     setState(() {});
+    for (final row in _rows) {
+      if (row.selectedItemId != null && row.qty > 0) {
+        await _loadBomForRow(row);
+      }
+    }
   }
 
   void _applyInitialWarehouse() {
@@ -152,11 +171,13 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
 
   void _addRow() {
     setState(() => _rows.add(_ProductionRow()));
+    _scheduleAutosave();
   }
 
   void _removeRow(int index) {
     if (_rows.length <= 1) return;
     setState(() => _rows.removeAt(index));
+    _scheduleAutosave();
   }
 
   Future<void> _loadBomForRow(_ProductionRow row) async {
@@ -211,7 +232,121 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
     return n.toStringAsFixed(2).replaceAll('.', ',');
   }
 
-  bool _validate() {
+  String _formatQtyField(double n) {
+    if (n == 0) return '';
+    if (n == n.roundToDouble()) return n.toInt().toString();
+    return n.toString();
+  }
+
+  void _guardQtyProduksi(_ProductionRow row, OutletWIPItemOption? selectedItem) {
+    if (row.selectedItemId == null) return;
+    if (row.qty > 0) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Qty produksi tidak boleh 0')),
+    );
+    setState(() {
+      row.qty = 1;
+      if (selectedItem != null) {
+        _applyAutoQtyJadi(row, selectedItem);
+      }
+    });
+    if (row.selectedItemId != null && _selectedOutletId != null && _selectedWarehouseId != null) {
+      _loadBomForRow(row);
+    }
+  }
+
+  double _calcQtyJadi(double qty, OutletWIPItemOption item) {
+    final conv = item.smallConversionQty > 0 ? item.smallConversionQty : 1;
+    final result = qty * conv;
+    return (result * 100).roundToDouble() / 100;
+  }
+
+  void _applyAutoQtyJadi(_ProductionRow row, OutletWIPItemOption item) {
+    row.qtyJadi = _calcQtyJadi(row.qty, item);
+    row.fieldSeed++;
+  }
+
+  void _onItemSelected(_ProductionRow row, OutletWIPItemOption item) {
+    setState(() {
+      row.selectedItemId = item.id;
+      row.selectedUnitId = item.smallUnitId ?? item.mediumUnitId ?? item.largeUnitId;
+      row.bomData = null;
+      if (row.qty <= 0) row.qty = 1;
+      _applyAutoQtyJadi(row, item);
+    });
+    if (row.qty > 0 && _selectedOutletId != null && _selectedWarehouseId != null) {
+      _loadBomForRow(row);
+    }
+    _notifyFormChanged();
+  }
+
+  bool get _canSaveDraft {
+    if (_selectedOutletId == null || _selectedWarehouseId == null || _dateController.text.isEmpty) {
+      return false;
+    }
+    if (_rows.isEmpty) return false;
+    return _rows.every((r) =>
+        r.selectedItemId != null &&
+        r.qty > 0 &&
+        r.qtyJadi >= 0 &&
+        r.selectedUnitId != null);
+  }
+
+  bool get _canSubmit {
+    if (!_canSaveDraft) return false;
+    return _rows.every((r) {
+      if (r.selectedItemId == null) return false;
+      if (r.bomData == null || r.bomData!.isEmpty) return false;
+      return _rowCanProduce(r);
+    });
+  }
+
+  void _scheduleAutosave() {
+    if (_autosaveInProgress || _saving || _isSubmitting) return;
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(seconds: 3), _autosave);
+  }
+
+  void _notifyFormChanged() {
+    setState(() {});
+    _scheduleAutosave();
+  }
+
+  Future<void> _autosave() async {
+    if (_autosaveInProgress || _saving || _isSubmitting) return;
+    if (_selectedOutletId == null ||
+        _selectedWarehouseId == null ||
+        _dateController.text.isEmpty ||
+        _rows.isEmpty) {
+      return;
+    }
+    final productions = _buildProductions();
+    if (productions.isEmpty) return;
+
+    _autosaveInProgress = true;
+    try {
+      final result = await _service.store(
+        outletId: _selectedOutletId!,
+        warehouseOutletId: _selectedWarehouseId!,
+        productionDate: _dateController.text,
+        batchNumber: _batchController.text.isEmpty ? null : _batchController.text,
+        notes: _notesController.text.isEmpty ? null : _notesController.text,
+        productions: productions,
+        autosave: true,
+      );
+      if (!mounted) return;
+      if (result['success'] == true && result['header_id'] != null) {
+        setState(() {
+          _headerId = int.tryParse(result['header_id'].toString());
+          _lastSaved = DateTime.now();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _autosaveInProgress = false);
+    }
+  }
+
+  bool _validateProductionQty() {
     if (_selectedOutletId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pilih outlet')));
       return false;
@@ -223,6 +358,14 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
     if (_dateController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Isi tanggal produksi')));
       return false;
+    }
+    for (final row in _rows) {
+      if (row.selectedItemId != null && row.qty <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Qty produksi tidak boleh 0')),
+        );
+        return false;
+      }
     }
     final productions = _buildProductions();
     if (productions.isEmpty) {
@@ -241,7 +384,7 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
       final qty = r.qty;
       final qtyJadi = r.qtyJadi;
       final unitId = r.selectedUnitId;
-      if (unitId == null || qty <= 0 || qtyJadi <= 0) continue;
+      if (unitId == null || qty <= 0 || qtyJadi < 0) continue;
       list.add({
         'item_id': itemId,
         'qty': qty,
@@ -252,8 +395,18 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
     return list;
   }
 
-  Future<void> _saveDraft() async {
-    if (!_validate()) return;
+  Future<void> _saveDraft({bool popOnSuccess = false}) async {
+    if (!_validateProductionQty()) return;
+    if (!_canSaveDraft) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lengkapi outlet, gudang, tanggal, dan semua item produksi')),
+      );
+      return;
+    }
+    _autosaveTimer?.cancel();
+    while (_autosaveInProgress) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
     setState(() => _saving = true);
     try {
       final result = await _service.store(
@@ -263,12 +416,17 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
         batchNumber: _batchController.text.isEmpty ? null : _batchController.text,
         notes: _notesController.text.isEmpty ? null : _notesController.text,
         productions: _buildProductions(),
+        autosave: false,
       );
       if (!mounted) return;
       setState(() => _saving = false);
       if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Draft tersimpan')));
-        Navigator.pop(context, true);
+        setState(() {
+          _headerId = int.tryParse(result['header_id']?.toString() ?? '') ?? _headerId;
+          _lastSaved = DateTime.now();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Draft berhasil disimpan')));
+        if (popOnSuccess) Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result['message']?.toString() ?? 'Gagal menyimpan')),
@@ -282,63 +440,69 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
     }
   }
 
-  Future<void> _saveAndSubmit() async {
-    if (!_validate()) return;
-    setState(() => _saving = true);
+  Future<void> _proceedProduction() async {
+    if (!_validateProductionQty()) return;
+    if (!_canSubmit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pastikan semua item memiliki BOM yang valid dan stok cukup'),
+        ),
+      );
+      return;
+    }
+    if (_headerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Simpan draft terlebih dahulu (atau tunggu autosave) sebelum proses produksi'),
+        ),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Proses Produksi?'),
+        content: const Text(
+          'Stok bahan baku akan dipotong dan hasil produksi ditambahkan ke inventory.\n\nLanjutkan?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya, Proses'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _isSubmitting = true);
     try {
-      // Saat edit draft: update draft lalu submit draft yang sama (jangan buat header baru).
-      if (widget.draftHeaderId != null) {
-        final storeResult = await _service.store(
-          outletId: _selectedOutletId!,
-          warehouseOutletId: _selectedWarehouseId!,
-          productionDate: _dateController.text,
-          batchNumber: _batchController.text.isEmpty ? null : _batchController.text,
-          notes: _notesController.text.isEmpty ? null : _notesController.text,
-          productions: _buildProductions(),
-        );
-        if (!mounted) return;
-        if (storeResult['success'] != true) {
-          setState(() => _saving = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(storeResult['message']?.toString() ?? 'Gagal menyimpan draft')),
-          );
-          return;
-        }
-        final submitResult = await _service.submit(widget.draftHeaderId!);
-        if (!mounted) return;
-        setState(() => _saving = false);
-        if (submitResult['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Draft berhasil diproses')));
-          Navigator.pop(context, true);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(submitResult['message']?.toString() ?? 'Gagal submit')),
-          );
-        }
-        return;
-      }
-      // Buat baru: simpan dan proses sekaligus (satu header baru).
-      final result = await _service.storeAndSubmit(
-        outletId: _selectedOutletId!,
-        warehouseOutletId: _selectedWarehouseId!,
+      final result = await _service.submit(
+        _headerId!,
+        outletId: _selectedOutletId,
+        warehouseOutletId: _selectedWarehouseId,
         productionDate: _dateController.text,
-        batchNumber: _batchController.text.isEmpty ? null : _batchController.text,
-        notes: _notesController.text.isEmpty ? null : _notesController.text,
+        batchNumber: _batchController.text,
+        notes: _notesController.text,
         productions: _buildProductions(),
       );
       if (!mounted) return;
-      setState(() => _saving = false);
+      setState(() => _isSubmitting = false);
       if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produksi berhasil disimpan dan diproses')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message']?.toString() ?? 'Produksi WIP berhasil diproses')),
+        );
         Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message']?.toString() ?? 'Gagal')),
+          SnackBar(content: Text(result['message']?.toString() ?? 'Gagal memproses produksi')),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
+        setState(() => _isSubmitting = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
@@ -351,13 +515,21 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (picked != null) setState(() => _dateController.text = DateFormat('yyyy-MM-dd').format(picked));
+    if (picked != null) {
+      setState(() => _dateController.text = DateFormat('yyyy-MM-dd').format(picked));
+      _scheduleAutosave();
+    }
+  }
+
+  String _formatLastSaved() {
+    if (_lastSaved == null) return '';
+    return DateFormat('HH:mm').format(_lastSaved!);
   }
 
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: widget.draftHeaderId != null ? 'Edit Draft / Tambah Inputan' : 'Tambah Produksi WIP',
+      title: widget.draftHeaderId != null ? 'Edit Draft Produksi WIP' : 'Buat Produksi WIP Baru',
       body: _loadingData
           ? const Center(child: AppLoadingIndicator(size: 32, color: Color(0xFF6366F1)))
           : _error != null
@@ -376,6 +548,20 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_lastSaved != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.check_circle, size: 16, color: Colors.green.shade600),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Terakhir disimpan: ${_formatLastSaved()}',
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ),
                       if (_userOutletId == 1 && _outlets.isNotEmpty) ...[
                         const Text('Outlet', style: TextStyle(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 6),
@@ -391,8 +577,15 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                         onChanged: (v) {
                           setState(() {
                             _selectedWarehouseId = v;
-                            for (final r in _rows) { r.bomData = null; }
+                            for (final r in _rows) {
+                              r.bomData = null;
+                              r.selectedItemId = null;
+                              r.selectedUnitId = null;
+                              r.qty = 0;
+                              r.qtyJadi = 0;
+                            }
                           });
+                          _scheduleAutosave();
                         },
                       ),
                       const SizedBox(height: 12),
@@ -436,29 +629,36 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                       ),
                       ...List.generate(_rows.length, (i) => _buildProductionRow(i)),
                       const SizedBox(height: 24),
-                      if (_saving)
+                      if (_saving || _isSubmitting)
                         const Center(child: AppLoadingIndicator(size: 28, color: Color(0xFF6366F1)))
                       else ...[
-                        ElevatedButton(
-                          onPressed: _saveDraft,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade700,
-                            foregroundColor: Colors.white,
+                        OutlinedButton(
+                          onPressed: _canSaveDraft ? () => _saveDraft() : null,
+                          style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           child: const Text('Simpan Draft'),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
+                        OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Batal'),
+                        ),
+                        const SizedBox(height: 10),
                         ElevatedButton(
-                          onPressed: _saveAndSubmit,
+                          onPressed: (_canSubmit && _headerId != null) ? _proceedProduction : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF6366F1),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: const Text('Simpan & Proses Stok'),
+                          child: const Text('Proses Produksi'),
                         ),
                       ],
                     ],
@@ -557,10 +757,17 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                               setState(() {
                                 _selectedOutletId = o.id;
                                 _selectedWarehouseId = null;
-                                for (final r in _rows) { r.bomData = null; }
+                                for (final r in _rows) {
+                                  r.bomData = null;
+                                  r.selectedItemId = null;
+                                  r.selectedUnitId = null;
+                                  r.qty = 0;
+                                  r.qtyJadi = 0;
+                                }
                                 final wh = _warehouseOutlets.where((w) => w.outletId == o.id).toList();
                                 if (wh.isNotEmpty) _selectedWarehouseId = wh.first.id;
                               });
+                              _scheduleAutosave();
                             },
                           );
                         },
@@ -629,10 +836,7 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                             onTap: () {
                               Navigator.pop(ctx);
                               if (!mounted) return;
-                              setState(() {
-                                row.selectedItemId = item.id;
-                                row.selectedUnitId = item.smallUnitId ?? item.mediumUnitId ?? item.largeUnitId;
-                              });
+                              _onItemSelected(row, item);
                             },
                           );
                         },
@@ -658,21 +862,8 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
           (e) => e?.id == row.selectedItemId,
           orElse: () => null,
         );
-    final unitOptions = <int, String>{};
-    if (selectedItem != null) {
-      if (selectedItem.smallUnitId != null && selectedItem.smallUnitName != null) {
-        unitOptions[selectedItem.smallUnitId!] = selectedItem.smallUnitName!;
-      }
-      if (selectedItem.mediumUnitId != null && selectedItem.mediumUnitName != null) {
-        unitOptions[selectedItem.mediumUnitId!] = selectedItem.mediumUnitName!;
-      }
-      if (selectedItem.largeUnitId != null && selectedItem.largeUnitName != null) {
-        unitOptions[selectedItem.largeUnitId!] = selectedItem.largeUnitName!;
-      }
-    }
-    if (unitOptions.isEmpty && selectedItem != null) {
-      unitOptions[selectedItem.smallUnitId ?? 0] = selectedItem.smallUnitName ?? 'Unit';
-    }
+    final recipeUnit = selectedItem?.recipeUnitName ?? 'recipe';
+    final smallUnit = selectedItem?.smallUnitName ?? '-';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -709,43 +900,86 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
               ],
             ),
             const SizedBox(height: 8),
+            TextFormField(
+              key: ValueKey('qty_${index}_${row.fieldSeed}_${_draftFormSeed ?? 0}'),
+              initialValue: _formatQtyField(row.qty),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _inputDecoration().copyWith(labelText: 'Qty Produksi ($recipeUnit)'),
+              onChanged: (v) {
+                row.qty = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                row.bomData = null;
+                if (selectedItem != null) _applyAutoQtyJadi(row, selectedItem);
+                _notifyFormChanged();
+                if (row.qty > 0 && row.selectedItemId != null) {
+                  _loadBomForRow(row);
+                }
+              },
+              onFieldSubmitted: (_) => _guardQtyProduksi(row, selectedItem),
+              onTapOutside: (_) => _guardQtyProduksi(row, selectedItem),
+            ),
+            if (row.selectedItemId != null && row.qty <= 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Qty produksi tidak boleh 0',
+                  style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                ),
+              ),
+            if (selectedItem != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '1 $recipeUnit = ${_formatBomNumber(selectedItem.smallConversionQty)} $smallUnit',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
+            ],
+            const SizedBox(height: 8),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: TextFormField(
-                    key: ValueKey('qty_${index}_${_draftFormSeed ?? 0}'),
-                    initialValue: row.qty != 0 ? (row.qty == row.qty.roundToDouble() ? row.qty.toInt().toString() : row.qty.toString()) : '',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: _inputDecoration().copyWith(labelText: 'Qty'),
-                    onChanged: (v) {
-                      row.qty = double.tryParse(v.replaceAll(',', '.')) ?? 0;
-                      row.bomData = null;
-                      setState(() {});
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    key: ValueKey('qtyjadi_${index}_${_draftFormSeed ?? 0}'),
-                    initialValue: row.qtyJadi != 0 ? (row.qtyJadi == row.qtyJadi.roundToDouble() ? row.qtyJadi.toInt().toString() : row.qtyJadi.toString()) : '',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: _inputDecoration().copyWith(labelText: 'Qty Jadi'),
-                    onChanged: (v) {
-                      row.qtyJadi = double.tryParse(v.replaceAll(',', '.')) ?? 0;
-                      setState(() {});
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<int>(
-                    value: row.selectedUnitId,
-                    decoration: _inputDecoration(),
-                    hint: const Text('Unit'),
-                    items: unitOptions.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                    onChanged: (v) => setState(() => row.selectedUnitId = v),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        key: ValueKey('qtyjadi_${index}_${row.fieldSeed}_${_draftFormSeed ?? 0}'),
+                        initialValue: _formatQtyField(row.qtyJadi),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: _inputDecoration().copyWith(
+                          labelText: smallUnit != '-' ? 'Qty Jadi ($smallUnit)' : 'Qty Jadi',
+                        ),
+                        onChanged: (v) {
+                          row.qtyJadi = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                          _notifyFormChanged();
+                        },
+                      ),
+                      if (selectedItem != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Otomatis: ${row.qty == row.qty.roundToDouble() ? row.qty.toInt() : row.qty} × ${_formatBomNumber(selectedItem.smallConversionQty)} — masih bisa diedit',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      InputDecorator(
+                        decoration: _inputDecoration().copyWith(labelText: 'Unit Small'),
+                        child: Text(
+                          smallUnit,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: selectedItem == null ? Colors.grey.shade600 : null,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -906,6 +1140,7 @@ class _ProductionRow {
   double qty = 0;
   double qtyJadi = 0;
   int? selectedUnitId;
+  int fieldSeed = 0;
   bool showBom = false;
   List<_BomLine>? bomData;
   bool loadingBom = false;

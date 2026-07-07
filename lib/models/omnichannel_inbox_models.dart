@@ -140,6 +140,11 @@ class OmniConversation {
   final String? channelAccountLabel;
   final OmniMemberInfo? member;
   final OmniContactProfile contactProfile;
+  final String? complaintSeverity;
+  final String? complaintSnippet;
+  final int? feedbackCaseId;
+  final bool needsVoiceEscalation;
+  final String? voiceCaseUrl;
 
   OmniConversation({
     required this.id,
@@ -159,6 +164,11 @@ class OmniConversation {
     this.channelAccountLabel,
     this.member,
     OmniContactProfile? contactProfile,
+    this.complaintSeverity,
+    this.complaintSnippet,
+    this.feedbackCaseId,
+    this.needsVoiceEscalation = false,
+    this.voiceCaseUrl,
   }) : contactProfile = contactProfile ?? OmniContactProfile();
 
   String get title =>
@@ -178,7 +188,7 @@ class OmniConversation {
       contactName: json['contact_name'] as String?,
       displayPhone: (json['display_phone'] ?? json['external_contact_id'] ?? '') as String,
       lastMessagePreview: json['last_message_preview'] as String?,
-      lastMessageAt: _parseDate(json['last_message_at']),
+      lastMessageAt: _parseDate(json['last_message_at']) ?? _parseDate(json['last_customer_message_at']),
       unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
       leadStage: (json['lead_stage'] ?? 'new_lead') as String,
       memo: json['memo'] as String?,
@@ -196,6 +206,44 @@ class OmniConversation {
       contactProfile: OmniContactProfile.fromJson(
         json['contact_profile'] is Map ? Map<String, dynamic>.from(json['contact_profile'] as Map) : null,
       ),
+      complaintSeverity: json['complaint_severity'] as String?,
+      complaintSnippet: json['complaint_snippet'] as String?,
+      feedbackCaseId: (json['feedback_case_id'] as num?)?.toInt(),
+      needsVoiceEscalation: json['needs_voice_escalation'] == true,
+      voiceCaseUrl: json['voice_case_url'] as String?,
+    );
+  }
+
+  OmniConversation copyWith({
+    String? complaintSeverity,
+    String? complaintSnippet,
+    int? feedbackCaseId,
+    bool? needsVoiceEscalation,
+    String? voiceCaseUrl,
+  }) {
+    return OmniConversation(
+      id: id,
+      channel: channel,
+      contactName: contactName,
+      displayPhone: displayPhone,
+      lastMessagePreview: lastMessagePreview,
+      lastMessageAt: lastMessageAt,
+      unreadCount: unreadCount,
+      leadStage: leadStage,
+      memo: memo,
+      assignees: assignees,
+      assignedTeams: assignedTeams,
+      automationPaused: automationPaused,
+      activeFlowName: activeFlowName,
+      contactAvatarUrl: contactAvatarUrl,
+      channelAccountLabel: channelAccountLabel,
+      member: member,
+      contactProfile: contactProfile,
+      complaintSeverity: complaintSeverity ?? this.complaintSeverity,
+      complaintSnippet: complaintSnippet ?? this.complaintSnippet,
+      feedbackCaseId: feedbackCaseId ?? this.feedbackCaseId,
+      needsVoiceEscalation: needsVoiceEscalation ?? this.needsVoiceEscalation,
+      voiceCaseUrl: voiceCaseUrl ?? this.voiceCaseUrl,
     );
   }
 
@@ -370,6 +418,8 @@ class OmniInboxPollResult {
   final List<OmniMessage> messages;
   final bool hasMoreOlder;
   final int? oldestMessageId;
+  final bool hasMoreConversations;
+  final int? oldestConversationId;
 
   OmniInboxPollResult({
     required this.conversations,
@@ -377,6 +427,8 @@ class OmniInboxPollResult {
     this.messages = const [],
     this.hasMoreOlder = false,
     this.oldestMessageId,
+    this.hasMoreConversations = false,
+    this.oldestConversationId,
   });
 
   factory OmniInboxPollResult.fromJson(Map<String, dynamic> json) {
@@ -394,6 +446,30 @@ class OmniInboxPollResult {
           .toList(),
       hasMoreOlder: json['has_more_older'] == true,
       oldestMessageId: (json['oldest_message_id'] as num?)?.toInt(),
+      hasMoreConversations: json['has_more_conversations'] == true,
+      oldestConversationId: (json['oldest_conversation_id'] as num?)?.toInt(),
+    );
+  }
+}
+
+class OmniConversationsMoreResult {
+  final List<OmniConversation> conversations;
+  final bool hasMore;
+  final int? oldestConversationId;
+
+  OmniConversationsMoreResult({
+    required this.conversations,
+    this.hasMore = false,
+    this.oldestConversationId,
+  });
+
+  factory OmniConversationsMoreResult.fromJson(Map<String, dynamic> json) {
+    return OmniConversationsMoreResult(
+      conversations: (json['conversations'] as List? ?? [])
+          .map((e) => OmniConversation.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      hasMore: json['has_more'] == true,
+      oldestConversationId: (json['oldest_conversation_id'] as num?)?.toInt(),
     );
   }
 }
@@ -426,6 +502,8 @@ class OmniInternalNoteResult {
 
 class OmniInboxBootstrap {
   final List<OmniConversation> conversations;
+  final bool conversationsHasMore;
+  final int? conversationsOldestId;
   final String inbox;
   final List<OmniLeadStage> leadStages;
   final List<OmniAssignee> assignableUsers;
@@ -442,6 +520,8 @@ class OmniInboxBootstrap {
 
   OmniInboxBootstrap({
     required this.conversations,
+    this.conversationsHasMore = false,
+    this.conversationsOldestId,
     required this.inbox,
     required this.leadStages,
     required this.assignableUsers,
@@ -457,9 +537,16 @@ class OmniInboxBootstrap {
     this.autoGrammarMinChars = 4,
   });
 
-  OmniInboxBootstrap copyWith({List<OmniConversation>? conversations, String? inbox}) {
+  OmniInboxBootstrap copyWith({
+    List<OmniConversation>? conversations,
+    bool? conversationsHasMore,
+    int? conversationsOldestId,
+    String? inbox,
+  }) {
     return OmniInboxBootstrap(
       conversations: conversations ?? this.conversations,
+      conversationsHasMore: conversationsHasMore ?? this.conversationsHasMore,
+      conversationsOldestId: conversationsOldestId ?? this.conversationsOldestId,
       inbox: inbox ?? this.inbox,
       leadStages: leadStages,
       assignableUsers: assignableUsers,
@@ -504,6 +591,8 @@ class OmniInboxBootstrap {
 
     return OmniInboxBootstrap(
       conversations: conv,
+      conversationsHasMore: json['conversations_has_more'] == true,
+      conversationsOldestId: (json['conversations_oldest_id'] as num?)?.toInt(),
       inbox: (json['inbox'] ?? 'all') as String,
       leadStages: stages,
       assignableUsers: users,

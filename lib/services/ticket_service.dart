@@ -28,6 +28,37 @@ class TicketService {
     return _decodeMap(res.body, res.statusCode);
   }
 
+  Future<Map<String, dynamic>> getTicketsByArea(
+    int areaId, {
+    required int outletId,
+    String? title,
+  }) async {
+    final h = await _bearer();
+    if (h.isEmpty) return {'success': false, 'message': 'Sesi habis'};
+    final uri = Uri.parse('$_root/by-area/$areaId').replace(queryParameters: {
+      'outlet_id': '$outletId',
+      if (title != null && title.isNotEmpty) 'title': title,
+    });
+    final res = await http.get(uri, headers: h);
+    return _decodeMap(res.body, res.statusCode);
+  }
+
+  Future<Map<String, dynamic>> getTicketsByOutlet({
+    required int outletId,
+    String? title,
+    String? q,
+  }) async {
+    final h = await _bearer();
+    if (h.isEmpty) return {'success': false, 'message': 'Sesi habis'};
+    final uri = Uri.parse('$_root/by-outlet').replace(queryParameters: {
+      'outlet_id': '$outletId',
+      if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+    });
+    final res = await http.get(uri, headers: h);
+    return _decodeMap(res.body, res.statusCode);
+  }
+
   Future<Map<String, dynamic>> getTickets({
     String search = '',
     String status = 'all',
@@ -123,9 +154,40 @@ class TicketService {
     required int statusId,
     required int divisiId,
     required int outletId,
+    String? closeNote,
+    List<File>? closeEvidenceFiles,
   }) async {
     final t = await _token();
     if (t == null) return {'success': false, 'message': 'Sesi habis'};
+
+    final hasCloseEvidence = (closeNote != null && closeNote.trim().isNotEmpty) ||
+        (closeEvidenceFiles != null && closeEvidenceFiles.isNotEmpty);
+
+    if (hasCloseEvidence) {
+      final req = http.MultipartRequest('POST', Uri.parse('$_root/$id'));
+      req.headers['Authorization'] = 'Bearer $t';
+      req.headers['Accept'] = 'application/json';
+      req.fields['_method'] = 'PUT';
+      req.fields['title'] = title;
+      req.fields['description'] = description;
+      req.fields['category_id'] = '$categoryId';
+      req.fields['priority_id'] = '$priorityId';
+      req.fields['status_id'] = '$statusId';
+      req.fields['divisi_id'] = '$divisiId';
+      req.fields['outlet_id'] = '$outletId';
+      if (closeNote != null && closeNote.trim().isNotEmpty) {
+        req.fields['close_note'] = closeNote.trim();
+      }
+      if (closeEvidenceFiles != null) {
+        for (final f in closeEvidenceFiles) {
+          req.files.add(await http.MultipartFile.fromPath('attachments[]', f.path));
+        }
+      }
+      final streamed = await req.send();
+      final body = await streamed.stream.bytesToString();
+      return _decodeMap(body, streamed.statusCode);
+    }
+
     final res = await http.put(
       Uri.parse('$_root/$id'),
       headers: {
@@ -146,9 +208,37 @@ class TicketService {
     return _decodeMap(res.body, res.statusCode);
   }
 
-  Future<Map<String, dynamic>> updateStatus(int ticketId, int statusId) async {
+  Future<Map<String, dynamic>> updateStatus(
+    int ticketId,
+    int statusId, {
+    String? closeNote,
+    List<File>? closeEvidenceFiles,
+  }) async {
     final t = await _token();
     if (t == null) return {'success': false, 'message': 'Sesi habis'};
+
+    final hasCloseEvidence = (closeNote != null && closeNote.trim().isNotEmpty) ||
+        (closeEvidenceFiles != null && closeEvidenceFiles.isNotEmpty);
+
+    if (hasCloseEvidence) {
+      // PHP tidak mem-parse multipart pada PATCH; kirim POST (API route menerima patch|post).
+      final req = http.MultipartRequest('POST', Uri.parse('$_root/$ticketId/status'));
+      req.headers['Authorization'] = 'Bearer $t';
+      req.headers['Accept'] = 'application/json';
+      req.fields['status_id'] = '$statusId';
+      if (closeNote != null && closeNote.trim().isNotEmpty) {
+        req.fields['close_note'] = closeNote.trim();
+      }
+      if (closeEvidenceFiles != null) {
+        for (final f in closeEvidenceFiles) {
+          req.files.add(await http.MultipartFile.fromPath('attachments[]', f.path));
+        }
+      }
+      final streamed = await req.send();
+      final body = await streamed.stream.bytesToString();
+      return _decodeMap(body, streamed.statusCode);
+    }
+
     final res = await http.patch(
       Uri.parse('$_root/$ticketId/status'),
       headers: {
@@ -157,6 +247,48 @@ class TicketService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({'status_id': statusId}),
+    );
+    return _decodeMap(res.body, res.statusCode);
+  }
+
+  Future<Map<String, dynamic>> updateWorkExecutorType(
+    int ticketId,
+    String? workExecutorType, {
+    String? vendorName,
+  }) async {
+    final t = await _token();
+    if (t == null) return {'success': false, 'message': 'Sesi habis'};
+
+    final body = <String, dynamic>{'work_executor_type': workExecutorType};
+    if (vendorName != null) body['vendor_name'] = vendorName;
+
+    final res = await http.patch(
+      Uri.parse('$_root/$ticketId/work-executor-type'),
+      headers: {
+        'Authorization': 'Bearer $t',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _decodeMap(res.body, res.statusCode);
+  }
+
+  Future<Map<String, dynamic>> updateVendorName(
+    int ticketId,
+    String? vendorName,
+  ) async {
+    final t = await _token();
+    if (t == null) return {'success': false, 'message': 'Sesi habis'};
+
+    final res = await http.patch(
+      Uri.parse('$_root/$ticketId/vendor-name'),
+      headers: {
+        'Authorization': 'Bearer $t',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'vendor_name': vendorName}),
     );
     return _decodeMap(res.body, res.statusCode);
   }
@@ -186,6 +318,19 @@ class TicketService {
         'user_ids': userIds,
         if (primaryUserId != null) 'primary_user_id': primaryUserId,
       }),
+    );
+    return _decodeMap(res.body, res.statusCode);
+  }
+
+  Future<Map<String, dynamic>> getShareLink(int ticketId) async {
+    final t = await _token();
+    if (t == null) return {'success': false, 'message': 'Sesi habis'};
+    final res = await http.post(
+      Uri.parse('$_root/$ticketId/share-link'),
+      headers: {
+        'Authorization': 'Bearer $t',
+        'Accept': 'application/json',
+      },
     );
     return _decodeMap(res.body, res.statusCode);
   }

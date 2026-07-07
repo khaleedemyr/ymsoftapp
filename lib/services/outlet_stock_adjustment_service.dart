@@ -262,4 +262,41 @@ class OutletStockAdjustmentService {
     }
     return [];
   }
+
+  /// Pre-check adjustment IN: wajib ada harga referensi di outlet + warehouse.
+  Future<Map<String, dynamic>> validateItems({
+    required int outletId,
+    required int warehouseOutletId,
+    required String type,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'ok': true, 'violations': <dynamic>[]};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/outlet-food-inventory-adjustment/validate-items'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'outlet_id': outletId,
+          'warehouse_outlet_id': warehouseOutletId,
+          'type': type,
+          'items': items,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('Error validating adjustment items: $e');
+    }
+    return {'ok': true, 'violations': <dynamic>[]};
+  }
 }

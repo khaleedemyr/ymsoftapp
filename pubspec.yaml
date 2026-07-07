@@ -1,7 +1,7 @@
 name: ymsoftapp
 description: YM Soft Approval Mobile App
 publish_to: 'none'
-version: 1.0.17+18
+version: 1.0.19+20
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -60,6 +60,9 @@ dependencies:
   # Barcode Scanner (camera)
   mobile_scanner: ^6.0.2
 
+  # NFC (Android — asset serial NTAG read/write)
+  nfc_manager: ^3.5.0
+
   # File Opener
   open_filex: ^4.3.2
   
@@ -70,6 +73,7 @@ dependencies:
   video_player: ^2.8.1
   new_version_plus: ^0.1.1
   pdf_combiner: ^6.0.3
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

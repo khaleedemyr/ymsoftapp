@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/asset_disposal_service.dart';
 import '../../models/asset_disposal_models.dart';
-import '../../services/auth_service.dart';
+import '../../utils/asset_qty_format.dart';
 
 class AssetDisposalDetailScreen extends StatefulWidget {
   final int disposalId;
@@ -43,7 +43,7 @@ class _AssetDisposalDetailScreenState extends State<AssetDisposalDetailScreen> {
 
   String _statusLabel(String status) {
     switch (status) {
-      case 'waiting_approval': return 'WAITING';
+      case 'waiting_approval': return 'WAITING APPROVAL';
       case 'approved': return 'APPROVED';
       case 'rejected': return 'REJECTED';
       default: return status.toUpperCase();
@@ -211,7 +211,7 @@ class _AssetDisposalDetailScreenState extends State<AssetDisposalDetailScreen> {
                 Expanded(child: Text(d.number, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal))),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(color: _statusColor(d.status).withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                  decoration: BoxDecoration(color: _statusColor(d.status).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
                   child: Text(_statusLabel(d.status), style: TextStyle(color: _statusColor(d.status), fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -227,6 +227,7 @@ class _AssetDisposalDetailScreenState extends State<AssetDisposalDetailScreen> {
             ),
             const Divider(height: 20),
             _infoRow('Tanggal', d.date),
+            _infoRow('Pemilik', d.ownerOutletName ?? '-'),
             _infoRow('Outlet', d.outletName ?? '-'),
             _infoRow('Warehouse', d.warehouseOutletName ?? '-'),
             _infoRow('Dibuat Oleh', d.creatorName ?? '-'),
@@ -338,7 +339,7 @@ class _AssetDisposalDetailScreenState extends State<AssetDisposalDetailScreen> {
                           const SizedBox(height: 2),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(color: _flowColor(flow.status).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                            decoration: BoxDecoration(color: _flowColor(flow.status).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                             child: Text(flow.status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _flowColor(flow.status))),
                           ),
                           if (flow.comments != null && flow.comments!.isNotEmpty)
@@ -372,6 +373,7 @@ class _AssetDisposalDetailScreenState extends State<AssetDisposalDetailScreen> {
   Widget _buildItems() {
     final items = _disposal!.items;
     if (items == null || items.isEmpty) return const SizedBox.shrink();
+    final isSold = _disposal!.type == 'sold';
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -380,40 +382,62 @@ class _AssetDisposalDetailScreenState extends State<AssetDisposalDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Item (${items.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const Text(
+              'Item Disposal',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
             const SizedBox(height: 12),
-            ...items.map((item) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.itemName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text('${item.qty.toStringAsFixed(item.qty == item.qty.roundToDouble() ? 0 : 2)} ${item.unit}', style: const TextStyle(fontSize: 12)),
-                        if (_disposal!.type == 'sold' && item.salePrice > 0) ...[
-                          const Spacer(),
-                          Text(_formatCurrency(item.salePrice), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blue.shade600)),
-                        ],
-                      ],
-                    ),
-                    if (item.note != null && item.note!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(item.note!, style: const TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic)),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
+                columns: [
+                  const DataColumn(label: Text('#')),
+                  const DataColumn(label: Text('Item')),
+                  const DataColumn(label: Text('Unit')),
+                  const DataColumn(label: Text('Qty'), numeric: true),
+                  if (isSold)
+                    const DataColumn(label: Text('Harga Jual'), numeric: true),
+                  const DataColumn(label: Text('Catatan')),
+                ],
+                rows: items.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final item = entry.value;
+                  return DataRow(
+                    cells: [
+                      DataCell(Text('${idx + 1}')),
+                      DataCell(Text(item.itemName)),
+                      DataCell(Text(item.unit)),
+                      DataCell(Text(formatAssetQty(item.qty))),
+                      if (isSold)
+                        DataCell(
+                          Text(
+                            item.salePrice > 0
+                                ? _formatCurrency(item.salePrice)
+                                : '-',
+                            style: TextStyle(
+                              color: item.salePrice > 0
+                                  ? Colors.blue.shade700
+                                  : Colors.grey,
+                              fontWeight: item.salePrice > 0
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      DataCell(
+                        Text(
+                          (item.note != null && item.note!.isNotEmpty)
+                              ? item.note!
+                              : '-',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ),
-                  ],
-                ),
-              );
-            }),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
           ],
         ),
       ),

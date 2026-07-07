@@ -24,6 +24,7 @@ class AssetDisposalService {
     String? dateTo,
     String? status,
     String? type,
+    int? outletId,
     int page = 1,
     int perPage = 15,
   }) async {
@@ -37,6 +38,7 @@ class AssetDisposalService {
       if (dateTo != null && dateTo.isNotEmpty) params['date_to'] = dateTo;
       if (status != null && status.isNotEmpty) params['status'] = status;
       if (type != null && type.isNotEmpty) params['type'] = type;
+      if (outletId != null) params['outlet_id'] = outletId.toString();
 
       final uri = Uri.parse('$baseUrl/api/approval-app/asset-disposals').replace(queryParameters: params);
       final response = await http.get(uri, headers: _headers(token));

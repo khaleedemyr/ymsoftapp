@@ -54,6 +54,13 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
     return status == 'DRAFT' || status == 'REJECTED';
   }
 
+  String _deleteRuleHint(Map<String, dynamic> item) {
+    if (_canForceDelete) return '';
+    final status = item['status']?.toString() ?? '';
+    if (status == 'DRAFT' || status == 'REJECTED') return '';
+    return 'Hapus hanya untuk Draft/Rejected';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -640,28 +647,47 @@ class _LostBreakageListScreenState extends State<LostBreakageListScreen> {
                     const SizedBox(height: 4),
                     ...flows.map((f) => _buildApproverFlowRow(f)),
                   ],
-                  if (_canDelete(item)) ...[
-                    const SizedBox(height: 10),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: InkWell(
+                      onTap: _canDelete(item) ? () => _delete(itemId) : null,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _canDelete(item) ? const Color(0xFFFEE2E2) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _canDelete(item) ? Icons.delete_outline : Icons.lock_outline,
+                              size: 14,
+                              color: _canDelete(item) ? const Color(0xFFB91C1C) : const Color(0xFF64748B),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _canDelete(item) ? 'Hapus' : 'Terkunci',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _canDelete(item) ? const Color(0xFFB91C1C) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!_canDelete(item)) ...[
+                    const SizedBox(height: 4),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: InkWell(
-                        onTap: () => _delete(itemId),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEE2E2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.delete_outline, size: 14, color: Color(0xFFB91C1C)),
-                              SizedBox(width: 4),
-                              Text('Hapus', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFB91C1C))),
-                            ],
-                          ),
-                        ),
+                      child: Text(
+                        _deleteRuleHint(item),
+                        style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
                       ),
                     ),
                   ],

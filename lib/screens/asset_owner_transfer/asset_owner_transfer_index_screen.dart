@@ -20,11 +20,15 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
   final _scrollController = ScrollController();
 
   List<AssetOwnerTransfer> _transfers = [];
+  List<Map<String, dynamic>> _outlets = [];
   bool _isLoading = false;
   bool _hasMore = true;
   int _currentPage = 1;
   String? _dateFrom;
   String? _dateTo;
+  String _statusFilter = '';
+  int? _ownerOutletId;
+  int? _userOutletId;
 
   @override
   void initState() {
@@ -63,6 +67,8 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
       search: _searchController.text.isNotEmpty ? _searchController.text : null,
       dateFrom: _dateFrom,
       dateTo: _dateTo,
+      status: _statusFilter.isNotEmpty ? _statusFilter : null,
+      ownerOutletId: _ownerOutletId,
       page: _currentPage,
       perPage: 15,
     );
@@ -81,6 +87,22 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
         _hasMore = result['next_page_url'] != null;
         _isLoading = false;
       });
+      if (_outlets.isEmpty) {
+        final createData = await _service.getCreateData();
+        final outlets = (createData?['outlets'] as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            await _service.getOutlets();
+        if (mounted) {
+          setState(() {
+            _outlets = outlets;
+            _userOutletId ??= int.tryParse(
+                  createData?['user']?['id_outlet']?.toString() ?? '',
+                ) ??
+                0;
+          });
+        }
+      }
     } else {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -93,6 +115,42 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
 
   Future<void> _refresh() async {
     await _loadTransfers();
+  }
+
+  Future<void> _deleteTransfer(int id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Transfer?'),
+        content: const Text('Data transfer draft akan dihapus permanen.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isLoading = true);
+    final result = await _service.deleteTransfer(id);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] ?? 'Gagal menghapus transfer.'),
+        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    if (result['success'] == true) {
+      _loadTransfers();
+    }
   }
 
   Future<void> _pickDate(bool isFrom) async {
@@ -225,6 +283,44 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
                       child: const Text('Filter', style: TextStyle(fontSize: 13)),
                     ),
                     const SizedBox(width: 4),
+                    DropdownButton<String>(
+                      value: _statusFilter,
+                      items: const [
+                        DropdownMenuItem(value: '', child: Text('Semua')),
+                        DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                        DropdownMenuItem(value: 'submitted', child: Text('Submitted')),
+                        DropdownMenuItem(value: 'approved', child: Text('Approved')),
+                        DropdownMenuItem(value: 'rejected', child: Text('Rejected')),
+                      ],
+                      onChanged: (v) {
+                        setState(() => _statusFilter = v ?? '');
+                        _loadTransfers();
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    if ((_userOutletId ?? 0) == 1)
+                      DropdownButton<int?>(
+                        value: _ownerOutletId,
+                        hint: const Text('Pemilik'),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                              value: null, child: Text('Semua Pemilik')),
+                          ..._outlets.map((o) => DropdownMenuItem<int?>(
+                                value: int.tryParse(
+                                    o['id']?.toString() ??
+                                        o['id_outlet']?.toString() ??
+                                        ''),
+                                child: Text(o['name']?.toString() ??
+                                    o['nama_outlet']?.toString() ??
+                                    '-'),
+                              )),
+                        ],
+                        onChanged: (v) {
+                          setState(() => _ownerOutletId = v);
+                          _loadTransfers();
+                        },
+                      ),
+                    if ((_userOutletId ?? 0) == 1) const SizedBox(width: 4),
                     if (_dateFrom != null || _dateTo != null)
                       IconButton(
                         icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
@@ -232,6 +328,8 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
                           setState(() {
                             _dateFrom = null;
                             _dateTo = null;
+                            _statusFilter = '';
+                            _ownerOutletId = null;
                           });
                           _loadTransfers();
                         },
@@ -254,125 +352,89 @@ class _AssetOwnerTransferIndexScreenState extends State<AssetOwnerTransferIndexS
                         ),
                       ],
                     )
-                  : ListView.builder(
+                  : ListView(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(12),
-                      itemCount: _transfers.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= _transfers.length) {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('No.')),
+                              DataColumn(label: Text('Pemilik Asal')),
+                              DataColumn(label: Text('Pemilik Tujuan')),
+                              DataColumn(label: Text('Lokasi / Gudang')),
+                              DataColumn(label: Text('Tanggal')),
+                              DataColumn(label: Text('Status')),
+                              DataColumn(label: Text('Aksi')),
+                            ],
+                            rows: _transfers.map((t) {
+                              return DataRow(cells: [
+                                DataCell(Text(t.transferNumber)),
+                                DataCell(Text(t.ownerFromName ?? '-')),
+                                DataCell(Text(t.ownerToName ?? '-')),
+                                DataCell(Text(
+                                    '${t.locationOutletName ?? '-'}\n${t.warehouseOutletName ?? '-'}')),
+                                DataCell(Text(t.transferDate)),
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _statusColor(t.status)
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      t.status.toUpperCase(),
+                                      style: TextStyle(
+                                        color: _statusColor(t.status),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () async {
+                                          await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  AssetOwnerTransferDetailScreen(
+                                                      transferId: t.id),
+                                            ),
+                                          );
+                                          _loadTransfers();
+                                        },
+                                        child: const Text('Lihat'),
+                                      ),
+                                      if (t.status.toLowerCase() == 'draft')
+                                        TextButton(
+                                          onPressed: () => _deleteTransfer(t.id),
+                                          style: TextButton.styleFrom(
+                                              foregroundColor: Colors.red),
+                                          child: const Text('Hapus'),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ]);
+                            }).toList(),
+                          ),
+                        ),
+                        if (_hasMore)
+                          const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                          );
-                        }
-
-                        final t = _transfers[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      AssetOwnerTransferDetailScreen(transferId: t.id),
-                                ),
-                              );
-                              _loadTransfers();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        t.transferNumber,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: _violet,
-                                          fontSize: 15,
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: _statusColor(t.status).withOpacity(0.15),
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                        child: Text(
-                                          t.status.toUpperCase(),
-                                          style: TextStyle(
-                                            color: _statusColor(t.status),
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.people_outline,
-                                          size: 14, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '${t.ownerFromName ?? '-'} → ${t.ownerToName ?? '-'}',
-                                          style: const TextStyle(
-                                              fontSize: 13, color: Colors.black87),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.warehouse_outlined,
-                                          size: 14, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          t.warehouseOutletName ?? '-',
-                                          style: const TextStyle(
-                                              fontSize: 12, color: Colors.black54),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        t.transferDate,
-                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                      ),
-                                      Text(
-                                        t.creatorName ?? '-',
-                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                      ],
                     ),
             ),
           ),

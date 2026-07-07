@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/serial_tracking_service.dart';
+import 'serial_number_actions.dart';
+import 'serial_tracking_serial_card.dart';
 import 'serial_tracking_ui.dart';
 
 class SerialTrackingSerialTab extends StatefulWidget {
@@ -21,6 +23,8 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
   Map<String, dynamic>? _serial;
   List<Map<String, dynamic>> _timeline = [];
   List<Map<String, dynamic>> _suggestions = [];
+  Map<String, dynamic>? _repackMatch;
+  String? _lookupMessage;
 
   static final _dtf = DateFormat('d/M/y, HH:mm', 'id_ID');
 
@@ -55,6 +59,8 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
       _serial = null;
       _timeline = [];
       _suggestions = [];
+      _repackMatch = null;
+      _lookupMessage = null;
     });
 
     final res = await widget.service.lookupSerial(q);
@@ -67,11 +73,14 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
 
     final status = res['_status'] as int? ?? 200;
     if (status == 404 || res['found'] == false) {
+      final repack = res['repack_match'];
       setState(() {
         _loading = false;
+        _lookupMessage = res['message']?.toString();
         _suggestions = res['suggestions'] is List
             ? (res['suggestions'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
             : [];
+        _repackMatch = repack is Map ? Map<String, dynamic>.from(repack) : null;
       });
       return;
     }
@@ -166,6 +175,51 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
               ],
             ),
           ),
+          if (_lookupMessage != null && _serial == null && _suggestions.isEmpty && _repackMatch == null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Text(_lookupMessage!, style: const TextStyle(fontSize: 13, color: Color(0xFFB91C1C))),
+            ),
+          ],
+          if (_repackMatch != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFC7D2FE)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dokumen Repack: ${_repackMatch!['repack_number'] ?? '-'}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: SerialTrackingUi.indigoDark),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Input bukan nomor seri barcode. Pilih nomor seri repack di bawah.',
+                    style: TextStyle(fontSize: 12, color: SerialTrackingUi.slate600),
+                  ),
+                  const SizedBox(height: 10),
+                  ..._parseRepackSerials().map((s) {
+                    final sn = s['serial_number']?.toString() ?? '';
+                    return SerialTrackingSerialCard(
+                      serial: s,
+                      onTrack: sn.isNotEmpty ? () => applyAndLookup(sn) : null,
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
           if (_suggestions.isNotEmpty) ...[
             const SizedBox(height: 16),
             Container(
@@ -180,16 +234,13 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
                 children: [
                   const Text('Serial tidak exact match. Pilih dari daftar:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _suggestions.map((s) {
-                      return ActionChip(
-                        label: Text('${s['serial_number']} (${s['item_name'] ?? ''})', style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
-                        onPressed: () => applyAndLookup(s['serial_number']?.toString() ?? ''),
-                      );
-                    }).toList(),
-                  ),
+                  ..._suggestions.map((s) {
+                    final sn = s['serial_number']?.toString() ?? '';
+                    return SerialTrackingSerialCard(
+                      serial: s,
+                      onTrack: sn.isNotEmpty ? () => applyAndLookup(sn) : null,
+                    );
+                  }),
                 ],
               ),
             ),
@@ -223,6 +274,8 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
                     const Text('Nomor Seri', style: TextStyle(fontSize: 12, color: SerialTrackingUi.slate500)),
                     const SizedBox(height: 4),
                     Text(s['serial_number']?.toString() ?? '—', style: const TextStyle(fontFamily: 'monospace', fontSize: 22, fontWeight: FontWeight.w800, color: SerialTrackingUi.indigoDark)),
+                    const SizedBox(height: 8),
+                    SerialNumberActions(serialNumber: s['serial_number']?.toString() ?? '', showLabel: true),
                   ],
                 ),
               ),
@@ -316,5 +369,11 @@ class SerialTrackingSerialTabState extends State<SerialTrackingSerialTab> {
     final d = DateTime.tryParse(v.toString());
     if (d == null) return v.toString();
     return _dtf.format(d.toLocal());
+  }
+
+  List<Map<String, dynamic>> _parseRepackSerials() {
+    final raw = _repackMatch?['serials'];
+    if (raw is! List) return [];
+    return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 }

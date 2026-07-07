@@ -167,7 +167,18 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
     if (value == null) return null;
     if (value is int) return value;
     if (value is num) return value.toInt();
-    final s = value.toString().replaceAll(RegExp(r'[^\d]'), '');
+    var s = value.toString().trim();
+    if (s.isEmpty) return null;
+    s = s.replaceFirst(RegExp(r'^Rp\.?\s*', caseSensitive: false), '').trim();
+    // Western decimal: 2000000.00
+    if (RegExp(r'^\d+\.\d{1,2}$').hasMatch(s)) {
+      return double.tryParse(s)?.round();
+    }
+    final commaIdx = s.lastIndexOf(',');
+    if (commaIdx >= 0) {
+      s = s.substring(0, commaIdx);
+    }
+    s = s.replaceAll(RegExp(r'[\s.]'), '');
     if (s.isEmpty) return null;
     return int.tryParse(s);
   }
@@ -290,20 +301,8 @@ class _PRApprovalDetailScreenState extends State<PRApprovalDetailScreen>
     int? kasbonAmtToSend;
     int? kasbonTermToSend;
     if (kasbonEditable) {
-      final amtStr = _kasbonApproveAmountController.text.replaceAll(RegExp(r'[^\d]'), '');
+      final amt = _parseIntDigitsOnly(_kasbonApproveAmountController.text);
       final termStr = _kasbonApproveTerminController.text.replaceAll(RegExp(r'[^\d]'), '');
-      if (amtStr.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Masukkan nominal kasbon (angka).'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-      final amt = int.tryParse(amtStr);
       if (amt == null || amt < 1) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

@@ -1,14 +1,10 @@
 allprojects {
     repositories {
         google()
-        mavenCentral()
+        maven { url = uri("https://repo1.maven.org/maven2") }
         // Tambahkan repository alternatif untuk Flutter native libraries
         maven {
             url = uri("https://storage.googleapis.com/download.flutter.io")
-        }
-        // Repository tambahan jika Maven Central down
-        maven {
-            url = uri("https://repo1.maven.org/maven2")
         }
         // JitPack sebagai fallback
         maven {

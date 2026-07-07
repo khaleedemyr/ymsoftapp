@@ -6,7 +6,8 @@ import '../../models/asset_good_receive_models.dart';
 import '../../widgets/app_scaffold.dart';
 
 class AssetGoodReceiveFormScreen extends StatefulWidget {
-  const AssetGoodReceiveFormScreen({super.key});
+  final int? goodReceiveId;
+  const AssetGoodReceiveFormScreen({super.key, this.goodReceiveId});
 
   @override
   State<AssetGoodReceiveFormScreen> createState() =>
@@ -32,11 +33,17 @@ class _AssetGoodReceiveFormScreenState
 
   bool _isLoadingPO = false;
   bool _isSubmitting = false;
+  bool _isLoadingEdit = false;
+
+  bool get _isEditMode => widget.goodReceiveId != null;
 
   @override
   void initState() {
     super.initState();
     _receiveDateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    if (_isEditMode) {
+      _loadExistingGoodReceive();
+    }
   }
 
   @override
@@ -88,6 +95,7 @@ class _AssetGoodReceiveFormScreenState
   }
 
   Future<void> _fetchPO() async {
+    if (_isEditMode) return;
     if (_poNumberController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -183,6 +191,60 @@ class _AssetGoodReceiveFormScreenState
     }
   }
 
+  Future<void> _loadExistingGoodReceive() async {
+    setState(() => _isLoadingEdit = true);
+    try {
+      final detail = await _service.getGoodReceive(widget.goodReceiveId!);
+      if (detail == null) return;
+      final gr = AssetGoodReceive.fromJson(detail);
+
+      final outlets = await _service.getOutlets();
+      setState(() {
+        _receiveDateController.text = gr.receiveDate;
+        _poNumberController.text = gr.poNumber ?? '';
+        _notesController.text = gr.notes ?? '';
+        _ownerOutletId = gr.ownerOutletId;
+        _selectedOutletId = gr.outletId;
+        _selectedWarehouseOutletId = gr.warehouseOutletId;
+        _poData = AssetPOData(
+          po: {
+            'id': gr.poId,
+            'number': gr.poNumber,
+          },
+          supplier: {'name': gr.supplierName},
+          items: [],
+          outlets: outlets,
+          warehouseOutlets: const [],
+          userOutletId: 0,
+        );
+        _formItems = gr.items
+            .map((item) => _AssetItemForm(
+                  poItem: AssetPOItem(
+                    id: item.poItemId,
+                    itemName: item.itemName ?? item.poItemName ?? '-',
+                    quantity: item.qtyOrdered,
+                    unit: item.unitName ?? item.poUnit ?? '',
+                    price: item.price,
+                    total: item.total,
+                    itemId: item.itemId,
+                    resolvedItemName: item.itemName ?? item.poItemName,
+                    unitId: item.unitId,
+                    resolveOk: true,
+                    qtyAlreadyReceived: 0,
+                    qtyRemaining: item.qtyOrdered,
+                  ),
+                  qtyRemaining: item.qtyOrdered,
+                  initialQty: item.qtyReceived,
+                  initialNotes: item.notes ?? '',
+                  existingItemId: item.id,
+                ))
+            .toList();
+      });
+    } finally {
+      if (mounted) setState(() => _isLoadingEdit = false);
+    }
+  }
+
   List<Map<String, dynamic>> _getFilteredWarehouseOutlets() {
     if (_poData == null || _selectedOutletId == null) return [];
     return _poData!.warehouseOutlets
@@ -247,13 +309,33 @@ class _AssetGoodReceiveFormScreenState
     });
 
     try {
-      final itemsData = _formItems
-          .where((item) {
-            final qty =
-                double.tryParse(item.qtyReceivedController.text) ?? 0;
-            return qty > 0;
-          })
+      final selectedItems = _formItems.where((item) {
+        final qty = double.tryParse(item.qtyReceivedController.text) ?? 0;
+        return qty > 0;
+      }).toList();
+
+      for (final item in selectedItems) {
+        if (item.poItem.itemId == null || item.poItem.unitId == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Item "${item.poItem.itemName}" belum terhubung ke master asset. Hubungi admin.',
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          setState(() {
+            _isSubmitting = false;
+          });
+          return;
+        }
+      }
+
+      final itemsData = selectedItems
           .map((item) => {
+                if (item.existingItemId != null) 'id': item.existingItemId,
                 'po_item_id': item.poItem.id,
                 'item_id': item.poItem.itemId,
                 'unit_id': item.poItem.unitId,
@@ -266,15 +348,25 @@ class _AssetGoodReceiveFormScreenState
               })
           .toList();
 
-      final result = await _service.createGoodReceive(
-        receiveDate: _receiveDateController.text,
-        poId: int.tryParse(_poData!.po['id']?.toString() ?? '0') ?? 0,
-        ownerOutletId: _ownerOutletId!,
-        outletId: _selectedOutletId!,
-        warehouseOutletId: _selectedWarehouseOutletId,
-        notes: _notesController.text,
-        items: itemsData,
-      );
+      final result = _isEditMode
+          ? await _service.updateGoodReceive(
+              id: widget.goodReceiveId!,
+              receiveDate: _receiveDateController.text,
+              ownerOutletId: _ownerOutletId!,
+              outletId: _selectedOutletId!,
+              warehouseOutletId: _selectedWarehouseOutletId,
+              notes: _notesController.text,
+              items: itemsData,
+            )
+          : await _service.createGoodReceive(
+              receiveDate: _receiveDateController.text,
+              poId: int.tryParse(_poData!.po['id']?.toString() ?? '0') ?? 0,
+              ownerOutletId: _ownerOutletId!,
+              outletId: _selectedOutletId!,
+              warehouseOutletId: _selectedWarehouseOutletId,
+              notes: _notesController.text,
+              items: itemsData,
+            );
 
       if (mounted) {
         setState(() {
@@ -292,8 +384,10 @@ class _AssetGoodReceiveFormScreenState
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                  result['message'] ?? 'Gagal menyimpan Asset Good Receive'),
+              content: Text(result['message'] ??
+                  (_isEditMode
+                      ? 'Gagal mengupdate Asset Good Receive'
+                      : 'Gagal menyimpan Asset Good Receive')),
               backgroundColor: Colors.red,
             ),
           );
@@ -317,8 +411,10 @@ class _AssetGoodReceiveFormScreenState
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Tambah Asset Good Receive',
-      body: Form(
+      title: _isEditMode ? 'Edit Asset Good Receive' : 'Tambah Asset Good Receive',
+      body: _isLoadingEdit
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
         key: _formKey,
         child: Column(
           children: [
@@ -386,7 +482,7 @@ class _AssetGoodReceiveFormScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Scan QR Code PO untuk memuat data',
+                  _isEditMode ? 'Edit draft Asset Good Receive' : 'Scan QR Code PO untuk memuat data',
                   style: TextStyle(fontSize: 12, color: Colors.teal.shade700),
                 ),
               ],
@@ -450,7 +546,8 @@ class _AssetGoodReceiveFormScreenState
               },
             ),
             const SizedBox(height: 16),
-            Row(
+            if (!_isEditMode)
+              Row(
               children: [
                 Expanded(
                   child: TextFormField(
@@ -584,9 +681,9 @@ class _AssetGoodReceiveFormScreenState
               ],
             ),
             const SizedBox(height: 16),
-            if (isHeadOffice)
+            if (isHeadOffice && !_isEditMode)
               DropdownButtonFormField<int>(
-                value: _ownerOutletId,
+                initialValue: _ownerOutletId,
                 decoration: InputDecoration(
                   labelText: 'Outlet Pemilik *',
                   border: OutlineInputBorder(
@@ -631,9 +728,9 @@ class _AssetGoodReceiveFormScreenState
                 ),
               ),
             if (isHeadOffice) const SizedBox(height: 12),
-            if (isHeadOffice)
+            if (isHeadOffice && !_isEditMode)
               DropdownButtonFormField<int>(
-                value: _selectedOutletId,
+                initialValue: _selectedOutletId,
                 decoration: InputDecoration(
                   labelText: 'Lokasi Outlet *',
                   border: OutlineInputBorder(
@@ -683,7 +780,7 @@ class _AssetGoodReceiveFormScreenState
               ),
             const SizedBox(height: 16),
             DropdownButtonFormField<int>(
-              value: _selectedWarehouseOutletId,
+              initialValue: _selectedWarehouseOutletId,
               decoration: InputDecoration(
                 labelText: 'Warehouse Outlet',
                 border:
@@ -914,7 +1011,7 @@ class _AssetGoodReceiveFormScreenState
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -943,7 +1040,7 @@ class _AssetGoodReceiveFormScreenState
                         valueColor:
                             AlwaysStoppedAnimation<Color>(Colors.white)),
                   )
-                : const Text('Simpan'),
+                : Text(_isEditMode ? 'Update' : 'Simpan'),
           ),
         ],
       ),
@@ -954,13 +1051,17 @@ class _AssetGoodReceiveFormScreenState
 class _AssetItemForm {
   final AssetPOItem poItem;
   final double qtyRemaining;
+  final int? existingItemId;
   final TextEditingController qtyReceivedController;
   final TextEditingController notesController;
 
   _AssetItemForm({
     required this.poItem,
     required this.qtyRemaining,
+    double? initialQty,
+    String initialNotes = '',
+    this.existingItemId,
   })  : qtyReceivedController =
-            TextEditingController(text: qtyRemaining.toString()),
-        notesController = TextEditingController();
+            TextEditingController(text: (initialQty ?? qtyRemaining).toString()),
+        notesController = TextEditingController(text: initialNotes);
 }

@@ -8,8 +8,10 @@ class AssetServiceOrder {
   final String? description;
   final double estimatedCost;
   final double actualCost;
+  final String? vendorInvoicePath;
   final String status;
   final String? creatorName;
+  final String? ownerOutletName;
   final String? outletName;
   final String? warehouseOutletName;
   final String? supplierName;
@@ -19,6 +21,8 @@ class AssetServiceOrder {
   final String? returnDate;
   final bool canApprove;
   final bool canReceiveReturn;
+  final bool canCreateNonFoodPayment;
+  final Map<String, dynamic>? linkedNonFoodPayment;
   final List<AssetServiceOrderItem> items;
   final List<AssetServiceOrderApprovalFlow> approvalFlows;
   final String? createdAt;
@@ -33,8 +37,10 @@ class AssetServiceOrder {
     this.description,
     this.estimatedCost = 0,
     this.actualCost = 0,
+    this.vendorInvoicePath,
     required this.status,
     this.creatorName,
+    this.ownerOutletName,
     this.outletName,
     this.warehouseOutletName,
     this.supplierName,
@@ -43,6 +49,8 @@ class AssetServiceOrder {
     this.returnDate,
     this.canApprove = false,
     this.canReceiveReturn = false,
+    this.canCreateNonFoodPayment = false,
+    this.linkedNonFoodPayment,
     this.items = const [],
     this.approvalFlows = const [],
     this.createdAt,
@@ -61,8 +69,10 @@ class AssetServiceOrder {
       description: json['description']?.toString(),
       estimatedCost: double.tryParse(json['estimated_cost']?.toString() ?? '0') ?? 0,
       actualCost: double.tryParse(json['actual_cost']?.toString() ?? '0') ?? 0,
+      vendorInvoicePath: json['vendor_invoice_path']?.toString(),
       status: json['status']?.toString() ?? 'waiting_approval',
       creatorName: json['creator_name']?.toString(),
+      ownerOutletName: json['owner_outlet_name']?.toString(),
       outletName: json['outlet_name']?.toString(),
       warehouseOutletName: json['warehouse_outlet_name']?.toString(),
       supplierName: json['supplier_name']?.toString(),
@@ -71,6 +81,10 @@ class AssetServiceOrder {
       returnDate: json['return_date']?.toString(),
       canApprove: json['can_approve'] == true,
       canReceiveReturn: json['can_receive_return'] == true,
+      canCreateNonFoodPayment: json['can_create_non_food_payment'] == true,
+      linkedNonFoodPayment: json['linked_non_food_payment'] is Map
+          ? Map<String, dynamic>.from(json['linked_non_food_payment'] as Map)
+          : null,
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => AssetServiceOrderItem.fromJson(e as Map<String, dynamic>))
               .toList() ??

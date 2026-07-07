@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/omnichannel_inbox_models.dart';
 import '../services/omnichannel_inbox_service.dart';
+import '../utils/omni_chat_spellfix.dart';
 import '../utils/omni_theme.dart';
 import 'omni_emoji_picker_sheet.dart';
 
@@ -302,71 +303,136 @@ class OmnichannelComposerState extends State<OmnichannelComposer> {
     setState(() => _pendingFiles.clear());
   }
 
+  bool _grammarTextsDiffer(String original, String corrected) {
+    final a = original.trim();
+    final b = corrected.trim();
+    if (a == b) return false;
+    final normalize = (String s) => s.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+    return normalize(a) != normalize(b);
+  }
+
+  Future<String?> _showGrammarChoiceDialog({
+    required String original,
+    required String corrected,
+  }) {
+    return showDialog<String>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final maxPreviewHeight = MediaQuery.sizeOf(ctx).height * 0.35;
+        return AlertDialog(
+          title: const Text('Perbaikan ejaan disarankan'),
+          content: SizedBox(
+            width: MediaQuery.sizeOf(ctx).width * 0.88,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Pilih versi yang akan dikirim ke pelanggan:',
+                    style: TextStyle(fontSize: 13, color: OmniTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Asli', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: OmniTheme.textSecondary)),
+                  const SizedBox(height: 4),
+                  Container(
+                    constraints: BoxConstraints(maxHeight: maxPreviewHeight),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: OmniTheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: OmniTheme.border),
+                    ),
+                    child: SingleChildScrollView(child: Text(original, style: const TextStyle(fontSize: 14, height: 1.4))),
+                  ),
+                  const SizedBox(height: 10),
+                  Text('Disarankan AI', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF059669))),
+                  const SizedBox(height: 4),
+                  Container(
+                    constraints: BoxConstraints(maxHeight: maxPreviewHeight),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF059669).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF059669).withValues(alpha: 0.35)),
+                    ),
+                    child: SingleChildScrollView(child: Text(corrected, style: const TextStyle(fontSize: 14, height: 1.4))),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+            TextButton(onPressed: () => Navigator.pop(ctx, 'original'), child: const Text('Kirim asli')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'corrected'),
+              child: const Text('Perbaiki ejaan'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<String?> _showGrammarFailedDialog(String message) {
+    return showDialog<String>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Periksa ejaan gagal'),
+        content: Text('$message\n\nTetap kirim teks asli?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, 'original'), child: const Text('Kirim asli')),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _resolveGrammarSuggestion(String trimmed, {bool quickOnly = false}) async {
+    final ruleFixed = OmniChatSpellfix.apply(trimmed);
+
+    if (!quickOnly && widget.aiWritingEnabled) {
+      try {
+        final aiResult = await _service.aiAssistGrammar(trimmed);
+        if (_grammarTextsDiffer(trimmed, aiResult)) return aiResult;
+      } catch (_) {
+        // fallback ke rule-based di bawah
+      }
+    }
+
+    if (_grammarTextsDiffer(trimmed, ruleFixed)) return ruleFixed;
+    return null;
+  }
+
   Future<String?> _maybeGrammarCorrect(String text) async {
-    if (!widget.replyMode || !widget.aiWritingEnabled || !_autoGrammarOnSend) return text;
+    if (!widget.replyMode || !_autoGrammarOnSend) return text;
+    if (_pendingFiles.isNotEmpty) return text;
     final trimmed = text.trim();
     if (trimmed.length < widget.autoGrammarMinChars || trimmed.length > widget.autoGrammarMaxChars) {
       return text;
     }
     setState(() => _grammarChecking = true);
     try {
-      final corrected = await _service.aiAssistGrammar(trimmed);
-      if (!mounted) return text;
-      if (corrected == trimmed) return text;
-      final use = await showDialog<bool>(
-        context: context,
-        builder: (ctx) {
-          final maxPreviewHeight = MediaQuery.sizeOf(ctx).height * 0.5;
-          return AlertDialog(
-            title: const Text('Perbaiki ejaan?'),
-            content: SizedBox(
-              width: MediaQuery.sizeOf(ctx).width * 0.88,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: maxPreviewHeight),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Teks disarankan perbaikan sebelum dikirim:',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: OmniTheme.surface,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          corrected,
-                          style: const TextStyle(fontSize: 14, height: 1.4),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Kirim asli')),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Gunakan perbaikan'),
-              ),
-            ],
-          );
-        },
-      );
-      return use == true ? corrected : text;
+      final corrected = await _resolveGrammarSuggestion(trimmed, quickOnly: true);
+      if (!mounted) return null;
+      if (corrected == null) return text;
+
+      final choice = await _showGrammarChoiceDialog(original: trimmed, corrected: corrected);
+      if (!mounted) return null;
+      if (choice == 'corrected') return corrected;
+      if (choice == 'original') return text;
+      return null;
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), behavior: SnackBarBehavior.floating),
-        );
-      }
-      return text;
+      if (!mounted) return null;
+      final message = e.toString().replaceFirst('Exception: ', '');
+      final fallback = await _showGrammarFailedDialog(message);
+      if (!mounted) return null;
+      if (fallback == 'original') return text;
+      return null;
     } finally {
       if (mounted) setState(() => _grammarChecking = false);
     }
@@ -407,7 +473,8 @@ class OmnichannelComposerState extends State<OmnichannelComposer> {
 
     if (widget.replyMode && text.isNotEmpty) {
       final corrected = await _maybeGrammarCorrect(text);
-      if (corrected != null) text = corrected;
+      if (corrected == null) return;
+      text = corrected;
     }
 
     if (widget.replyMode && _replyTarget != null) {

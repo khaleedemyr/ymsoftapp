@@ -19,19 +19,38 @@ class _AssetServiceOrderIndexScreenState
   final _scrollController = ScrollController();
 
   List<AssetServiceOrder> _orders = [];
+  List<Map<String, dynamic>> _outlets = [];
+  int? _userOutletId;
   bool _isLoading = false;
+  bool _isPreparing = true;
   bool _hasMore = true;
   int _currentPage = 1;
   String? _dateFrom;
   String? _dateTo;
   String _statusFilter = '';
   String _serviceTypeFilter = '';
+  int? _outletIdFilter;
 
   @override
   void initState() {
     super.initState();
-    _loadOrders();
+    _loadCreateData();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _loadCreateData() async {
+    final createData = await _service.getCreateData();
+    if (!mounted) return;
+    setState(() {
+      _outlets = (createData?['outlets'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [];
+      _userOutletId =
+          int.tryParse(createData?['user']?['id_outlet']?.toString() ?? '');
+      _isPreparing = false;
+    });
+    _loadOrders();
   }
 
   @override
@@ -60,11 +79,14 @@ class _AssetServiceOrderIndexScreenState
     }
 
     final result = await _service.getOrders(
-      search: _searchController.text,
+      search: _searchController.text.trim().isNotEmpty
+          ? _searchController.text.trim()
+          : null,
       dateFrom: _dateFrom,
       dateTo: _dateTo,
       status: _statusFilter.isEmpty ? null : _statusFilter,
       serviceType: _serviceTypeFilter.isEmpty ? null : _serviceTypeFilter,
+      outletId: _outletIdFilter,
       page: _currentPage,
       perPage: 15,
     );
@@ -91,6 +113,36 @@ class _AssetServiceOrderIndexScreenState
     await _loadOrders(reset: false);
   }
 
+  Future<void> _deleteFromIndex(AssetServiceOrder order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Service Order?'),
+        content: const Text('Data service order akan dihapus permanen.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await _service.deleteOrder(order.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? (result['success'] == true ? 'Berhasil' : 'Gagal')),
+        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+      ),
+    );
+    if (result['success'] == true) {
+      _loadOrders();
+    }
+  }
+
   Future<void> _refresh() async {
     await _loadOrders();
   }
@@ -102,6 +154,7 @@ class _AssetServiceOrderIndexScreenState
       _dateTo = null;
       _statusFilter = '';
       _serviceTypeFilter = '';
+      _outletIdFilter = null;
     });
     _loadOrders();
   }
@@ -146,11 +199,11 @@ class _AssetServiceOrderIndexScreenState
   String _statusLabel(String status) {
     switch (status) {
       case 'waiting_approval':
-        return 'WAITING';
+        return 'WAITING APPROVAL';
       case 'in_service':
         return 'IN SERVICE';
       case 'partially_returned':
-        return 'PARTIAL RETURN';
+        return 'PARTIALLY RETURNED';
       case 'returned':
         return 'RETURNED';
       case 'rejected':
@@ -183,31 +236,134 @@ class _AssetServiceOrderIndexScreenState
         label: const Text('Tambah Service Order',
             style: TextStyle(color: Colors.white)),
       ),
-      body: RefreshIndicator(
+      body: _isPreparing
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
         onRefresh: _refresh,
         child: Column(
           children: [
             _buildFilters(),
             Expanded(
               child: _orders.isEmpty && !_isLoading
-                  ? const Center(
-                      child: Text('Tidak ada data service order.',
-                          style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
+                  ? ListView(
+                      children: const [
+                        SizedBox(height: 120),
+                        Center(
+                          child: Text('Tidak ada data service order.',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                      ],
+                    )
+                  : ListView(
                       controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                      itemCount: _orders.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= _orders.length) {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: CircularProgressIndicator(),
-                            ),
-                          );
-                        }
-                        return _buildCard(_orders[index]);
-                      },
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('Tipe')),
+                              DataColumn(label: Text('Nomor')),
+                              DataColumn(label: Text('Tanggal')),
+                              DataColumn(label: Text('Pemilik')),
+                              DataColumn(label: Text('Lokasi')),
+                              DataColumn(label: Text('Warehouse')),
+                              DataColumn(label: Text('Supplier')),
+                              DataColumn(label: Text('Status')),
+                              DataColumn(label: Text('Dibuat Oleh')),
+                              DataColumn(label: Text('Aksi')),
+                            ],
+                            rows: _orders.map((order) {
+                              return DataRow(cells: [
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: order.serviceType == 'internal'
+                                          ? Colors.blueGrey.shade100
+                                          : Colors.deepPurple.shade50,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      order.serviceType == 'internal'
+                                          ? 'Internal'
+                                          : 'External',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: order.serviceType == 'internal'
+                                            ? Colors.blueGrey.shade800
+                                            : Colors.deepPurple.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(Text(order.number)),
+                                DataCell(Text(order.date)),
+                                DataCell(Text(order.ownerOutletName ?? '-')),
+                                DataCell(Text(order.outletName ?? '-')),
+                                DataCell(Text(order.warehouseOutletName ?? '-')),
+                                DataCell(Text(order.supplierName ?? '—')),
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: _statusColor(order.status)
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _statusLabel(order.status),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: _statusColor(order.status),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(Text(order.creatorName ?? '-')),
+                                DataCell(
+                                  Row(
+                                    children: [
+                                      TextButton(
+                                        onPressed: () async {
+                                          final result = await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  AssetServiceOrderDetailScreen(
+                                                orderId: order.id,
+                                              ),
+                                            ),
+                                          );
+                                          if (result == true) _loadOrders();
+                                        },
+                                        child: const Text('Lihat'),
+                                      ),
+                                      if (order.status == 'waiting_approval')
+                                        TextButton(
+                                          onPressed: () => _deleteFromIndex(order),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red,
+                                          ),
+                                          child: const Text('Hapus'),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ]);
+                            }).toList(),
+                          ),
+                        ),
+                        if (_hasMore)
+                          const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+                      ],
                     ),
             ),
           ],
@@ -292,7 +448,7 @@ class _AssetServiceOrderIndexScreenState
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _statusFilter.isEmpty ? null : _statusFilter,
+                  initialValue: _statusFilter.isEmpty ? null : _statusFilter,
                   isExpanded: true,
                   decoration: InputDecoration(
                     isDense: true,
@@ -303,10 +459,9 @@ class _AssetServiceOrderIndexScreenState
                   ),
                   hint: const Text('Status', style: TextStyle(fontSize: 13)),
                   items: const [
-                    DropdownMenuItem(value: '', child: Text('Semua')),
+                    DropdownMenuItem(value: null, child: Text('Semua')),
                     DropdownMenuItem(
-                        value: 'waiting_approval',
-                        child: Text('Waiting')),
+                        value: 'waiting_approval', child: Text('Waiting Approval')),
                     DropdownMenuItem(
                         value: 'in_service', child: Text('In Service')),
                     DropdownMenuItem(
@@ -325,8 +480,34 @@ class _AssetServiceOrderIndexScreenState
             ],
           ),
           const SizedBox(height: 8),
+          if (_userOutletId == 1) ...[
+            DropdownButtonFormField<int>(
+              initialValue: _outletIdFilter,
+              isExpanded: true,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              hint: const Text('Outlet', style: TextStyle(fontSize: 13)),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Semua Outlet')),
+                ..._outlets.map((o) => DropdownMenuItem<int>(
+                      value: int.tryParse(o['id_outlet']?.toString() ?? ''),
+                      child: Text(
+                        o['nama_outlet']?.toString() ?? '-',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    )),
+              ],
+              onChanged: (val) => setState(() => _outletIdFilter = val),
+            ),
+            const SizedBox(height: 8),
+          ],
           DropdownButtonFormField<String>(
-            value: _serviceTypeFilter.isEmpty ? null : _serviceTypeFilter,
+            initialValue: _serviceTypeFilter.isEmpty ? null : _serviceTypeFilter,
             isExpanded: true,
             decoration: InputDecoration(
               isDense: true,
@@ -337,7 +518,7 @@ class _AssetServiceOrderIndexScreenState
             ),
             hint: const Text('Tipe', style: TextStyle(fontSize: 13)),
             items: const [
-              DropdownMenuItem(value: '', child: Text('Semua')),
+              DropdownMenuItem(value: null, child: Text('Semua')),
               DropdownMenuItem(value: 'external', child: Text('External')),
               DropdownMenuItem(value: 'internal', child: Text('Internal')),
             ],
@@ -369,139 +550,6 @@ class _AssetServiceOrderIndexScreenState
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCard(AssetServiceOrder order) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  AssetServiceOrderDetailScreen(orderId: order.id),
-            ),
-          );
-          if (result == true) _loadOrders();
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      order.number,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: Colors.teal),
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        margin: const EdgeInsets.only(right: 6),
-                        decoration: BoxDecoration(
-                          color: order.serviceType == 'internal'
-                              ? Colors.blueGrey.shade100
-                              : Colors.deepPurple.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          order.serviceType == 'internal'
-                              ? 'Internal'
-                              : 'External',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: order.serviceType == 'internal'
-                                ? Colors.blueGrey.shade800
-                                : Colors.deepPurple.shade800,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _statusColor(order.status).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          _statusLabel(order.status),
-                          style: TextStyle(
-                            color: _statusColor(order.status),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.business, size: 14, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      order.serviceType == 'internal'
-                          ? '—'
-                          : (order.supplierName ?? '-'),
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.store, size: 14, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '${order.outletName ?? '-'} • ${order.warehouseOutletName ?? '-'}',
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today,
-                      size: 14, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Text(order.date,
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.black54)),
-                  const Spacer(),
-                  const Icon(Icons.person, size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(order.creatorName ?? '-',
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.black54)),
-                ],
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

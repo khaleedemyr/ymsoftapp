@@ -17,9 +17,13 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
   final _scrollController = ScrollController();
 
   List<AssetDisposal> _disposals = [];
+  List<Map<String, dynamic>> _outlets = [];
   bool _isLoading = false;
+  bool _isPreparing = true;
   bool _hasMore = true;
   int _currentPage = 1;
+  int? _userOutletId;
+  int? _outletIdFilter;
   String? _dateFrom;
   String? _dateTo;
   String _statusFilter = '';
@@ -28,7 +32,7 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDisposals();
+    _loadCreateData();
     _scrollController.addListener(_onScroll);
   }
 
@@ -45,6 +49,24 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
     }
   }
 
+  Future<void> _loadCreateData() async {
+    final data = await _service.getCreateData();
+    if (mounted) {
+      setState(() {
+        _outlets = (data?['outlets'] as List<dynamic>?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [];
+        _userOutletId = int.tryParse(data?['user']?['id_outlet']?.toString() ?? '');
+        if (_userOutletId != null && _userOutletId != 1) {
+          _outletIdFilter = _userOutletId;
+        }
+        _isPreparing = false;
+      });
+    }
+    await _loadDisposals();
+  }
+
   Future<void> _loadDisposals({bool reset = true}) async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -59,6 +81,7 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
       dateTo: _dateTo,
       status: _statusFilter.isNotEmpty ? _statusFilter : null,
       type: _typeFilter.isNotEmpty ? _typeFilter : null,
+      outletId: _outletIdFilter,
       page: _currentPage,
     );
     if (data != null) {
@@ -77,27 +100,51 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
     await _loadDisposals(reset: false);
   }
 
-  Widget _statusBadge(String status) {
-    Color bg, fg;
-    String label;
+  Future<void> _deleteFromIndex(AssetDisposal disposal) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Disposal?'),
+        content: Text('Disposal ${disposal.number} akan dihapus permanen.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final result = await _service.destroy(disposal.id);
+    if (!mounted) return;
+    final ok = result['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? (ok ? 'Berhasil dihapus' : 'Gagal menghapus')),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) {
+      await _loadDisposals();
+    }
+  }
+
+  Color _statusColor(String status) {
     switch (status) {
       case 'waiting_approval':
-        bg = Colors.amber.shade100; fg = Colors.amber.shade800; label = 'Waiting';
-        break;
+        return Colors.amber.shade800;
       case 'approved':
-        bg = Colors.green.shade100; fg = Colors.green.shade800; label = 'Approved';
-        break;
+        return Colors.green.shade800;
       case 'rejected':
-        bg = Colors.red.shade100; fg = Colors.red.shade800; label = 'Rejected';
-        break;
+        return Colors.red.shade800;
       default:
-        bg = Colors.grey.shade100; fg = Colors.grey.shade800; label = status;
+        return Colors.grey.shade800;
     }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
-      child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
-    );
   }
 
   Widget _typeBadge(String type) {
@@ -113,6 +160,19 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isSold ? Colors.blue.shade700 : Colors.grey.shade700),
       ),
     );
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'waiting_approval':
+        return 'WAITING APPROVAL';
+      case 'approved':
+        return 'APPROVED';
+      case 'rejected':
+        return 'REJECTED';
+      default:
+        return status.toUpperCase();
+    }
   }
 
   Future<void> _pickDate(bool isFrom) async {
@@ -150,6 +210,11 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
       ),
       body: Column(
         children: [
+          if (_isPreparing)
+            const Expanded(
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else ...[
           Container(
             color: Colors.white,
             padding: const EdgeInsets.all(12),
@@ -181,6 +246,24 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
                       _dropdownChip('Status', _statusFilter, {'': 'Semua', 'waiting_approval': 'Waiting', 'approved': 'Approved', 'rejected': 'Rejected'}, (v) { setState(() => _statusFilter = v); _loadDisposals(); }),
                       const SizedBox(width: 6),
                       _dropdownChip('Tipe', _typeFilter, {'': 'Semua', 'discard': 'Dibuang', 'sold': 'Dijual'}, (v) { setState(() => _typeFilter = v); _loadDisposals(); }),
+                      if (_userOutletId == 1) ...[
+                        const SizedBox(width: 6),
+                        _dropdownChip(
+                          'Outlet',
+                          _outletIdFilter?.toString() ?? '',
+                          {
+                            '': 'Semua Outlet',
+                            ...{
+                              for (final o in _outlets)
+                                (o['id_outlet']?.toString() ?? ''): (o['nama_outlet']?.toString() ?? '-')
+                            }
+                          },
+                          (v) {
+                            setState(() => _outletIdFilter = v.isEmpty ? null : int.tryParse(v));
+                            _loadDisposals();
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -192,54 +275,95 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
               onRefresh: _loadDisposals,
               child: _disposals.isEmpty && !_isLoading
                   ? const Center(child: Text('Tidak ada data disposal', style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
+                  : ListView(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(12),
-                      itemCount: _disposals.length + (_isLoading ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == _disposals.length) {
-                          return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
-                        }
-                        final d = _disposals[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () async {
-                              final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => AssetDisposalDetailScreen(disposalId: d.id)));
-                              if (result == true) _loadDisposals();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(child: Text(d.number, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.teal))),
-                                      _typeBadge(d.type),
-                                      const SizedBox(width: 6),
-                                      _statusBadge(d.status),
-                                    ],
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            headingRowColor: WidgetStateProperty.all(Colors.teal.shade50),
+                            columns: const [
+                              DataColumn(label: Text('Nomor')),
+                              DataColumn(label: Text('Tanggal')),
+                              DataColumn(label: Text('Pemilik')),
+                              DataColumn(label: Text('Lokasi')),
+                              DataColumn(label: Text('Tipe')),
+                              DataColumn(label: Text('Status')),
+                              DataColumn(label: Text('Pembeli')),
+                              DataColumn(label: Text('Dibuat Oleh')),
+                              DataColumn(label: Text('Aksi')),
+                            ],
+                            rows: _disposals.map((d) {
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(d.number)),
+                                  DataCell(Text(d.date)),
+                                  DataCell(Text(d.ownerOutletName ?? '-')),
+                                  DataCell(Text(d.outletName ?? '-')),
+                                  DataCell(_typeBadge(d.type)),
+                                  DataCell(
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: _statusColor(d.status).withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        _statusLabel(d.status),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: _statusColor(d.status),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  const SizedBox(height: 6),
-                                  Text(d.date, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                                  const SizedBox(height: 4),
-                                  Text('${d.outletName ?? '-'} • ${d.creatorName ?? '-'}', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-                                  if (d.type == 'sold' && d.buyerName != null && d.buyerName!.isNotEmpty) ...[
-                                    const SizedBox(height: 4),
-                                    Text('Pembeli: ${d.buyerName}', style: TextStyle(fontSize: 12, color: Colors.blue.shade600)),
-                                  ],
+                                  DataCell(Text(d.type == 'sold' ? (d.buyerName ?? '-') : '-')),
+                                  DataCell(Text(d.creatorName ?? '-')),
+                                  DataCell(
+                                    Row(
+                                      children: [
+                                        TextButton(
+                                          onPressed: () async {
+                                            final result = await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => AssetDisposalDetailScreen(disposalId: d.id),
+                                              ),
+                                            );
+                                            if (result == true) _loadDisposals();
+                                          },
+                                          child: const Text('Lihat'),
+                                        ),
+                                        if (d.status == 'waiting_approval')
+                                          TextButton(
+                                            onPressed: () => _deleteFromIndex(d),
+                                            child: const Text(
+                                              'Hapus',
+                                              style: TextStyle(color: Colors.red),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
-                              ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        if (_isLoading)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: CircularProgressIndicator(),
                             ),
                           ),
-                        );
-                      },
+                      ],
                     ),
             ),
           ),
+          ],
         ],
       ),
     );
@@ -247,6 +371,7 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
 
   Widget _filterChip(String label, String? value, VoidCallback onTap, VoidCallback onClear) {
     final hasValue = value != null && value.isNotEmpty;
+    final String displayText = hasValue ? value.toString() : label;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -259,7 +384,7 @@ class _AssetDisposalIndexScreenState extends State<AssetDisposalIndexScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(hasValue ? value! : label, style: TextStyle(fontSize: 12, color: hasValue ? Colors.teal.shade700 : Colors.grey.shade600)),
+            Text(displayText, style: TextStyle(fontSize: 12, color: hasValue ? Colors.teal.shade700 : Colors.grey.shade600)),
             if (hasValue) ...[
               const SizedBox(width: 4),
               GestureDetector(

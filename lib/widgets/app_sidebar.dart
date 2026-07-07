@@ -11,6 +11,7 @@ import '../screens/web_only_feature_screen.dart';
 import '../screens/my_attendance_screen.dart';
 import '../screens/purchase_requisition_list_screen.dart';
 import '../screens/tickets/ticket_list_screen.dart';
+import '../screens/daily_report/daily_report_index_screen.dart';
 import '../screens/guest_comment/guest_comment_list_screen.dart';
 import '../screens/support/support_admin_panel_screen.dart';
 import '../screens/omnichannel/omnichannel_chat_analytics_screen.dart';
@@ -40,6 +41,13 @@ import '../screens/outlet_rejection/outlet_rejection_index_screen.dart';
 import '../screens/retail_warehouse_food/retail_warehouse_food_index_screen.dart';
 import '../screens/outlet_wip/outlet_wip_index_screen.dart';
 import '../screens/outlet_wip/outlet_wip_report_screen.dart';
+import '../screens/upselling_sales_achievement/upselling_sales_achievement_index_screen.dart';
+import '../screens/employee_coaching/employee_coaching_index_screen.dart';
+import '../screens/fb_product_calibration/fb_product_calibration_index_screen.dart';
+import '../screens/fb_product_calibration/fb_product_calibration_report_screen.dart';
+import '../screens/npd_plan_report/npd_plan_report_index_screen.dart';
+import '../screens/competitor_benchmark_report/competitor_benchmark_report_index_screen.dart';
+import '../screens/employee_onboarding/employee_onboarding_index_screen.dart';
 import '../screens/outlet_inventory/outlet_stock_position_screen.dart';
 import '../screens/inventory/warehouse_stock_position_screen.dart';
 import '../screens/inventory/warehouse_stock_card_screen.dart';
@@ -54,6 +62,7 @@ import '../screens/asset_inventory_adjustment/asset_inventory_adjustment_index_s
 import '../screens/asset_service_order/asset_service_order_index_screen.dart';
 import '../screens/asset_disposal/asset_disposal_index_screen.dart';
 import '../screens/asset_inventory_report/asset_inventory_report_screen.dart';
+import '../screens/asset_serial/asset_serial_hub_screen.dart';
 import '../screens/outlet_serial_receive/outlet_serial_receive_list_screen.dart';
 import '../screens/serial_tracking/serial_tracking_screen.dart';
 import '../screens/warehouse_internal_use_waste/warehouse_internal_use_waste_index_screen.dart';
@@ -96,10 +105,12 @@ import '../screens/items/item_index_screen.dart';
 import '../screens/data_level/data_level_index_screen.dart';
 import '../screens/jabatan/jabatan_index_screen.dart';
 import '../screens/stock_cut/stock_cut_index_screen.dart';
+import '../screens/stock_cut/stock_cut_variance_report_screen.dart';
 import '../screens/mk_production/mk_production_index_screen.dart';
 import '../screens/announcement/announcement_index_screen.dart';
 import '../screens/promos/promo_index_screen.dart';
 import '../screens/marketing_visit_checklist/marketing_visit_checklist_index_screen.dart';
+import '../screens/qa2_audit/qa2_audit_index_screen.dart';
 import '../screens/locked_budget_food_categories/locked_budget_food_category_index_screen.dart';
 import '../screens/budget_management/budget_management_index_screen.dart';
 import '../screens/chart_of_accounts/chart_of_account_index_screen.dart';
@@ -689,7 +700,9 @@ class _AppSidebarState extends State<AppSidebar> {
         route.startsWith('/report-invoice-outlet')) {
       route = '/report-invoice-outlet';
     }
-    if (route == '/stock-cut' || route.startsWith('/stock-cut')) {
+    if (route.startsWith('/stock-cut/variance-report')) {
+      route = '/stock-cut/variance-report';
+    } else if (route == '/stock-cut' || route.startsWith('/stock-cut/')) {
       route = '/stock-cut';
     }
     if (route == '/categories' || route.startsWith('/categories')) {
@@ -733,6 +746,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/report/activity-log', // Activity Log Report
       '/report-invoice-outlet', // Laporan Invoice Outlet
       '/stock-cut', // Stock Cut → native di mobile, WebView di web
+      '/stock-cut/variance-report', // Laporan Minus Stock Cut
       '/user-shifts', // Input Shift Mingguan
       '/packing-list', // Packing List
       '/delivery-order', // Delivery Order
@@ -835,6 +849,13 @@ class _AppSidebarState extends State<AppSidebar> {
       '/tickets',
       '/purchase-requisitions/tracking-report',
       '/reports/floor-order-vs-forecast',
+      '/upselling-sales-achievement',
+      '/employee-coaching',
+      '/fb-product-calibration',
+      '/report/fb-product-calibration',
+      '/npd-plan-report',
+      '/competitor-benchmark-report',
+      '/employee-onboarding',
       // Human Resource (tambah)
       '/divisis',
       '/users',
@@ -937,6 +958,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/scrapper-google-review',
       '/promos',
       '/marketing-visit-checklist',
+      '/qa2-audits',
       '/roulette',
       '/menu-book',
       '/web-profile',
@@ -1086,6 +1108,13 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const PurchaseRequisitionListScreen(),
         ),
       );
+    } else if (route == '/daily-report') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const DailyReportIndexScreen(),
+        ),
+      );
     } else if (route == '/tickets') {
       Navigator.push(
         context,
@@ -1098,6 +1127,55 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const FloorOrderVsForecastScreen(),
+        ),
+      );
+    } else if (route == '/upselling-sales-achievement') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const UpsellingSalesAchievementIndexScreen(),
+        ),
+      );
+    } else if (route == '/employee-coaching') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const EmployeeCoachingIndexScreen(),
+        ),
+      );
+    } else if (route == '/fb-product-calibration') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const FbProductCalibrationIndexScreen(),
+        ),
+      );
+    } else if (route == '/report/fb-product-calibration') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const FbProductCalibrationReportScreen(),
+        ),
+      );
+    } else if (route == '/npd-plan-report') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const NpdPlanReportIndexScreen(),
+        ),
+      );
+    } else if (route == '/competitor-benchmark-report') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CompetitorBenchmarkReportIndexScreen(),
+        ),
+      );
+    } else if (route == '/employee-onboarding') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const EmployeeOnboardingIndexScreen(),
         ),
       );
     } else if (route == '/guest-comment-forms') {
@@ -1163,6 +1241,25 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const ReportInvoiceOutletScreen(),
         ),
       );
+    } else if (route == '/stock-cut/variance-report') {
+      if (kIsWeb) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const WebOnlyFeatureScreen(
+              featureName: 'Laporan Minus Stock Cut',
+              webPath: '/stock-cut/variance-report',
+            ),
+          ),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const StockCutVarianceReportScreen(),
+          ),
+        );
+      }
     } else if (route == '/stock-cut') {
       // Mobile (Android/iOS): native Stock Cut screens; Web: WebView
       if (kIsWeb) {
@@ -1386,6 +1483,13 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const AssetInventoryReportScreen(),
         ),
       );
+    } else if (route == '/asset-serials') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AssetSerialHubScreen(),
+        ),
+      );
     } else if (route == '/outlet-serial-receive') {
       Navigator.push(
         context,
@@ -1562,6 +1666,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const MarketingVisitChecklistIndexScreen(),
+        ),
+      );
+    } else if (route == '/qa2-audits') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const Qa2AuditIndexScreen(),
         ),
       );
     } else if (route == '/categories') {
