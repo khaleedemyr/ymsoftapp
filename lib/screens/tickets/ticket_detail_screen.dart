@@ -11,6 +11,7 @@ import '../../utils/ticket_status.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 import '../../widgets/tickets/ticket_status_change_dialog.dart';
+import '../it_work_report/it_work_report_form_screen.dart';
 import 'ticket_editor_screen.dart';
 
 class TicketDetailScreen extends StatefulWidget {
@@ -359,7 +360,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     return AppScaffold(
       title: 'Detail ticket',
       showDrawer: false,
-      actions: _loading || _ticket == null || (!_canManageTicket && !_canUpdateStatus)
+      actions: _loading || _ticket == null
           ? null
           : [
               if (_canManageTicket)
@@ -376,13 +377,32 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
                   },
                 ),
               PopupMenuButton<String>(
-                onSelected: (v) {
+                onSelected: (v) async {
                   if (v == 'status') _changeStatus();
                   if (v == 'del') _delete();
+                  if (v == 'it_work') {
+                    final t = _ticket!;
+                    final outletRaw = t['outlet_id'] ?? t['id_outlet'];
+                    final outletId = outletRaw is int
+                        ? outletRaw
+                        : int.tryParse(outletRaw?.toString() ?? '');
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ItWorkReportFormScreen(
+                          prefillTicketId: widget.ticketId,
+                          prefillTicketNumber: t['ticket_number']?.toString(),
+                          prefillTicketTitle: t['title']?.toString(),
+                          prefillOutletId: outletId,
+                        ),
+                      ),
+                    );
+                  }
                 },
                 itemBuilder: (_) => [
                   if (_canUpdateStatus)
                     const PopupMenuItem(value: 'status', child: Text('Ubah status')),
+                  const PopupMenuItem(value: 'it_work', child: Text('Buat IT Work Report')),
                   if (_canManageTickets)
                     const PopupMenuItem(value: 'del', child: Text('Hapus ticket')),
                 ],

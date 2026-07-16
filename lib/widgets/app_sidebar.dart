@@ -12,6 +12,7 @@ import '../screens/my_attendance_screen.dart';
 import '../screens/purchase_requisition_list_screen.dart';
 import '../screens/tickets/ticket_list_screen.dart';
 import '../screens/daily_report/daily_report_index_screen.dart';
+import '../screens/it_work_report/it_work_report_index_screen.dart';
 import '../screens/guest_comment/guest_comment_list_screen.dart';
 import '../screens/support/support_admin_panel_screen.dart';
 import '../screens/omnichannel/omnichannel_chat_analytics_screen.dart';
@@ -46,6 +47,8 @@ import '../screens/employee_coaching/employee_coaching_index_screen.dart';
 import '../screens/fb_product_calibration/fb_product_calibration_index_screen.dart';
 import '../screens/fb_product_calibration/fb_product_calibration_report_screen.dart';
 import '../screens/npd_plan_report/npd_plan_report_index_screen.dart';
+import '../screens/sop_development_completion/sop_development_completion_index_screen.dart';
+import '../screens/just_academy/my_training_index_screen.dart';
 import '../screens/competitor_benchmark_report/competitor_benchmark_report_index_screen.dart';
 import '../screens/employee_onboarding/employee_onboarding_index_screen.dart';
 import '../screens/outlet_inventory/outlet_stock_position_screen.dart';
@@ -847,6 +850,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/master-report',
       '/daily-report',
       '/tickets',
+      '/it-work-reports',
       '/purchase-requisitions/tracking-report',
       '/reports/floor-order-vs-forecast',
       '/upselling-sales-achievement',
@@ -854,6 +858,8 @@ class _AppSidebarState extends State<AppSidebar> {
       '/fb-product-calibration',
       '/report/fb-product-calibration',
       '/npd-plan-report',
+      '/sop-development-completion',
+      '/just-academy/my-training',
       '/competitor-benchmark-report',
       '/employee-onboarding',
       // Human Resource (tambah)
@@ -1122,6 +1128,13 @@ class _AppSidebarState extends State<AppSidebar> {
           builder: (context) => const TicketListScreen(),
         ),
       );
+    } else if (route == '/it-work-reports') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ItWorkReportIndexScreen(),
+        ),
+      );
     } else if (route == '/reports/floor-order-vs-forecast') {
       Navigator.push(
         context,
@@ -1162,6 +1175,20 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const NpdPlanReportIndexScreen(),
+        ),
+      );
+    } else if (route == '/sop-development-completion') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const SopDevelopmentCompletionIndexScreen(),
+        ),
+      );
+    } else if (route == '/just-academy/my-training') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MyTrainingIndexScreen(),
         ),
       );
     } else if (route == '/competitor-benchmark-report') {

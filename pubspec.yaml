@@ -44,7 +44,13 @@ dependencies:
   
   # Image Picker
   image_picker: ^1.1.2
-  
+
+  # Location (IT Work Report evidence geo tag)
+  geolocator: ^13.0.2
+
+  # Image stamp for IT Work Report camera evidence (keep <4.5 to stay compatible with lottie ^2.7 / archive ^3)
+  image: ^4.3.0
+
   # File Picker
   file_picker: ^8.0.0+1
 

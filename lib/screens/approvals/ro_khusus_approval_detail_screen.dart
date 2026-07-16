@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../services/approval_service.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/app_footer.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -20,7 +21,9 @@ class ROKhususApprovalDetailScreen extends StatefulWidget {
 
 class _ROKhususApprovalDetailScreenState extends State<ROKhususApprovalDetailScreen> {
   final ApprovalService _approvalService = ApprovalService();
+  final AuthService _authService = AuthService();
   Map<String, dynamic>? _approvalData;
+  Map<String, dynamic>? _userData;
   bool _isLoading = true;
   bool _isProcessing = false;
   final TextEditingController _rejectReasonController = TextEditingController();
@@ -28,7 +31,54 @@ class _ROKhususApprovalDetailScreenState extends State<ROKhususApprovalDetailScr
   @override
   void initState() {
     super.initState();
+    _loadUser();
     _loadApprovalDetails();
+  }
+
+  Future<void> _loadUser() async {
+    final userData = await _authService.getUserData();
+    if (mounted) {
+      setState(() => _userData = userData);
+    }
+  }
+
+  bool _isSuperadmin() {
+    return _userData?['id_role'] == '5af56935b011a' && _userData?['status'] == 'A';
+  }
+
+  bool _canApproveCurrent() {
+    if (_approvalData?['status']?.toString() != 'submitted') return false;
+    if (_isSuperadmin()) return true;
+
+    final flows = (_approvalData?['approval_flows'] as List<dynamic>? ?? [])
+        .map((f) => Map<String, dynamic>.from(f as Map))
+        .toList();
+    if (flows.isNotEmpty) {
+      final pending = flows
+          .where((f) => f['status']?.toString() == 'PENDING')
+          .toList()
+        ..sort((a, b) =>
+            (int.tryParse(a['approval_level']?.toString() ?? '0') ?? 0)
+                .compareTo(int.tryParse(b['approval_level']?.toString() ?? '0') ?? 0));
+      if (pending.isEmpty) return false;
+      return pending.first['approver_id']?.toString() == _userData?['id']?.toString();
+    }
+
+    final warehouseName = _approvalData?['warehouse_outlet']?['name']?.toString();
+    final userJabatan = _userData?['id_jabatan'];
+    final userStatus = _userData?['status'];
+    if (userStatus != 'A') return false;
+
+    if (warehouseName == 'Kitchen') {
+      return [163, 174, 180, 345, 346, 347, 348, 349].contains(userJabatan);
+    }
+    if (warehouseName == 'Bar') {
+      return [175, 182, 323].contains(userJabatan);
+    }
+    if (warehouseName == 'Service') {
+      return [176, 322, 164, 321].contains(userJabatan);
+    }
+    return false;
   }
 
   @override
@@ -993,9 +1043,10 @@ class _ROKhususApprovalDetailScreenState extends State<ROKhususApprovalDetailScr
               _buildSection(
                 'Approval Flow',
                 approvalFlows.map((flow) {
-                  final isApproved = flow['approved'] == true;
-                  final isRejected = flow['approved'] == false;
-                  final isPending = flow['approved'] == null;
+                  final status = flow['status']?.toString() ?? 'PENDING';
+                  final isApproved = status == 'APPROVED';
+                  final isRejected = status == 'REJECTED';
+                  final isPending = status == 'PENDING';
                   
                   Color statusColor;
                   IconData statusIcon;
@@ -1004,15 +1055,15 @@ class _ROKhususApprovalDetailScreenState extends State<ROKhususApprovalDetailScr
                   if (isApproved) {
                     statusColor = const Color(0xFF10B981);
                     statusIcon = Icons.check_circle;
-                    statusText = 'Approved';
+                    statusText = 'APPROVED';
                   } else if (isRejected) {
                     statusColor = const Color(0xFFEF4444);
                     statusIcon = Icons.cancel;
-                    statusText = 'Rejected';
+                    statusText = 'REJECTED';
                   } else {
-                    statusColor = Colors.grey;
+                    statusColor = const Color(0xFFF59E0B);
                     statusIcon = Icons.pending;
-                    statusText = 'Pending';
+                    statusText = 'PENDING';
                   }
                   
                   return Container(
@@ -1049,7 +1100,7 @@ class _ROKhususApprovalDetailScreenState extends State<ROKhususApprovalDetailScr
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                flow['role'] ?? flow['approver_role'] ?? 'Approver',
+                                'Level ${flow['approval_level'] ?? '-'}',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -1091,8 +1142,8 @@ class _ROKhususApprovalDetailScreenState extends State<ROKhususApprovalDetailScr
                 icon: Icons.assignment_turned_in,
               ),
 
-            // Action Buttons - Only show if status is submitted
-            if (status == 'submitted') ...[
+            // Action Buttons - Only show if status is submitted and user's turn
+            if (status == 'submitted' && _canApproveCurrent()) ...[
               const SizedBox(height: 24),
               Row(
                 children: [

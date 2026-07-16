@@ -392,4 +392,22 @@ class GoogleReviewService {
     final uri = Uri.parse('$_prefix/ai/items/$itemId/severity');
     return _authorizedPutJson(uri, {'severity': severity});
   }
+
+  Future<Map<String, dynamic>> updateItemClassification(
+    int itemId, {
+    String? severity,
+    List<String>? topics,
+    String? followUpTarget,
+    List<String>? impact,
+    String? summaryId,
+  }) async {
+    final uri = Uri.parse('$_prefix/ai/items/$itemId/classification');
+    final body = <String, dynamic>{};
+    if (severity != null) body['severity'] = severity;
+    if (topics != null) body['topics'] = topics;
+    if (followUpTarget != null) body['follow_up_target'] = followUpTarget;
+    if (impact != null) body['impact'] = impact;
+    if (summaryId != null) body['summary_id'] = summaryId;
+    return _authorizedPutJson(uri, body);
+  }
 }

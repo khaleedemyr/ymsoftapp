@@ -74,6 +74,42 @@ class RetailNonFoodService {
     return null;
   }
 
+  Future<List<Map<String, dynamic>>> getCategoryBudgets({int? outletId}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final queryParams = <String, String>{};
+      if (outletId != null) {
+        queryParams['outlet_id'] = outletId.toString();
+      }
+
+      final uri = Uri.parse('$baseUrl/api/approval-app/retail-non-food/category-budgets').replace(
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(
+            (data['data'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error getting retail non food category budgets: $e');
+    }
+    return [];
+  }
+
   Future<Map<String, dynamic>?> getDetail(int id) async {
     try {
       final token = await _getToken();

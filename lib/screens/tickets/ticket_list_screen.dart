@@ -677,7 +677,9 @@ class _TicketListScreenState extends State<TicketListScreen> {
       ('Semua', v('total'), 'all', const Color(0xFF64748B)),
       ('Open', v('open'), 'open', const Color(0xFF0EA5E9)),
       ('Proses', v('in_progress'), 'in_progress', const Color(0xFFF59E0B)),
-      ('Closed', v('closed'), 'closed', const Color(0xFF94A3B8)),
+      ('Pending', v('pending'), 'pending', const Color(0xFF8B5CF6)),
+      ('Closed', v('closed'), 'closed', const Color(0xFF10B981)),
+      ('Batal', v('cancelled'), 'cancelled', const Color(0xFFF43F5E)),
     ];
     return SizedBox(
       height: 52,

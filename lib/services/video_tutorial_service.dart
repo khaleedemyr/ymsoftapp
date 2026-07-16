@@ -76,5 +76,38 @@ class VideoTutorialService {
       };
     }
   }
+
+  Future<Map<String, dynamic>> getShareLink(int videoId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      if (token == null) {
+        return {'success': false, 'message': 'Token tidak ditemukan'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/video-tutorials/$videoId/share-link'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data is Map<String, dynamic>) {
+        return data;
+      }
+
+      return {
+        'success': false,
+        'message': (data is Map ? data['message'] : null)?.toString() ??
+            'Gagal membuat link share',
+      };
+    } catch (e) {
+      print('Error getting video tutorial share link: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }
 

@@ -11,7 +11,10 @@ import '../services/auth_service.dart';
 import '../services/approval_service.dart';
 import '../services/npd_plan_report_service.dart';
 import '../models/npd_plan_report_models.dart';
+import '../services/sop_development_completion_service.dart';
+import '../models/sop_development_completion_models.dart';
 import 'npd_plan_report/npd_plan_report_show_screen.dart';
+import 'sop_development_completion/sop_development_completion_show_screen.dart';
 import '../services/employee_onboarding_service.dart';
 import '../models/employee_onboarding_models.dart';
 import 'employee_onboarding/employee_onboarding_show_screen.dart';
@@ -40,6 +43,8 @@ import '../widgets/approvals/employee_resignation_approval_card.dart';
 import '../widgets/approvals/lost_breakage_approval_card.dart';
 import '../widgets/approvals/qa2_cap_approval_card.dart';
 import '../widgets/approvals/npd_plan_report_approval_card.dart';
+import '../widgets/approvals/sop_development_completion_approval_card.dart';
+import '../screens/sop_development_completion/sop_development_completion_ui.dart';
 import '../widgets/approvals/employee_onboarding_approval_card.dart';
 import '../widgets/approvals/asset_transfer_approval_card.dart';
 import '../widgets/approvals/asset_owner_transfer_approval_card.dart';
@@ -76,6 +81,7 @@ import 'approvals/qa2_cap_approval_detail_screen.dart';
 import '../widgets/approval_list_modal.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/customer_voice/capa_home_verification_card.dart';
+import '../widgets/just_academy/just_academy_home_card.dart';
 import 'login_screen.dart';
 import 'web_only_feature_screen.dart';
 
@@ -103,6 +109,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // Approval states
   final ApprovalService _approvalService = ApprovalService();
   final NpdPlanReportService _npdPlanReportService = NpdPlanReportService();
+  final SopDevelopmentCompletionService _sopDevelopmentService = SopDevelopmentCompletionService();
   final EmployeeOnboardingService _employeeOnboardingService = EmployeeOnboardingService();
   List<PurchaseRequisitionApproval> _prApprovals = [];
   List<PurchaseOrderOpsApproval> _poOpsApprovals = [];
@@ -128,6 +135,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<Qa2CapApproval> _qa2CapApprovals = [];
   List<NpdPendingApproval> _npdPlanReportApprovals = [];
   int? _npdApprovalBusyId;
+  List<SopPendingApproval> _sopDevelopmentApprovals = [];
+  int? _sopApprovalBusyId;
   List<EoPendingApproval> _employeeOnboardingApprovals = [];
   int? _eoApprovalBusyId;
   List<AssetInventoryTransferApproval> _assetTransferApprovals = [];
@@ -776,6 +785,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingSopDevelopmentApprovals() async {
+    try {
+      final approvals = await _sopDevelopmentService.getPendingApprovals();
+      if (mounted) {
+        setState(() => _sopDevelopmentApprovals = approvals);
+      }
+    } catch (e) {
+      print('Error loading SOP Development approvals: $e');
+    }
+  }
+
   Future<void> _loadPendingEmployeeOnboardingApprovals() async {
     try {
       final approvals = await _employeeOnboardingService.getPendingApprovals();
@@ -831,6 +851,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
     if (res['success'] == true) {
       await _loadPendingNpdPlanReportApprovals();
+    }
+  }
+
+  Future<void> _handleSopApproval(SopPendingApproval approval, {required bool reject}) async {
+    final notesCtrl = TextEditingController();
+    if (reject) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Tolak SOP'),
+          content: TextField(
+            controller: notesCtrl,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Alasan penolakan *'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            FilledButton(
+              onPressed: () {
+                if (notesCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Konfirmasi'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
+    setState(() => _sopApprovalBusyId = approval.id);
+    final res = reject
+        ? await _sopDevelopmentService.reject(id: approval.id, notes: notesCtrl.text.trim())
+        : await _sopDevelopmentService.approve(id: approval.id);
+    if (!mounted) return;
+    setState(() => _sopApprovalBusyId = null);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(res['message']?.toString() ?? 'Selesai')),
+    );
+    if (res['success'] == true) {
+      await _loadPendingSopDevelopmentApprovals();
     }
   }
 
@@ -1233,6 +1295,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'npd_plan_report':
           await _loadPendingNpdPlanReportApprovals();
           break;
+        case 'sop_development_completion':
+          await _loadPendingSopDevelopmentApprovals();
+          break;
         case 'employee_onboarding':
           await _loadPendingEmployeeOnboardingApprovals();
           break;
@@ -1326,6 +1391,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _loadPendingLostBreakageApprovals(),
         _loadPendingQa2CapApprovals(),
         _loadPendingNpdPlanReportApprovals(),
+        _loadPendingSopDevelopmentApprovals(),
         _loadPendingEmployeeOnboardingApprovals(),
         _loadPendingAssetTransferApprovals(),
         _loadPendingAssetOwnerTransferApprovals(),
@@ -1542,6 +1608,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   _buildHighlightsSection(),
 
                   CapaHomeVerificationCard(key: ValueKey<int>(_capaHomeRefreshKey)),
+                  const JustAcademyHomeCard(),
                   const SizedBox(height: 20),
                   
                   // Approvals Section
@@ -3583,6 +3650,31 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ],
 
+            // SOP Development Completion Approvals
+            if (_sopDevelopmentApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'SOP Development',
+                _sopDevelopmentApprovals.length,
+                SopDevelopmentCompletionUi.primary,
+                _sopDevelopmentApprovals.take(3).map((approval) => SopDevelopmentCompletionApprovalCard(
+                  approval: approval,
+                  busy: _sopApprovalBusyId == approval.id,
+                  onOpen: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SopDevelopmentCompletionShowScreen(recordId: approval.id),
+                      ),
+                    ).then((_) => _refreshApprovalType('sop_development_completion'));
+                  },
+                  onApprove: () => _handleSopApproval(approval, reject: false),
+                  onReject: () => _handleSopApproval(approval, reject: true),
+                )).toList(),
+                'sop_development_completion',
+              ),
+            ],
+
             // Employee Onboarding Approvals
             if (_employeeOnboardingApprovals.isNotEmpty) ...[
               const SizedBox(height: 20),
@@ -4006,6 +4098,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         break;
       case 'npd_plan_report':
         approvals = _npdPlanReportApprovals;
+        break;
+      case 'sop_development_completion':
+        approvals = _sopDevelopmentApprovals;
         break;
       case 'employee_onboarding':
         approvals = _employeeOnboardingApprovals;

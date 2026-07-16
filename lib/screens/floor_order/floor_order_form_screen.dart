@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../services/floor_order_service.dart';
 import '../../services/auth_service.dart';
+import '../../utils/floor_order_edit_policy.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
 
@@ -45,6 +46,10 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
   int? _foScheduleId;
   String _foMode = 'RO Utama';
 
+  final List<Map<String, dynamic>> _approvers = [];
+  final TextEditingController _approverSearchController = TextEditingController();
+  bool _isSearchingApprovers = false;
+
   final List<_FloorOrderItemInput> _items = [];
 
   bool _isLoading = false;
@@ -64,6 +69,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
 
   int? _orderId;
   String? _currentStatus;
+  bool _canEdit = true;
   Map<int, double> _editItemQty = {};
 
   @override
@@ -81,6 +87,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     _arrivalDateController.dispose();
     _descriptionController.dispose();
     _itemSearchController.dispose();
+    _approverSearchController.dispose();
     _autoSaveTimer?.cancel();
     _forecastBudgetDebounce?.cancel();
     for (final cat in _categories) {
@@ -147,6 +154,18 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     if (!mounted) return;
 
     if (data != null) {
+      if (!FloorOrderEditPolicy.canEditFromApi(data)) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          _showMessage(FloorOrderEditPolicy.lockedMessage);
+          Navigator.pop(context);
+        }
+        return;
+      }
+
+      _canEdit = true;
       _orderId = data['id'] as int?;
       _currentStatus = data['status']?.toString();
       _tanggalController.text = data['tanggal']?.toString() ?? _tanggalController.text;
@@ -198,6 +217,21 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
       if (_items.isEmpty) {
         _items.add(_FloorOrderItemInput());
       }
+
+      _approvers.clear();
+      final flows = data['approval_flows'] as List<dynamic>? ?? [];
+      for (final raw in flows) {
+        final flow = raw as Map<String, dynamic>;
+        final approver = flow['approver'] as Map<String, dynamic>?;
+        final approverId = flow['approver_id'] ?? approver?['id'];
+        if (approverId == null) continue;
+        _approvers.add({
+          'id': approverId,
+          'nama_lengkap': approver?['nama_lengkap']?.toString() ?? '',
+          'email': approver?['email']?.toString() ?? '',
+          'jabatan': approver?['jabatan']?.toString() ?? '',
+        });
+      }
     }
 
     if (_orderId != null) {
@@ -218,6 +252,125 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
   String _getCurrentDayName() {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[DateTime.now().weekday % 7];
+  }
+
+  List<int>? _buildApproverPayload() {
+    if (_foMode != 'RO Khusus') return null;
+    return _approvers.map((a) => int.parse(a['id'].toString())).toList();
+  }
+
+  String? _validateKhususApprovers() {
+    if (_foMode == 'RO Khusus' && _approvers.isEmpty) {
+      return 'Minimal satu approver wajib dipilih untuk RO Khusus.';
+    }
+    return null;
+  }
+
+  Future<void> _searchAndAddApprover() async {
+    final query = _approverSearchController.text.trim();
+    if (query.length < 2) {
+      _showMessage('Ketik minimal 2 karakter untuk mencari approver');
+      return;
+    }
+
+    setState(() => _isSearchingApprovers = true);
+    final users = await _service.getApprovers(search: query);
+    if (!mounted) return;
+    setState(() => _isSearchingApprovers = false);
+
+    if (users.isEmpty) {
+      _showMessage('Approver tidak ditemukan');
+      return;
+    }
+
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: ListView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Text('Pilih Approver', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 12),
+              ...users.map((user) {
+                final name = user['nama_lengkap']?.toString() ?? '-';
+                final subtitle = user['jabatan']?.toString() ?? user['email']?.toString() ?? '';
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFF0D9488).withOpacity(0.12),
+                    child: Text(
+                      name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                      style: const TextStyle(color: Color(0xFF0D9488), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  onTap: () => Navigator.pop(ctx, user),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected == null) return;
+
+    final alreadyAdded = _approvers.any(
+      (a) => a['id'].toString() == selected['id'].toString(),
+    );
+    if (alreadyAdded) {
+      _showMessage('Approver sudah ditambahkan');
+      return;
+    }
+
+    setState(() {
+      _approvers.add({
+        'id': selected['id'],
+        'nama_lengkap': selected['nama_lengkap']?.toString() ?? '',
+        'email': selected['email']?.toString() ?? '',
+        'jabatan': selected['jabatan']?.toString() ?? '',
+      });
+      _approverSearchController.clear();
+    });
+    _triggerAutoSave();
+  }
+
+  void _removeApprover(int index) {
+    setState(() => _approvers.removeAt(index));
+    _triggerAutoSave();
+  }
+
+  void _moveApprover(int fromIndex, int toIndex) {
+    if (fromIndex < 0 || fromIndex >= _approvers.length) return;
+    if (toIndex < 0 || toIndex >= _approvers.length) return;
+    setState(() {
+      final item = _approvers.removeAt(fromIndex);
+      _approvers.insert(toIndex, item);
+    });
+    _triggerAutoSave();
   }
 
   String _translateDay(String day) {
@@ -665,6 +818,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
   }
 
   void _triggerAutoSave() {
+    if (!_canEdit) return;
     _autoSaveTimer?.cancel();
     _autoSaveTimer = Timer(const Duration(seconds: 2), () {
       _autoSaveDraft();
@@ -672,10 +826,12 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
   }
 
   Future<void> _autoSaveDraft() async {
+    if (!_canEdit) return;
     if (_isSubmitting) return;
     if (!_isScheduleReady) return;
     if (_warehouseOutletId == null) return;
     if (_arrivalDateController.text.isEmpty) return;
+    if (_validateKhususApprovers() != null) return;
     if (_orderId == null) {
       await _createDraftIfNeeded();
     }
@@ -711,6 +867,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         foMode: _foMode,
         foScheduleId: _foScheduleId,
         description: _descriptionController.text,
+        approvers: _buildApproverPayload(),
         items: itemsPayload,
       );
       if (mounted) {
@@ -772,6 +929,10 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
   }
 
   Future<void> _saveDraft() async {
+    if (!_canEdit) {
+      _showMessage(FloorOrderEditPolicy.lockedMessage);
+      return;
+    }
     if (!_isScheduleReady) {
       _showMessage('Periksa jadwal RO terlebih dahulu');
       return;
@@ -782,6 +943,12 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     }
     if (_arrivalDateController.text.isEmpty) {
       _showMessage('Tanggal kedatangan wajib diisi');
+      return;
+    }
+
+    final approverError = _validateKhususApprovers();
+    if (approverError != null) {
+      _showMessage(approverError);
       return;
     }
 
@@ -825,6 +992,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         foMode: _foMode,
         foScheduleId: _foScheduleId,
         description: _descriptionController.text,
+        approvers: _buildApproverPayload(),
         items: itemsPayload,
       );
     } else {
@@ -835,6 +1003,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         foMode: _foMode,
         foScheduleId: _foScheduleId,
         description: _descriptionController.text,
+        approvers: _buildApproverPayload(),
         items: itemsPayload,
       );
     }
@@ -866,6 +1035,12 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     if (_orderId == null) return;
     if (_orderId == null) {
       _showMessage('Draft Order belum tersimpan. Silakan tunggu beberapa detik.');
+      return;
+    }
+
+    final approverError = _validateKhususApprovers();
+    if (approverError != null) {
+      _showMessage(approverError);
       return;
     }
 
@@ -941,6 +1116,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     if (!_isScheduleReady) return;
     if (_warehouseOutletId == null) return;
     if (_arrivalDateController.text.isEmpty) return;
+    if (_validateKhususApprovers() != null) return;
 
     final itemsPayload = <Map<String, dynamic>>[];
     for (final cat in _categories) {
@@ -966,6 +1142,7 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         foMode: _foMode,
         foScheduleId: _foScheduleId,
         description: _descriptionController.text,
+        approvers: _buildApproverPayload(),
         items: itemsPayload,
       );
 
@@ -1000,6 +1177,12 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     }
     if (_foMode == 'RO Tambahan' && _selectedItemCount() > 6) {
       _showMessage('Maksimal 6 item untuk RO Tambahan');
+      return;
+    }
+
+    final approverError = _validateKhususApprovers();
+    if (approverError != null) {
+      _showMessage(approverError);
       return;
     }
 
@@ -1455,6 +1638,9 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
             onChanged: (value) {
               setState(() {
                 _foMode = value ?? 'RO Utama';
+                if (_foMode != 'RO Khusus') {
+                  _approvers.clear();
+                }
                 _isScheduleReady = false;
                 _scheduleError = null;
                 _scheduleData = null;
@@ -1495,6 +1681,135 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
             ),
             onChanged: (_) => _triggerAutoSave(),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalFlowSection() {
+    if (_foMode != 'RO Khusus') return const SizedBox.shrink();
+
+    return _buildGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Approval Flow',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Pilih approver berurutan (level terendah ke tertinggi). Minimal satu approver wajib.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _approverSearchController,
+                  decoration: InputDecoration(
+                    labelText: 'Cari approver',
+                    hintText: 'Nama, email, jabatan...',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _searchAndAddApprover(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _isSearchingApprovers ? null : _searchAndAddApprover,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D9488),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isSearchingApprovers
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.search),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_approvers.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Text(
+                'Belum ada approver. Tambahkan minimal satu approver agar RO Khusus bisa disimpan.',
+                style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+              ),
+            )
+          else
+            ..._approvers.asMap().entries.map((entry) {
+              final index = entry.key;
+              final approver = entry.value;
+              final name = approver['nama_lengkap']?.toString() ?? '-';
+              final subtitle = approver['jabatan']?.toString().isNotEmpty == true
+                  ? approver['jabatan'].toString()
+                  : approver['email']?.toString() ?? '';
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.teal.shade100),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Level ${index + 1}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0D9488),
+                            ),
+                          ),
+                          Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          if (subtitle.isNotEmpty)
+                            Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: index > 0 ? () => _moveApprover(index, index - 1) : null,
+                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      tooltip: 'Naikkan',
+                    ),
+                    IconButton(
+                      onPressed: index < _approvers.length - 1
+                          ? () => _moveApprover(index, index + 1)
+                          : null,
+                      icon: const Icon(Icons.arrow_downward, size: 18),
+                      tooltip: 'Turunkan',
+                    ),
+                    IconButton(
+                      onPressed: () => _removeApprover(index),
+                      icon: Icon(Icons.delete_outline, size: 18, color: Colors.red.shade400),
+                      tooltip: 'Hapus',
+                    ),
+                  ],
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -2115,9 +2430,11 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
                             const SizedBox(height: 16),
                             _buildAnimatedSection(child: _buildHeaderSection(), index: 1),
                             const SizedBox(height: 16),
-                            _buildAnimatedSection(child: _buildItemsSection(), index: 2),
+                            _buildAnimatedSection(child: _buildApprovalFlowSection(), index: 2),
                             const SizedBox(height: 16),
-                            _buildAnimatedSection(child: _buildSummarySection(), index: 3),
+                            _buildAnimatedSection(child: _buildItemsSection(), index: 3),
+                            const SizedBox(height: 16),
+                            _buildAnimatedSection(child: _buildSummarySection(), index: 4),
                           ],
                         ),
                       ),

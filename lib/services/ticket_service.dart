@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
+import '../utils/ticket_status.dart';
 
 /// Ticketing — mirror ERP `/tickets` via `/api/approval-app/tickets`.
 class TicketService {
@@ -40,7 +41,7 @@ class TicketService {
       if (title != null && title.isNotEmpty) 'title': title,
     });
     final res = await http.get(uri, headers: h);
-    return _decodeMap(res.body, res.statusCode);
+    return _withActiveDedupTickets(_decodeMap(res.body, res.statusCode));
   }
 
   Future<Map<String, dynamic>> getTicketsByOutlet({
@@ -56,7 +57,7 @@ class TicketService {
       if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
     });
     final res = await http.get(uri, headers: h);
-    return _decodeMap(res.body, res.statusCode);
+    return _withActiveDedupTickets(_decodeMap(res.body, res.statusCode));
   }
 
   Future<Map<String, dynamic>> getTickets({
@@ -379,6 +380,18 @@ class TicketService {
       body: jsonEncode({'comment': text}),
     );
     return _decodeMap(res.body, res.statusCode);
+  }
+
+  static Map<String, dynamic> _withActiveDedupTickets(Map<String, dynamic> res) {
+    if (res['success'] != true) return res;
+    final raw = res['tickets'];
+    if (raw is! List) return res;
+    final tickets = filterActiveTicketsForDedup(raw);
+    return {
+      ...res,
+      'tickets': tickets,
+      'duplicate_count': duplicateActiveTicketCount(tickets),
+    };
   }
 
   static Map<String, dynamic> _decodeMap(String body, int status) {

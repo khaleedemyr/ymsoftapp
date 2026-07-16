@@ -98,6 +98,57 @@ class Qa2AuditUi {
     );
   }
 
+  static ({String label, Color bg, Color fg, IconData? icon})? capStatusBadge(Map<String, dynamic> audit) {
+    final status = audit['status']?.toString() ?? '';
+    final nc = int.tryParse('${audit['count_nc']}') ?? 0;
+    if (status != 'submitted' || nc <= 0) return null;
+
+    final pending = int.tryParse('${audit['count_nc_pending_cap']}') ?? 0;
+    final submission = audit['cap_submission_status']?.toString();
+
+    if (pending > 0) {
+      final label = pending == nc ? 'CAP Belum Diisi' : 'CAP Belum Lengkap ($pending)';
+      return (label: label, bg: const Color(0xFFFFE4E6), fg: const Color(0xFFBE123C), icon: Icons.warning_amber_rounded);
+    }
+    if (submission == 'approved') {
+      return (label: 'CAP Disetujui', bg: const Color(0xFFD1FAE5), fg: const Color(0xFF047857), icon: Icons.verified_rounded);
+    }
+    if (submission == 'pending_approval') {
+      return (label: 'CAP Proses Approval', bg: const Color(0xFFFEF3C7), fg: const Color(0xFFB45309), icon: Icons.schedule_rounded);
+    }
+    if (submission == 'rejected') {
+      return (label: 'CAP Ditolak', bg: const Color(0xFFFEE2E2), fg: const Color(0xFFB91C1C), icon: Icons.cancel_rounded);
+    }
+    return (label: 'CAP Terisi', bg: const Color(0xFFE0E7FF), fg: const Color(0xFF4338CA), icon: Icons.assignment_turned_in_rounded);
+  }
+
+  static Widget capStatusChip(Map<String, dynamic> audit) {
+    final badge = capStatusBadge(audit);
+    if (badge == null) {
+      return const Text('-', style: TextStyle(color: slate500, fontSize: 11));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: badge.bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (badge.icon != null) ...[
+            Icon(badge.icon, size: 12, color: badge.fg),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            badge.label,
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badge.fg),
+          ),
+        ],
+      ),
+    );
+  }
+
   static String userLabel(Map<String, dynamic> user) {
     final name = user['nama_lengkap']?.toString() ?? user['name']?.toString() ?? '-';
     final jabatan = user['jabatan']?.toString();

@@ -80,6 +80,37 @@ class FloorOrderService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getApprovers({String search = ''}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final uri = Uri.parse('$baseUrl/api/approval-app/floor-orders/approvers').replace(
+        queryParameters: search.isNotEmpty ? {'search': search} : null,
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['users'] is List) {
+          return List<Map<String, dynamic>>.from(data['users']);
+        }
+      }
+
+      return [];
+    } catch (e) {
+      print('Error getting floor order approvers: $e');
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>> createFloorOrder({
     required String tanggal,
     required String arrivalDate,
@@ -88,6 +119,7 @@ class FloorOrderService {
     String inputMode = 'tab',
     int? foScheduleId,
     String? description,
+    List<int>? approvers,
     required List<Map<String, dynamic>> items,
   }) async {
     try {
@@ -104,6 +136,7 @@ class FloorOrderService {
         'input_mode': inputMode,
         if (foScheduleId != null) 'fo_schedule_id': foScheduleId,
         if (description != null && description.isNotEmpty) 'description': description,
+        if (approvers != null && approvers.isNotEmpty) 'approvers': approvers,
         'items': items,
       };
 
@@ -141,6 +174,7 @@ class FloorOrderService {
     String inputMode = 'tab',
     int? foScheduleId,
     String? description,
+    List<int>? approvers,
     required List<Map<String, dynamic>> items,
   }) async {
     try {
@@ -157,6 +191,7 @@ class FloorOrderService {
         'input_mode': inputMode,
         if (foScheduleId != null) 'fo_schedule_id': foScheduleId,
         if (description != null && description.isNotEmpty) 'description': description,
+        if (approvers != null && approvers.isNotEmpty) 'approvers': approvers,
         'items': items,
       };
 

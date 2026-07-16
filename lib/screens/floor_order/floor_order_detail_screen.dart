@@ -6,6 +6,7 @@ import '../../services/approval_service.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../../utils/floor_order_edit_policy.dart';
 import 'floor_order_form_screen.dart';
 
 class FloorOrderDetailScreen extends StatefulWidget {
@@ -73,7 +74,23 @@ class _FloorOrderDetailScreenState extends State<FloorOrderDetailScreen> {
   }
 
   bool _canApproveKhusus() {
+    if (_order?['status']?.toString() != 'submitted') return false;
     if (_isSuperadmin()) return true;
+
+    final flows = _order?['approval_flows'] as List<dynamic>? ?? [];
+    if (flows.isNotEmpty) {
+      final pending = flows
+          .map((f) => Map<String, dynamic>.from(f as Map))
+          .where((f) => f['status']?.toString() == 'PENDING')
+          .toList()
+        ..sort((a, b) =>
+            (int.tryParse(a['approval_level']?.toString() ?? '0') ?? 0)
+                .compareTo(int.tryParse(b['approval_level']?.toString() ?? '0') ?? 0));
+      if (pending.isEmpty) return false;
+      final nextApproverId = pending.first['approver_id']?.toString();
+      return nextApproverId == _userData?['id']?.toString();
+    }
+
     final warehouseName = _order?['warehouse_outlet']?['name']?.toString();
     final userJabatan = _userData?['id_jabatan'];
     final userStatus = _userData?['status'];
@@ -289,6 +306,7 @@ class _FloorOrderDetailScreenState extends State<FloorOrderDetailScreen> {
     final isSubmitted = status == 'submitted';
     final isKhusus = _order?['fo_mode']?.toString() == 'RO Khusus';
     final hasPackingList = _order?['has_packing_list'] == true;
+    final canEdit = _order != null && FloorOrderEditPolicy.canEditFromApi(_order!);
 
     return AppScaffold(
       title: 'Detail RO',
@@ -302,11 +320,14 @@ class _FloorOrderDetailScreenState extends State<FloorOrderDetailScreen> {
                   children: [
                     _buildHeaderCard(),
                     const SizedBox(height: 16),
+                    if (isKhusus) _buildApprovalFlowCard(),
+                    if (isKhusus) const SizedBox(height: 16),
                     _buildItemsCard(),
                     const SizedBox(height: 16),
                     _buildTotalsCard(),
                     const SizedBox(height: 16),
-                    if (isDraft) _buildDraftActions(),
+                    if (isDraft) _buildDraftActions(canEdit: canEdit),
+                    if (isDraft && !canEdit) _buildEditLockedNotice(),
                     if (isSubmitted && isKhusus && _canApproveKhusus()) _buildApprovalActions(),
                     if (!hasPackingList) ...[
                       const SizedBox(height: 10),
@@ -365,6 +386,105 @@ class _FloorOrderDetailScreenState extends State<FloorOrderDetailScreen> {
           _infoRow('Tanggal Datang', order['arrival_date']?.toString() ?? '-'),
           if ((order['description'] ?? '').toString().isNotEmpty)
             _infoRow('Deskripsi', order['description']?.toString() ?? '-'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalFlowCard() {
+    final flows = (_order?['approval_flows'] as List<dynamic>? ?? [])
+        .map((f) => Map<String, dynamic>.from(f as Map))
+        .toList()
+      ..sort((a, b) =>
+          (int.tryParse(a['approval_level']?.toString() ?? '0') ?? 0)
+              .compareTo(int.tryParse(b['approval_level']?.toString() ?? '0') ?? 0));
+
+    if (flows.isEmpty) return const SizedBox.shrink();
+
+    Color statusColor(String status) {
+      switch (status) {
+        case 'APPROVED':
+          return Colors.green;
+        case 'REJECTED':
+          return Colors.red;
+        case 'PENDING':
+          return Colors.amber.shade700;
+        default:
+          return Colors.grey;
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Approval Flow', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          ...flows.map((flow) {
+            final status = flow['status']?.toString() ?? 'PENDING';
+            final approverName = flow['approver']?['nama_lengkap']?.toString() ?? '-';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: statusColor(status).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: statusColor(status).withOpacity(0.25)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Level ${flow['approval_level'] ?? '-'}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0D9488),
+                          ),
+                        ),
+                        Text(approverName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if ((flow['comments'] ?? '').toString().isNotEmpty)
+                          Text(
+                            flow['comments'].toString(),
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor(status).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: statusColor(status),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -452,27 +572,55 @@ class _FloorOrderDetailScreenState extends State<FloorOrderDetailScreen> {
     );
   }
 
-  Widget _buildDraftActions() {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _isProcessing ? null : _openEdit,
-            icon: const Icon(Icons.edit),
-            label: const Text('Edit Draft', style: TextStyle(fontWeight: FontWeight.w600)),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size.fromHeight(50),
-              backgroundColor: const Color(0xFF4F46E5),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 6,
-              shadowColor: const Color(0x664F46E5),
+  Widget _buildEditLockedNotice() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_clock, size: 18, color: Color(0xFFEA580C)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              FloorOrderEditPolicy.lockedMessage,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade800, height: 1.4),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraftActions({required bool canEdit}) {
+    return Column(
+      children: [
+        if (canEdit) ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isProcessing ? null : _openEdit,
+              icon: const Icon(Icons.edit),
+              label: const Text('Edit Draft', style: TextStyle(fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                backgroundColor: const Color(0xFF4F46E5),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 6,
+                shadowColor: const Color(0x664F46E5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(

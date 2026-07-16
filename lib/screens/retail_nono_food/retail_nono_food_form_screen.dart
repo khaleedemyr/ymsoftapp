@@ -57,13 +57,30 @@ class _RetailNonoFoodFormScreenState extends State<RetailNonoFoodFormScreen> {
     super.dispose();
   }
 
+  bool _isShowOnRetail(Map<String, dynamic> category) {
+    final value = category['show_on_retail'];
+    if (value == null) return true;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = value.toString().toLowerCase();
+    return text == '1' || text == 'true';
+  }
+
+  List<Map<String, dynamic>> _filterRetailCategories(List<dynamic> raw) {
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where(_isShowOnRetail)
+        .toList();
+  }
+
   Future<void> _loadCreateData() async {
     setState(() => _isLoadingData = true);
     final result = await _service.getCreateData();
     if (mounted && result != null) {
       setState(() {
         _outlets = List<Map<String, dynamic>>.from(result['outlets'] ?? []);
-        _categoryBudgets = List<Map<String, dynamic>>.from(result['category_budgets'] ?? []);
+        _categoryBudgets = _filterRetailCategories(result['category_budgets'] ?? []);
         _suppliers = List<Map<String, dynamic>>.from(result['suppliers'] ?? []);
         _userOutletId = result['user_outlet_id'] is int ? result['user_outlet_id'] as int : null;
         if (_userOutletId != null && _userOutletId != 1 && _outlets.isNotEmpty) {
@@ -72,9 +89,31 @@ class _RetailNonoFoodFormScreenState extends State<RetailNonoFoodFormScreen> {
         }
         _isLoadingData = false;
       });
+      if (_outletId != null) {
+        await _loadCategoryBudgets();
+      }
     } else if (mounted) {
       setState(() => _isLoadingData = false);
     }
+  }
+
+  Future<void> _loadCategoryBudgets() async {
+    final categories = await _service.getCategoryBudgets(outletId: _outletId);
+    if (!mounted) return;
+
+    setState(() {
+      _categoryBudgets = _filterRetailCategories(categories);
+      if (_categoryBudgetId != null) {
+        final stillExists = _categoryBudgets.any((c) {
+          final id = c['id'] is int ? c['id'] as int : int.tryParse(c['id']?.toString() ?? '0');
+          return id == _categoryBudgetId;
+        });
+        if (!stillExists) {
+          _categoryBudgetId = null;
+          _categoryBudgetNameController.text = '-- Pilih Kategori Budget --';
+        }
+      }
+    });
   }
 
   Future<void> _selectDate() async {
@@ -475,7 +514,14 @@ class _RetailNonoFoodFormScreenState extends State<RetailNonoFoodFormScreen> {
                 child: Text(o['nama_outlet']?.toString() ?? '-', overflow: TextOverflow.ellipsis),
               );
             }).toList(),
-            onChanged: (v) => setState(() => _outletId = v),
+            onChanged: (v) {
+              setState(() {
+                _outletId = v;
+                _categoryBudgetId = null;
+                _categoryBudgetNameController.text = '-- Pilih Kategori Budget --';
+              });
+              _loadCategoryBudgets();
+            },
           ),
         ],
       ),

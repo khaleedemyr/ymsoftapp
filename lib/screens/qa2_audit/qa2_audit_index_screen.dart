@@ -30,7 +30,7 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
   Map<String, dynamic> _permissions = {};
   List<Map<String, dynamic>> _audits = [];
   List<Map<String, dynamic>> _outlets = [];
-  int? _currentUserId;
+  bool _canActionAdmin = false;
 
   String _filterStatus = '';
   int? _filterOutletId;
@@ -49,20 +49,35 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
   Future<void> _initUser() async {
     final user = await AuthService().getUserData();
     if (!mounted) return;
-    setState(() => _currentUserId = _parseInt(user?['id']));
+    setState(() {
+      _canActionAdmin = _resolveCanActionAdmin(user, _permissions);
+    });
   }
 
   bool _isTruthy(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 
+  bool _resolveCanActionAdmin(Map<String, dynamic>? user, Map<String, dynamic> perms) {
+    if (perms.containsKey('can_action_admin')) {
+      return _isTruthy(perms['can_action_admin']);
+    }
+    final role = user?['id_role']?.toString() ?? '';
+    final divisionId = _parseInt(user?['division_id']) ?? 0;
+    return divisionId == 32 || role == '5af56935b011a';
+  }
+
   bool _canFillCapForAudit(Map<String, dynamic> audit) {
     if (audit['status']?.toString() != 'submitted') return false;
-    if (_currentUserId == null) return false;
-    final auditees = audit['auditees'];
-    if (auditees is! List) return false;
-    for (final p in auditees) {
-      if (p is Map && _parseInt(p['id']) == _currentUserId) return true;
-    }
-    return false;
+    final pendingCap = _parseInt(audit['count_nc_pending_cap']) ?? 0;
+    final countNc = _parseInt(audit['count_nc']) ?? 0;
+    if (countNc <= 0 || pendingCap <= 0) return false;
+    // Index: tampilkan Isi CAP jika masih ada NC pending (selaras web).
+    return true;
+  }
+
+  bool _showRowActions(Map<String, dynamic> audit) {
+    final status = audit['status']?.toString() ?? 'draft';
+    if (status == 'draft') return _canActionAdmin;
+    return true;
   }
 
   @override
@@ -177,6 +192,9 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
         };
       }
       _permissions = (permsRaw is Map<String, dynamic>) ? permsRaw : _permissions;
+      if (_permissions.containsKey('can_action_admin')) {
+        _canActionAdmin = _isTruthy(_permissions['can_action_admin']);
+      }
       _refreshing = false;
       _loading = false;
       _loadingMore = false;
@@ -346,7 +364,7 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
                                   ),
                                 );
                               }
-                              return _buildAuditCard(_audits[idx], canManage);
+                              return _buildAuditCard(_audits[idx]);
                             },
                           ),
                   ),
@@ -651,11 +669,10 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
     );
   }
 
-  Widget _buildAuditCard(Map<String, dynamic> audit, bool canManage) {
+  Widget _buildAuditCard(Map<String, dynamic> audit) {
     final id = _parseInt(audit['id']) ?? 0;
     final status = audit['status']?.toString() ?? 'draft';
     final isSubmitted = status == 'submitted';
-    final isDraft = status == 'draft';
     final outlet = audit['outlet_name']?.toString() ?? '-';
     final template = audit['template_name']?.toString() ?? '-';
     final number = audit['audit_number']?.toString() ?? '#$id';
@@ -669,6 +686,8 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
     final badge = Qa2AuditUi.resultBadge(score);
     final pendingCap = _parseInt(audit['count_nc_pending_cap']) ?? 0;
     final canFillCap = _canFillCapForAudit(audit);
+    final showActions = _showRowActions(audit);
+    final capBadge = Qa2AuditUi.capStatusBadge(audit);
     final accentColor = isSubmitted ? const Color(0xFF059669) : const Color(0xFFD97706);
 
     return Padding(
@@ -676,7 +695,7 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: id > 0 ? () => _openForm(id) : null,
+          onTap: (id > 0 && showActions) ? () => _openForm(id) : null,
           borderRadius: BorderRadius.circular(16),
           child: Ink(
             decoration: BoxDecoration(
@@ -729,36 +748,41 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
                                   ),
                                 ),
                                 Qa2AuditUi.statusChip(status),
-                                PopupMenuButton<String>(
-                                  tooltip: 'Aksi',
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  padding: EdgeInsets.zero,
-                                  icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade600, size: 22),
-                                  onSelected: (v) async {
-                                    if (id <= 0) return;
-                                    if (v == 'view') await _openForm(id);
-                                    if (v == 'share') await _shareToWhatsApp(audit);
-                                    if (v == 'edit') await _openForm(id);
-                                    if (v == 'cap') await _openForm(id, capOnly: true);
-                                    if (v == 'delete') await _confirmDelete(audit);
-                                  },
-                                  itemBuilder: (ctx) => [
-                                    const PopupMenuItem(value: 'view', child: _MenuRow(Icons.fact_check_outlined, 'Lihat Detail')),
-                                    const PopupMenuItem(value: 'share', child: _MenuRow(Icons.share_rounded, 'Share WA')),
-                                    if (canManage && isDraft)
-                                      const PopupMenuItem(value: 'edit', child: _MenuRow(Icons.edit_rounded, 'Edit')),
-                                    if (canFillCap && isSubmitted && pendingCap > 0)
-                                      PopupMenuItem(
-                                        value: 'cap',
-                                        child: _MenuRow(Icons.assignment_turned_in_outlined, 'Isi CAP ($pendingCap)'),
-                                      ),
-                                    if (canManage)
-                                      const PopupMenuItem(
-                                        value: 'delete',
-                                        child: _MenuRow(Icons.delete_outline_rounded, 'Hapus', color: Color(0xFFDC2626)),
-                                      ),
-                                  ],
-                                ),
+                                if (capBadge != null) ...[
+                                  const SizedBox(width: 6),
+                                  Qa2AuditUi.capStatusChip(audit),
+                                ],
+                                if (showActions)
+                                  PopupMenuButton<String>(
+                                    tooltip: 'Aksi',
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: EdgeInsets.zero,
+                                    icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade600, size: 22),
+                                    onSelected: (v) async {
+                                      if (id <= 0) return;
+                                      if (v == 'view') await _openForm(id);
+                                      if (v == 'share') await _shareToWhatsApp(audit);
+                                      if (v == 'edit') await _openForm(id);
+                                      if (v == 'cap') await _openForm(id, capOnly: true);
+                                      if (v == 'delete') await _confirmDelete(audit);
+                                    },
+                                    itemBuilder: (ctx) => [
+                                      const PopupMenuItem(value: 'view', child: _MenuRow(Icons.fact_check_outlined, 'Lihat Detail')),
+                                      const PopupMenuItem(value: 'share', child: _MenuRow(Icons.share_rounded, 'Share WA')),
+                                      if (_canActionAdmin)
+                                        const PopupMenuItem(value: 'edit', child: _MenuRow(Icons.edit_rounded, 'Edit')),
+                                      if (canFillCap && isSubmitted && pendingCap > 0)
+                                        PopupMenuItem(
+                                          value: 'cap',
+                                          child: _MenuRow(Icons.assignment_turned_in_outlined, 'Isi CAP ($pendingCap)'),
+                                        ),
+                                      if (_canActionAdmin)
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: _MenuRow(Icons.delete_outline_rounded, 'Hapus', color: Color(0xFFDC2626)),
+                                        ),
+                                    ],
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 10),
@@ -802,28 +826,6 @@ class _Qa2AuditIndexScreenState extends State<Qa2AuditIndexScreen> {
                                 ),
                               ],
                             ),
-                            if (isSubmitted && pendingCap > 0) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF1F2),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFFFECDD3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFBE123C)),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '$pendingCap NC belum diisi CAP',
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFBE123C)),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
                             const SizedBox(height: 10),
                             const Divider(height: 1, color: Color(0xFFF1F5F9)),
                             const SizedBox(height: 10),

@@ -32,6 +32,7 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
   final _searchCtrl = TextEditingController();
 
   Timer? _draftDebounce;
+  Timer? _auditeeDebounce;
   Timer? _capDebounce;
   Timer? _searchDebounce;
 
@@ -40,11 +41,13 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
 
   bool _loading = true;
   bool _savingDraft = false;
+  bool _savingAuditees = false;
   bool _savingCap = false;
   bool _capSubmitting = false;
   bool _submitting = false;
   String? _error;
   String _lastSavedAt = '';
+  String _auditeeLastSavedAt = '';
   String _capLastSavedAt = '';
 
   Map<String, dynamic> _audit = {};
@@ -80,6 +83,7 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
   @override
   void dispose() {
     _draftDebounce?.cancel();
+    _auditeeDebounce?.cancel();
     _capDebounce?.cancel();
     _searchDebounce?.cancel();
     for (final c in _commentControllers.values) {
@@ -240,7 +244,7 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
 
   void _initExpandedSections() {
     _expandedSections.clear();
-    for (final cat in groupItems(_items).entries) {
+    for (final cat in groupItems(_detailItemsForDisplay).entries) {
       for (final sub in cat.value.entries) {
         _expandedSections.add(_sectionKey(cat.key, sub.key));
       }
@@ -253,7 +257,8 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
   }
 
   void _expandVisibleSections({bool ncOnly = false, bool cap = false}) {
-    final grouped = groupItems(_items, ncOnly: ncOnly, search: _searchQuery);
+    final source = ncOnly ? _items : _detailItemsForDisplay;
+    final grouped = groupItems(source, ncOnly: ncOnly, search: _searchQuery);
     for (final cat in grouped.entries) {
       for (final sub in cat.value.entries) {
         _expandedSections.add(_sectionKey(cat.key, sub.key, cap: cap));
@@ -311,10 +316,30 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
   bool get _canManageDraft =>
       _isTruthy(_permissions['can_manage']) && (_audit['status']?.toString() ?? 'draft') == 'draft';
 
+  bool get _canEditAuditee => _isTruthy(_permissions['can_edit_auditee']);
+
+  bool _isVisibleReadOnlyItem(Map<String, dynamic> item) {
+    final result = (item['result']?.toString() ?? '').trim();
+    if (result == 'NC') return true;
+    if (result != 'C') return false;
+    return (item['comment']?.toString() ?? '').trim().isNotEmpty;
+  }
+
+  List<Map<String, dynamic>> get _detailItemsForDisplay {
+    if (_canManageDraft) return _items;
+    return _items.where(_isVisibleReadOnlyItem).toList();
+  }
+
   void _scheduleDraftSave() {
     if (!_canManageDraft) return;
     _draftDebounce?.cancel();
     _draftDebounce = Timer(const Duration(milliseconds: 1200), _saveDraft);
+  }
+
+  void _scheduleAuditeeSave() {
+    if (!_canEditAuditee) return;
+    _auditeeDebounce?.cancel();
+    _auditeeDebounce = Timer(const Duration(milliseconds: 1200), _saveAuditees);
   }
 
   void _scheduleCapSave() {
@@ -422,6 +447,22 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
     setState(() {
       _savingDraft = false;
       _lastSavedAt = DateFormat('HH:mm:ss').format(DateTime.now());
+    });
+  }
+
+  Future<void> _saveAuditees() async {
+    if (!_canEditAuditee) return;
+    setState(() => _savingAuditees = true);
+    final res = await _service.updateAuditees(widget.auditId, {
+      'auditee_ids': _auditeeIds.toList(),
+    });
+    if (!mounted) return;
+    setState(() {
+      _savingAuditees = false;
+      if (res['success'] == true) {
+        _auditeeLastSavedAt = DateFormat('HH:mm:ss').format(DateTime.now());
+        _isAuditAuditee = _currentUserId != null && _auditeeIds.contains(_currentUserId);
+      }
     });
   }
 
@@ -877,7 +918,7 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
                             const SizedBox(height: 12),
                             _submitButton(),
                           ],
-                          if (_savingDraft || _savingCap || _submitting)
+                          if (_savingDraft || _savingAuditees || _savingCap || _submitting)
                             const Padding(
                               padding: EdgeInsets.only(top: 8),
                               child: AppLoadingIndicator(size: 24, color: Qa2AuditUi.primary),
@@ -923,6 +964,7 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
               Qa2AuditUi.statusChip(status),
               const Spacer(),
               if (_savingDraft) const Text('Menyimpan...', style: TextStyle(color: Qa2AuditUi.slate500, fontSize: 12)),
+              if (_savingAuditees) const Text('Menyimpan auditee...', style: TextStyle(color: Qa2AuditUi.slate500, fontSize: 12)),
               if (_savingCap) const Text('Menyimpan CAP...', style: TextStyle(color: Qa2AuditUi.slate500, fontSize: 12)),
             ],
           ),
@@ -936,6 +978,9 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
               style: const TextStyle(color: Qa2AuditUi.slate500, fontSize: 12)),
           if (_canManageDraft && _lastSavedAt.isNotEmpty)
             Text('Tersimpan $_lastSavedAt',
+                style: const TextStyle(color: Color(0xFF059669), fontSize: 12, fontWeight: FontWeight.w600)),
+          if (_canEditAuditee && _auditeeLastSavedAt.isNotEmpty)
+            Text('Auditee tersimpan $_auditeeLastSavedAt',
                 style: const TextStyle(color: Color(0xFF059669), fontSize: 12, fontWeight: FontWeight.w600)),
           if (_canFillCap && _capLastSavedAt.isNotEmpty && _showCapMode)
             Text('CAP tersimpan $_capLastSavedAt',
@@ -1021,10 +1066,33 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
             ),
             const SizedBox(height: 10),
             _fieldLabel('Auditee'),
-            Text(
-              _displayPeople(_audit['auditees'], _auditeeIds),
-              style: const TextStyle(color: Qa2AuditUi.slate600),
-            ),
+            if (_canEditAuditee) ...[
+              const Text(
+                'Auditee masih dapat diubah setelah submit.',
+                style: TextStyle(color: Qa2AuditUi.primary, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Qa2AuditUserPicker(
+                users: _users,
+                selectedIds: _auditeeIds,
+                title: 'Pilih Auditee',
+                buttonLabel: 'Pilih auditee',
+                searchHint: 'Cari nama atau jabatan auditee...',
+                onChanged: (ids) {
+                  setState(() {
+                    _auditeeIds
+                      ..clear()
+                      ..addAll(ids);
+                  });
+                  _scheduleAuditeeSave();
+                },
+              ),
+            ] else ...[
+              Text(
+                _displayPeople(_audit['auditees'], _auditeeIds),
+                style: const TextStyle(color: Qa2AuditUi.slate600),
+              ),
+            ],
             if ((_audit['notes']?.toString() ?? '').isNotEmpty) ...[
               const SizedBox(height: 10),
               _fieldLabel('Catatan'),
@@ -1137,7 +1205,7 @@ class _Qa2AuditFormScreenState extends State<Qa2AuditFormScreen> {
   }
 
   Widget _parameterItemsSliver() {
-    final grouped = groupItems(_items, search: _searchQuery);
+    final grouped = groupItems(_detailItemsForDisplay, search: _searchQuery);
     if (grouped.isEmpty) {
       return SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),

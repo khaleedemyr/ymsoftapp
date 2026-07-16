@@ -27,9 +27,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Aplikasi membutuhkan akses kamera untuk scan QR Code/Barcode PO Number</string>
+	<string>Aplikasi membutuhkan akses kamera untuk scan QR Code/Barcode dan evidence IT Work Report</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Aplikasi membutuhkan lokasi untuk menandai foto evidence IT Work Report dengan koordinat GPS</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Aplikasi membutuhkan akses galeri untuk melampirkan foto ke ticket</string>
+	<string>Aplikasi membutuhkan akses galeri untuk melampirkan foto ke ticket dan screenshot WhatsApp</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

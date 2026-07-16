@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/video_tutorial_model.dart';
 import '../services/video_tutorial_service.dart';
 import '../widgets/app_scaffold.dart';
@@ -32,6 +33,8 @@ class _VideoTutorialGalleryScreenState
 
   List<VideoTutorial> _videos = [];
   List<VideoTutorialGroup> _groups = [];
+  bool _isSharing = false;
+  int? _sharingVideoId;
   Map<String, dynamic>? _stats;
   bool _isLoading = true;
   String? _error;
@@ -134,8 +137,55 @@ class _VideoTutorialGalleryScreenState
     showDialog(
       context: context,
       barrierColor: Colors.black87,
-      builder: (context) => _VideoPlayerDialog(video: video),
+      builder: (context) => _VideoPlayerDialog(
+        video: video,
+        onShare: () => _shareToWhatsApp(video),
+        isSharing: _sharingVideoId == video.id,
+      ),
     );
+  }
+
+  Future<void> _shareToWhatsApp(VideoTutorial video) async {
+    if (_isSharing) return;
+
+    setState(() {
+      _isSharing = true;
+      _sharingVideoId = video.id;
+    });
+
+    final result = await _service.getShareLink(video.id);
+
+    if (!mounted) return;
+
+    setState(() {
+      _isSharing = false;
+      _sharingVideoId = null;
+    });
+
+    if (result['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Gagal membuat link share'),
+        ),
+      );
+      return;
+    }
+
+    final message = result['message']?.toString() ?? result['url']?.toString() ?? '';
+    if (message.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Link share tidak tersedia')),
+      );
+      return;
+    }
+
+    final waUri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(message)}');
+    if (!await launchUrl(waUri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak dapat membuka WhatsApp')),
+      );
+    }
   }
 
   @override
@@ -597,6 +647,37 @@ class _VideoTutorialGalleryScreenState
                             ),
                           ],
                         ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _sharingVideoId == video.id
+                              ? null
+                              : () => _shareToWhatsApp(video),
+                          icon: _sharingVideoId == video.id
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.share, size: 16, color: Color(0xFF25D366)),
+                          label: Text(
+                            'WhatsApp',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _sharingVideoId == video.id
+                                  ? Colors.grey
+                                  : const Color(0xFF25D366),
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -643,8 +724,14 @@ class _VideoTutorialGalleryScreenState
 
 class _VideoPlayerDialog extends StatefulWidget {
   final VideoTutorial video;
+  final VoidCallback? onShare;
+  final bool isSharing;
 
-  const _VideoPlayerDialog({required this.video});
+  const _VideoPlayerDialog({
+    required this.video,
+    this.onShare,
+    this.isSharing = false,
+  });
 
   @override
   State<_VideoPlayerDialog> createState() => _VideoPlayerDialogState();
@@ -798,6 +885,21 @@ class _VideoPlayerDialogState extends State<_VideoPlayerDialog> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (widget.onShare != null)
+                    IconButton(
+                      tooltip: 'Share WhatsApp',
+                      icon: widget.isSharing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF25D366),
+                              ),
+                            )
+                          : const Icon(Icons.share, color: Color(0xFF25D366)),
+                      onPressed: widget.isSharing ? null : widget.onShare,
+                    ),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () {

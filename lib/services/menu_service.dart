@@ -113,6 +113,7 @@ class MenuService {
         {'name': 'Master Daily Report', 'icon': 'fa-solid fa-chart-line', 'route': '/master-report', 'code': 'master_report'},
         {'name': 'Daily Report', 'icon': 'fa-solid fa-clipboard-list', 'route': '/daily-report', 'code': 'daily_report'},
         {'name': 'Ticketing System', 'icon': 'fa-solid fa-ticket-alt', 'route': '/tickets', 'code': 'tickets'},
+        {'name': 'IT Work Report', 'icon': 'fa-solid fa-laptop-medical', 'route': '/it-work-reports', 'code': 'it_work_report'},
         {'name': 'PR Tracking Report', 'icon': 'fa-solid fa-timeline', 'route': '/purchase-requisitions/tracking-report', 'code': 'pr_tracking_report'},
         {'name': 'RO vs Forecast Harian', 'icon': 'fa-solid fa-scale-balanced', 'route': '/reports/floor-order-vs-forecast', 'code': 'floor_order_vs_forecast'},
         {'name': 'Upselling Sales Achievement', 'icon': 'fa-solid fa-arrow-trend-up', 'route': '/upselling-sales-achievement', 'code': 'upselling_sales_achievement'},
@@ -120,6 +121,7 @@ class MenuService {
         {'name': 'F&B Product Calibration', 'icon': 'fa-solid fa-utensils', 'route': '/fb-product-calibration', 'code': 'fb_product_calibration'},
         {'name': 'F&B Calibration Report', 'icon': 'fa-solid fa-clipboard-list', 'route': '/report/fb-product-calibration', 'code': 'fb_product_calibration_report'},
         {'name': 'NPD Plan & Report', 'icon': 'fa-solid fa-lightbulb', 'route': '/npd-plan-report', 'code': 'npd_plan_report'},
+        {'name': 'SOP Development Completion', 'icon': 'fa-solid fa-file-circle-check', 'route': '/sop-development-completion', 'code': 'sop_development_completion'},
         {'name': 'Competitor Benchmark Report', 'icon': 'fa-solid fa-chart-line', 'route': '/competitor-benchmark-report', 'code': 'competitor_benchmark_report'},
       ],
     },
@@ -391,6 +393,15 @@ class MenuService {
         {'name': 'Member Apps Settings', 'icon': 'fa-solid fa-mobile-screen-button', 'route': '/admin/member-apps-settings', 'code': 'member_apps_settings'},
         {'name': 'Member History & Preferences', 'icon': 'fa-solid fa-history', 'route': '/member-history', 'code': 'member_history_preferences'},
         {'name': 'Guest Comment (OCR)', 'icon': 'fa-solid fa-comment-dots', 'route': '/guest-comment-forms', 'code': 'guest_comment_form'},
+      ],
+    },
+    {
+      'title': 'Just Academy',
+      'icon': 'fa-solid fa-chalkboard-user',
+      'collapsible': true,
+      'open': false,
+      'menus': [
+        {'name': 'My Training', 'icon': 'fa-solid fa-user-graduate', 'route': '/just-academy/my-training', 'code': 'just_academy_my_training'},
       ],
     },
     {

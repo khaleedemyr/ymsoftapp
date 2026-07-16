@@ -133,6 +133,21 @@ class Qa2AuditService {
     }
   }
 
+  Future<Map<String, dynamic>> updateAuditees(int id, Map<String, dynamic> payload) async {
+    try {
+      final token = await _token();
+      if (token == null) return {'success': false, 'message': 'No token'};
+      final res = await http.post(
+        Uri.parse('$_root/$id/update-auditees'),
+        headers: _jsonHeaders(token),
+        body: jsonEncode(payload),
+      );
+      return _decode(res) ?? {'success': false, 'message': 'Invalid response'};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
   Future<Map<String, dynamic>> submitAudit(int id) async {
     try {
       final token = await _token();
