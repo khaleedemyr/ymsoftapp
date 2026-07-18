@@ -116,6 +116,7 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
   int? _ticketId;
   String _selectedTicketLabel = '';
   List<Map<String, dynamic>> _ticketResults = [];
+  String _ticketSearchHint = '';
   Timer? _ticketTimer;
 
   String? _waReportDate;
@@ -472,18 +473,32 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
     });
   }
 
-  void _onTicketSearch(String query) {
+  void _onTicketSearch([String? query]) {
     _ticketTimer?.cancel();
     _ticketTimer = Timer(const Duration(milliseconds: 300), () async {
-      final q = query.trim();
-      if (q.length < 2) {
-        if (mounted) setState(() => _ticketResults = []);
+      if (_executorId == null) {
+        if (mounted) {
+          setState(() {
+            _ticketResults = [];
+            _ticketSearchHint = 'Pilih pelaksana terlebih dahulu.';
+          });
+        }
         return;
       }
-      final res = await _service.searchTickets(q: q, outletId: _outletId);
+      final q = (query ?? _ticketSearchCtrl.text).trim();
+      final res = await _service.searchTickets(
+        q: q,
+        outletId: _outletId,
+        executorId: _executorId,
+      );
       if (!mounted) return;
       final list = _asMapList(res['data']);
-      setState(() => _ticketResults = list);
+      setState(() {
+        _ticketResults = list;
+        _ticketSearchHint = list.isEmpty
+            ? 'Tidak ada ticket aktif yang di-assign ke pelaksana ini.'
+            : '';
+      });
     });
   }
 
@@ -496,6 +511,7 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
       final oid = _parseInt(t['outlet_id']);
       if (oid != null && _outletId == null) _outletId = oid;
       _ticketResults = [];
+      _ticketSearchHint = '';
       _ticketSearchCtrl.clear();
     });
   }
@@ -973,7 +989,10 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
               );
             }),
           ],
-          onChanged: (v) => setState(() => _outletId = v),
+          onChanged: (v) {
+            setState(() => _outletId = v);
+            if (_sourceType == 'ticket') _onTicketSearch();
+          },
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<int>(
@@ -989,7 +1008,18 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
               child: Text(ItWorkReportUi.userName(u), overflow: TextOverflow.ellipsis),
             );
           }).toList(),
-          onChanged: (v) => setState(() => _executorId = v),
+          onChanged: (v) {
+            setState(() {
+              _executorId = v;
+              if (_sourceType == 'ticket') {
+                _ticketId = null;
+                _selectedTicketLabel = '';
+                _ticketSearchCtrl.clear();
+                _ticketResults = [];
+              }
+            });
+            if (_sourceType == 'ticket') _onTicketSearch();
+          },
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
@@ -1006,8 +1036,10 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
                 _ticketId = null;
                 _selectedTicketLabel = '';
                 _ticketResults = [];
+                _ticketSearchHint = '';
               }
             });
+            if (v == 'ticket') _onTicketSearch();
           },
         ),
         const SizedBox(height: 12),
@@ -1030,6 +1062,12 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
           controller: _ticketSearchCtrl,
           decoration: _dec('Cari ticket', hint: 'Nomor atau judul ticket...'),
           onChanged: _onTicketSearch,
+          onTap: () => _onTicketSearch(),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Hanya ticket assign ke pelaksana (open / in progress / pending)',
+          style: TextStyle(fontSize: 11, color: ItWorkReportUi.textMuted),
         ),
         const SizedBox(height: 8),
         Text(
@@ -1050,16 +1088,32 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (_, i) {
                 final t = _ticketResults[i];
+                final statusName = t['status_name']?.toString();
                 return ListTile(
                   dense: true,
                   title: Text(
                     '${t['ticket_number'] ?? ''} — ${t['title'] ?? ''}',
                     style: const TextStyle(fontSize: 13),
                   ),
+                  subtitle: (t['outlet_name']?.toString().isNotEmpty ?? false)
+                      ? Text(t['outlet_name'].toString(), style: const TextStyle(fontSize: 11))
+                      : null,
+                  trailing: (statusName != null && statusName.isNotEmpty)
+                      ? Text(
+                          statusName,
+                          style: const TextStyle(fontSize: 10, color: ItWorkReportUi.textMuted),
+                        )
+                      : null,
                   onTap: () => _selectTicket(t),
                 );
               },
             ),
+          ),
+        ] else if (_ticketSearchHint.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            _ticketSearchHint,
+            style: const TextStyle(fontSize: 12, color: ItWorkReportUi.textMuted),
           ),
         ],
       ],

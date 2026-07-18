@@ -76,14 +76,16 @@ class ItWorkReportService {
   }
 
   Future<Map<String, dynamic>> searchTickets({
-    required String q,
+    String q = '',
     int? outletId,
+    int? executorId,
   }) async {
     final h = await _headers();
     if (h.isEmpty) return {'success': false, 'message': 'Sesi habis', 'data': []};
     final uri = Uri.parse('$_root/search-tickets').replace(queryParameters: {
-      'q': q,
+      if (q.trim().isNotEmpty) 'q': q.trim(),
       if (outletId != null) 'outlet_id': '$outletId',
+      if (executorId != null) 'executor_id': '$executorId',
     });
     final res = await http.get(uri, headers: h);
     return _decode(res.body, res.statusCode);
