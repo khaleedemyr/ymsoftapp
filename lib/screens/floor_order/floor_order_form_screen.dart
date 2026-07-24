@@ -197,20 +197,37 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
           price: item['price']?.toString() ?? '0',
         );
 
+        // RO non-Supplier: unit order = medium saja (Pack/Pcs), jangan tawarkan Recipe/large.
         final units = <String>{};
-        for (final unit in [
-          item['unit'],
-          item['item']?['small_unit']?['name'],
-          item['item']?['medium_unit']?['name'],
-          item['item']?['large_unit']?['name'],
-        ]) {
-          if (unit is String && unit.isNotEmpty) {
-            units.add(unit);
+        final mediumName = item['item']?['medium_unit']?['name']?.toString();
+        final currentUnit = item['unit']?.toString();
+        if (mediumName != null && mediumName.isNotEmpty) {
+          units.add(mediumName);
+        }
+        if (currentUnit != null && currentUnit.isNotEmpty) {
+          units.add(currentUnit);
+        }
+        if (_foMode == 'RO Supplier') {
+          for (final unit in [
+            item['item']?['small_unit']?['name'],
+            item['item']?['large_unit']?['name'],
+          ]) {
+            if (unit is String && unit.isNotEmpty) {
+              units.add(unit);
+            }
           }
         }
         input.availableUnits = units.toList();
-        if (input.unit == null && input.availableUnits.isNotEmpty) {
-          input.unit = input.availableUnits.first;
+        if (input.unit == null || input.unit!.isEmpty) {
+          input.unit = (mediumName != null && mediumName.isNotEmpty)
+              ? mediumName
+              : (input.availableUnits.isNotEmpty ? input.availableUnits.first : null);
+        } else if (_foMode != 'RO Supplier' &&
+            mediumName != null &&
+            mediumName.isNotEmpty &&
+            input.unit != mediumName) {
+          // Paksa medium agar harga large tidak tertempel ke Pack/Pcs di UI.
+          input.unit = mediumName;
         }
         _items.add(input);
       }
@@ -904,14 +921,22 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
     );
 
     if (selected != null && mounted) {
+      final mediumName = selected['unit_medium_name']?.toString() ??
+          selected['unit_medium']?.toString() ??
+          selected['unit']?.toString();
       final units = <String>{};
-      for (final unit in [
-        selected['unit'],
-        selected['unit_medium_name'],
-        selected['unit_large'],
-      ]) {
-        if (unit is String && unit.isNotEmpty) {
-          units.add(unit);
+      if (mediumName != null && mediumName.isNotEmpty) {
+        units.add(mediumName);
+      }
+      // RO Supplier boleh pilih small/large; RO lain hanya medium.
+      if (_foMode == 'RO Supplier') {
+        for (final unit in [
+          selected['unit_small'],
+          selected['unit_large'],
+        ]) {
+          if (unit is String && unit.isNotEmpty) {
+            units.add(unit);
+          }
         }
       }
 
@@ -919,9 +944,8 @@ class _FloorOrderFormScreenState extends State<FloorOrderFormScreen> {
         _items[index].itemId = _coerceInt(selected['id']);
         _items[index].nameController.text = selected['name']?.toString() ?? '';
         _items[index].availableUnits = units.toList();
-        _items[index].unit = _items[index].availableUnits.isNotEmpty
-            ? _items[index].availableUnits.first
-            : null;
+        _items[index].unit =
+            (mediumName != null && mediumName.isNotEmpty) ? mediumName : null;
         _items[index].priceController.text =
             (selected['price'] ?? selected['price_medium'] ?? 0).toString();
       });

@@ -957,6 +957,121 @@ class EmployeeResignationApproval {
   }
 }
 
+class OvertimeSubmissionApproval {
+  final int id;
+  final String number;
+  final DateTime? submissionDate;
+  final String? creatorName;
+  final String? notes;
+  final String? status;
+  final String? approverName;
+  final int? approvalLevel;
+  final int employeeCount;
+  final num totalHours;
+  final DateTime? createdAt;
+
+  OvertimeSubmissionApproval({
+    required this.id,
+    required this.number,
+    this.submissionDate,
+    this.creatorName,
+    this.notes,
+    this.status,
+    this.approverName,
+    this.approvalLevel,
+    this.employeeCount = 0,
+    this.totalHours = 0,
+    this.createdAt,
+  });
+
+  factory OvertimeSubmissionApproval.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      try {
+        return DateTime.parse(value.toString());
+      } catch (_) {
+        return null;
+      }
+    }
+
+    return OvertimeSubmissionApproval(
+      id: json['id'] ?? 0,
+      number: (json['number'] ?? '').toString(),
+      submissionDate: parseDate(json['submission_date']),
+      creatorName: json['creator']?['nama_lengkap']?.toString() ??
+          json['creator_name']?.toString(),
+      notes: json['notes']?.toString(),
+      status: json['status']?.toString(),
+      approverName: json['approver_name']?.toString(),
+      approvalLevel: json['approval_level'] != null
+          ? int.tryParse(json['approval_level'].toString())
+          : null,
+      employeeCount: int.tryParse((json['employee_count'] ?? 0).toString()) ?? 0,
+      totalHours: num.tryParse((json['total_hours'] ?? 0).toString()) ?? 0,
+      createdAt: parseDate(json['created_at']),
+    );
+  }
+}
+
+class WfhRequestApproval {
+  final int id;
+  final String number;
+  final DateTime? wfhDate;
+  final String? userName;
+  final String? reason;
+  final String? shiftName;
+  final String? timeStart;
+  final String? timeEnd;
+  final String? status;
+  final String? approverName;
+  final int? approvalLevel;
+  final DateTime? createdAt;
+
+  WfhRequestApproval({
+    required this.id,
+    required this.number,
+    this.wfhDate,
+    this.userName,
+    this.reason,
+    this.shiftName,
+    this.timeStart,
+    this.timeEnd,
+    this.status,
+    this.approverName,
+    this.approvalLevel,
+    this.createdAt,
+  });
+
+  factory WfhRequestApproval.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      try {
+        return DateTime.parse(value.toString());
+      } catch (_) {
+        return null;
+      }
+    }
+
+    return WfhRequestApproval(
+      id: json['id'] ?? 0,
+      number: (json['number'] ?? '').toString(),
+      wfhDate: parseDate(json['wfh_date']),
+      userName: json['user']?['nama_lengkap']?.toString() ??
+          json['user_name']?.toString(),
+      reason: json['reason']?.toString(),
+      shiftName: json['shift_name']?.toString(),
+      timeStart: json['time_start']?.toString(),
+      timeEnd: json['time_end']?.toString(),
+      status: json['status']?.toString(),
+      approverName: json['approver_name']?.toString(),
+      approvalLevel: json['approval_level'] != null
+          ? int.tryParse(json['approval_level'].toString())
+          : null,
+      createdAt: parseDate(json['created_at']),
+    );
+  }
+}
+
 class AssetInventoryTransferApproval {
   final int id;
   final String? transferNumber;

@@ -361,8 +361,8 @@ class _ItWorkReportFormScreenState extends State<ItWorkReportFormScreen> {
   }
 
   void _hydrateFromReport(Map<String, dynamic> report) {
-    final wd = report['work_date']?.toString() ?? '';
-    if (wd.length >= 10) _workDate = wd.substring(0, 10);
+    final wd = ItWorkReportUi.dateOnly(report['work_date']);
+    if (wd.isNotEmpty) _workDate = wd;
 
     final startHm = _splitHm(report['start_time']);
     _startHour = startHm.hour.isEmpty ? null : startHm.hour;

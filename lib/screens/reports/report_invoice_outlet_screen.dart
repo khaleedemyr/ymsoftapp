@@ -34,7 +34,7 @@ class _ReportInvoiceOutletScreenState extends State<ReportInvoiceOutletScreen> {
   int _currentPage = 1;
   bool _filterExpanded = true;
 
-  final Set<int> _expandedIds = {};
+  final Set<String> _expandedKeys = {};
 
   @override
   void initState() {
@@ -151,6 +151,16 @@ class _ReportInvoiceOutletScreenState extends State<ReportInvoiceOutletScreen> {
     return 'Rp ${NumberFormat('#,##0', 'id_ID').format(n)}';
   }
 
+  String _formatQty(dynamic val) {
+    if (val == null) return '-';
+    final n = double.tryParse(val.toString());
+    if (n == null) return val.toString();
+    if (n == n.roundToDouble()) {
+      return NumberFormat('#,##0', 'id_ID').format(n);
+    }
+    return NumberFormat('#,##0.####', 'id_ID').format(n);
+  }
+
   String _formatWarehouse(Map<String, dynamic> row) {
     final w = row['warehouse_name']?.toString();
     final d = row['warehouse_division_name']?.toString();
@@ -161,6 +171,18 @@ class _ReportInvoiceOutletScreenState extends State<ReportInvoiceOutletScreen> {
     if (wo != null && wo.isNotEmpty) parts.add(wo);
     if (parts.isEmpty) return '';
     return parts.join(' • ');
+  }
+
+  String _rowDetailKey(Map<String, dynamic> row) {
+    final detailKey = row['detail_key']?.toString();
+    if (detailKey != null && detailKey.isNotEmpty) return detailKey;
+    final type = row['transaction_type']?.toString() ?? 'GR';
+    final grId = row['gr_id']?.toString() ?? '';
+    final wdId = row['warehouse_division_id']?.toString();
+    if (type == 'GSR' && wdId != null && wdId.isNotEmpty && wdId != 'null') {
+      return '$type-$grId-$wdId';
+    }
+    return '$type-$grId';
   }
 
   double get _grandTotal => _data.fold(0, (sum, r) => sum + (double.tryParse(r['payment_total']?.toString() ?? '0') ?? 0));
@@ -361,10 +383,9 @@ class _ReportInvoiceOutletScreenState extends State<ReportInvoiceOutletScreen> {
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                           children: [
                             ..._data.map((row) {
-                              final grId = row['gr_id'];
-                              final id = grId is int ? grId : int.tryParse(grId.toString());
-                              final isExpanded = id != null && _expandedIds.contains(id);
-                              final detailItems = id != null ? _details[id.toString()] ?? [] : [];
+                              final detailKey = _rowDetailKey(row);
+                              final isExpanded = _expandedKeys.contains(detailKey);
+                              final detailItems = _details[detailKey] ?? [];
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: Column(
@@ -372,15 +393,13 @@ class _ReportInvoiceOutletScreenState extends State<ReportInvoiceOutletScreen> {
                                   children: [
                                     InkWell(
                                       onTap: () {
-                                        if (id != null) {
-                                          setState(() {
-                                            if (_expandedIds.contains(id)) {
-                                              _expandedIds.remove(id);
-                                            } else {
-                                              _expandedIds.add(id);
-                                            }
-                                          });
-                                        }
+                                        setState(() {
+                                          if (_expandedKeys.contains(detailKey)) {
+                                            _expandedKeys.remove(detailKey);
+                                          } else {
+                                            _expandedKeys.add(detailKey);
+                                          }
+                                        });
                                       },
                                       child: Padding(
                                         padding: const EdgeInsets.all(12),
@@ -433,7 +452,7 @@ class _ReportInvoiceOutletScreenState extends State<ReportInvoiceOutletScreen> {
                                                 child: Row(
                                                   children: [
                                                     Expanded(child: Text(m['item_name']?.toString() ?? '', style: const TextStyle(fontSize: 12))),
-                                                    Text('${m['qty']} ${m['unit_name'] ?? ''}', style: const TextStyle(fontSize: 12)),
+                                                    Text('${_formatQty(m['qty'])} ${m['unit_name'] ?? ''}', style: const TextStyle(fontSize: 12)),
                                                     const SizedBox(width: 8),
                                                     Text(_formatRupiah(m['subtotal']), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
                                                   ],

@@ -44,6 +44,8 @@ import '../screens/outlet_wip/outlet_wip_index_screen.dart';
 import '../screens/outlet_wip/outlet_wip_report_screen.dart';
 import '../screens/upselling_sales_achievement/upselling_sales_achievement_index_screen.dart';
 import '../screens/employee_coaching/employee_coaching_index_screen.dart';
+import '../screens/overtime_submission/overtime_submission_index_screen.dart';
+import '../screens/wfh_request/wfh_request_index_screen.dart';
 import '../screens/fb_product_calibration/fb_product_calibration_index_screen.dart';
 import '../screens/fb_product_calibration/fb_product_calibration_report_screen.dart';
 import '../screens/npd_plan_report/npd_plan_report_index_screen.dart';
@@ -138,16 +140,62 @@ class AppSidebar extends StatefulWidget {
 
 class _AppSidebarState extends State<AppSidebar> {
   final MenuService _menuService = MenuService();
+  final TextEditingController _menuSearchController = TextEditingController();
   List<MenuGroup> _menuGroups = [];
   bool _isLoading = true;
   Map<String, bool> _expandedGroups = {};
   String _appVersion = '';
+  String _menuSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _menuSearchController.addListener(_onMenuSearchChanged);
     _loadMenus();
     _loadAppVersion();
+  }
+
+  @override
+  void dispose() {
+    _menuSearchController.removeListener(_onMenuSearchChanged);
+    _menuSearchController.dispose();
+    super.dispose();
+  }
+
+  void _onMenuSearchChanged() {
+    final next = _menuSearchController.text;
+    if (next == _menuSearchQuery) return;
+    setState(() => _menuSearchQuery = next);
+  }
+
+  String _normalizeSearchText(String? text) {
+    return (text ?? '').toLowerCase().trim();
+  }
+
+  List<MenuGroup> get _displayMenuGroups {
+    final query = _normalizeSearchText(_menuSearchQuery);
+    if (query.isEmpty) return _menuGroups;
+
+    final filtered = <MenuGroup>[];
+    for (final group in _menuGroups) {
+      final groupMatches = _normalizeSearchText(group.title).contains(query);
+      final menus = group.menus.where((menu) {
+        final menuLabel = _normalizeSearchText(menu.name);
+        return menuLabel.contains(query) || groupMatches;
+      }).toList();
+
+      if (menus.isEmpty) continue;
+      filtered.add(
+        MenuGroup(
+          title: group.title,
+          icon: group.icon,
+          collapsible: group.collapsible,
+          open: true,
+          menus: menus,
+        ),
+      );
+    }
+    return filtered;
   }
 
   Future<void> _loadAppVersion() async {
@@ -188,6 +236,48 @@ class _AppSidebarState extends State<AppSidebar> {
     setState(() {
       _expandedGroups[title] = !(_expandedGroups[title] ?? false);
     });
+  }
+
+  void _clearMenuSearch() {
+    _menuSearchController.clear();
+  }
+
+  Widget _buildMenuSearchBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: TextField(
+        controller: _menuSearchController,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Cari menu...',
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          prefixIcon: Icon(Icons.search, size: 20, color: Colors.grey.shade400),
+          suffixIcon: _menuSearchQuery.isNotEmpty
+              ? IconButton(
+                  tooltip: 'Hapus pencarian',
+                  icon: Icon(Icons.close, size: 18, color: Colors.grey.shade500),
+                  onPressed: _clearMenuSearch,
+                )
+              : null,
+          filled: true,
+          fillColor: const Color(0xFFF8FAFC),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF6366F1)),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -282,6 +372,8 @@ class _AppSidebarState extends State<AppSidebar> {
             },
           ),
 
+          _buildMenuSearchBar(),
+
           // Menu List
           Expanded(
             child: _isLoading
@@ -309,126 +401,160 @@ class _AppSidebarState extends State<AppSidebar> {
                           ],
                         ),
                       )
-                    : ListView.builder(
-                        padding: EdgeInsets.only(
-                          top: 12,
-                          bottom: MediaQuery.of(context).padding.bottom + 12,
-                        ),
-                        itemCount: _menuGroups.length,
-                        itemBuilder: (context, index) {
-                          final group = _menuGroups[index];
-                          final isExpanded =
-                              _expandedGroups[group.title] ?? false;
+                    : Builder(
+                        builder: (context) {
+                          final displayGroups = _displayMenuGroups;
+                          final isSearching = _normalizeSearchText(_menuSearchQuery).isNotEmpty;
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Group Header
-                                if (group.collapsible)
-                                  Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      onTap: () => _toggleGroup(group.title),
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Container(
-                                        margin: const EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 14,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black
-                                                  .withOpacity(0.03),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 36,
-                                              height: 36,
-                                              decoration: BoxDecoration(
-                                                gradient: const LinearGradient(
-                                                  colors: [
-                                                    Color(0xFF6366F1),
-                                                    Color(0xFF8B5CF6),
-                                                  ],
-                                                  begin: Alignment.topLeft,
-                                                  end: Alignment.bottomRight,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
-                                              child: Icon(
-                                                _getIconData(group.icon),
-                                                size: 20,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                group.title,
-                                                style: const TextStyle(
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF1A1A1A),
-                                                  letterSpacing: 0.3,
-                                                ),
-                                              ),
-                                            ),
-                                            AnimatedRotation(
-                                              turns: isExpanded ? 0.25 : 0,
-                                              duration: const Duration(
-                                                  milliseconds: 200),
-                                              child: Icon(
-                                                Icons.chevron_right,
-                                                size: 20,
-                                                color: Colors.grey.shade400,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 8),
-                                    child: Text(
-                                      group.title,
+                          if (isSearching && displayGroups.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Menu tidak ditemukan',
                                       style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
                                         color: Colors.grey.shade600,
-                                        letterSpacing: 0.5,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                  ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
 
-                                // Menu Items
-                                if (!group.collapsible || isExpanded)
-                                  ...group.menus.map((menu) {
-                                    final isActive = widget.currentRoute !=
-                                            null &&
-                                        menu.route
-                                            .startsWith(widget.currentRoute!);
-
-                                    return _buildMenuItem(menu, isActive);
-                                  }),
-                              ],
+                          return ListView.builder(
+                            padding: EdgeInsets.only(
+                              top: 12,
+                              bottom: MediaQuery.of(context).padding.bottom + 12,
                             ),
+                            itemCount: displayGroups.length,
+                            itemBuilder: (context, index) {
+                              final group = displayGroups[index];
+                              final isExpanded = isSearching
+                                  ? true
+                                  : (_expandedGroups[group.title] ?? false);
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Group Header
+                                    if (group.collapsible)
+                                      Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          onTap: isSearching
+                                              ? null
+                                              : () => _toggleGroup(group.title),
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Container(
+                                            margin: const EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 14,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black
+                                                      .withOpacity(0.03),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 36,
+                                                  height: 36,
+                                                  decoration: BoxDecoration(
+                                                    gradient: const LinearGradient(
+                                                      colors: [
+                                                        Color(0xFF6366F1),
+                                                        Color(0xFF8B5CF6),
+                                                      ],
+                                                      begin: Alignment.topLeft,
+                                                      end: Alignment.bottomRight,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(10),
+                                                  ),
+                                                  child: Icon(
+                                                    _getIconData(group.icon),
+                                                    size: 20,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Text(
+                                                    group.title,
+                                                    style: const TextStyle(
+                                                      fontSize: 15,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF1A1A1A),
+                                                      letterSpacing: 0.3,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (!isSearching)
+                                                  AnimatedRotation(
+                                                    turns: isExpanded ? 0.25 : 0,
+                                                    duration: const Duration(
+                                                        milliseconds: 200),
+                                                    child: Icon(
+                                                      Icons.chevron_right,
+                                                      size: 20,
+                                                      color: Colors.grey.shade400,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 8),
+                                        child: Text(
+                                          group.title,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey.shade600,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+
+                                    // Menu Items
+                                    if (!group.collapsible || isExpanded)
+                                      ...group.menus.map((menu) {
+                                        final isActive = widget.currentRoute !=
+                                                null &&
+                                            menu.route
+                                                .startsWith(widget.currentRoute!);
+
+                                        return _buildMenuItem(menu, isActive);
+                                      }),
+                                  ],
+                                ),
+                              );
+                            },
                           );
                         },
                       ),
@@ -874,6 +1000,8 @@ class _AppSidebarState extends State<AppSidebar> {
       '/kalender-perusahaan',
       '/attendance-report/employee-summary',
       '/holiday-attendance',
+      '/overtime-submissions',
+      '/wfh-requests',
       '/extra-off-report',
       '/payroll/master',
       '/payroll/report',
@@ -938,6 +1066,7 @@ class _AppSidebarState extends State<AppSidebar> {
       // Cost Control
       '/mac-report',
       '/mac-anomaly-tracking',
+      '/outlet-mac-tracking',
       '/warehouse-mac-tracking',
       '/outlet-stock-report',
       '/cost-report',
@@ -1154,6 +1283,20 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const EmployeeCoachingIndexScreen(),
+        ),
+      );
+    } else if (route == '/overtime-submissions') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const OvertimeSubmissionIndexScreen(),
+        ),
+      );
+    } else if (route == '/wfh-requests') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const WfhRequestIndexScreen(),
         ),
       );
     } else if (route == '/fb-product-calibration') {

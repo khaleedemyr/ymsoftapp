@@ -478,6 +478,7 @@ class _WarehouseInternalUseWasteCreateScreenState extends State<WarehouseInterna
                       DropdownMenuItem(value: 'internal_use', child: Text('Internal Use')),
                       DropdownMenuItem(value: 'spoil', child: Text('Spoil')),
                       DropdownMenuItem(value: 'waste', child: Text('Waste')),
+                      DropdownMenuItem(value: 'r_and_d', child: Text('RnD')),
                     ],
                     onChanged: (v) {
                       setState(() {

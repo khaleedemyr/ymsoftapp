@@ -193,24 +193,32 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
         warehouseOutletId: _selectedWarehouseId!,
       );
       if (!mounted) return;
-      if (result is List) {
-        final list = result.map((e) {
+      if (result is Map) {
+        final rawItems = result['items'];
+        final items = rawItems is List ? rawItems : const [];
+        final list = items.map((e) {
           final m = Map<String, dynamic>.from(e as Map);
           return _BomLine(
             materialName: m['material_name']?.toString() ?? '-',
             qtyNeeded: (double.tryParse(m['qty_needed']?.toString() ?? '') ?? 0),
             materialUnitName: m['material_unit_name']?.toString() ?? '',
             stock: (double.tryParse(m['stock']?.toString() ?? '') ?? 0),
+            mac: (double.tryParse(m['mac']?.toString() ?? '') ?? 0),
+            lineCost: (double.tryParse(m['line_cost']?.toString() ?? '') ?? 0),
             sufficient: m['sufficient'] == true,
           );
         }).toList();
+        final total = double.tryParse(result['total_cost']?.toString() ?? '') ??
+            list.fold<double>(0, (s, e) => s + e.lineCost);
         setState(() {
           row.bomData = list;
+          row.bomTotalCost = total;
           row.loadingBom = false;
         });
       } else {
         setState(() {
           row.bomData = [];
+          row.bomTotalCost = 0;
           row.loadingBom = false;
         });
       }
@@ -230,6 +238,10 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
   String _formatBomNumber(double n) {
     if (n == n.roundToDouble()) return n.toInt().toString();
     return n.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
+  String _formatBomCurrency(double n) {
+    return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(n);
   }
 
   String _formatQtyField(double n) {
@@ -255,10 +267,54 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
     }
   }
 
+  static const double _qtyJadiTolerance = 0.10;
+
   double _calcQtyJadi(double qty, OutletWIPItemOption item) {
     final conv = item.smallConversionQty > 0 ? item.smallConversionQty : 1;
     final result = qty * conv;
     return (result * 100).roundToDouble() / 100;
+  }
+
+  double _expectedQtyJadi(_ProductionRow row, OutletWIPItemOption item) {
+    return _calcQtyJadi(row.qty, item);
+  }
+
+  double _qtyJadiMin(_ProductionRow row, OutletWIPItemOption item) {
+    final expected = _expectedQtyJadi(row, item);
+    return ((expected * (1 - _qtyJadiTolerance)) * 100).roundToDouble() / 100;
+  }
+
+  double _qtyJadiMax(_ProductionRow row, OutletWIPItemOption item) {
+    final expected = _expectedQtyJadi(row, item);
+    return ((expected * (1 + _qtyJadiTolerance)) * 100).roundToDouble() / 100;
+  }
+
+  bool _qtyJadiOutOfRange(_ProductionRow row, OutletWIPItemOption? item) {
+    if (item == null || row.selectedItemId == null) return false;
+    final expected = _expectedQtyJadi(row, item);
+    if (expected <= 0) return row.qtyJadi < 0;
+    final min = _qtyJadiMin(row, item);
+    final max = _qtyJadiMax(row, item);
+    return row.qtyJadi < (min - 0.0001) || row.qtyJadi > (max + 0.0001);
+  }
+
+  void _clampQtyJadi(_ProductionRow row, OutletWIPItemOption? item) {
+    if (item == null) return;
+    final expected = _expectedQtyJadi(row, item);
+    if (expected <= 0) return;
+    final min = _qtyJadiMin(row, item);
+    final max = _qtyJadiMax(row, item);
+    if (row.qtyJadi < min) {
+      setState(() {
+        row.qtyJadi = min;
+        row.fieldSeed++;
+      });
+    } else if (row.qtyJadi > max) {
+      setState(() {
+        row.qtyJadi = max;
+        row.fieldSeed++;
+      });
+    }
   }
 
   void _applyAutoQtyJadi(_ProductionRow row, OutletWIPItemOption item) {
@@ -271,6 +327,7 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
       row.selectedItemId = item.id;
       row.selectedUnitId = item.smallUnitId ?? item.mediumUnitId ?? item.largeUnitId;
       row.bomData = null;
+      row.bomTotalCost = 0;
       if (row.qty <= 0) row.qty = 1;
       _applyAutoQtyJadi(row, item);
     });
@@ -280,16 +337,27 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
     _notifyFormChanged();
   }
 
+  OutletWIPItemOption? _itemForRow(_ProductionRow row) {
+    if (row.selectedItemId == null) return null;
+    for (final item in _items) {
+      if (item.id == row.selectedItemId) return item;
+    }
+    return null;
+  }
+
   bool get _canSaveDraft {
     if (_selectedOutletId == null || _selectedWarehouseId == null || _dateController.text.isEmpty) {
       return false;
     }
     if (_rows.isEmpty) return false;
-    return _rows.every((r) =>
-        r.selectedItemId != null &&
-        r.qty > 0 &&
-        r.qtyJadi >= 0 &&
-        r.selectedUnitId != null);
+    return _rows.every((r) {
+      final item = _itemForRow(r);
+      return r.selectedItemId != null &&
+          r.qty > 0 &&
+          r.qtyJadi >= 0 &&
+          r.selectedUnitId != null &&
+          !_qtyJadiOutOfRange(r, item);
+    });
   }
 
   bool get _canSubmit {
@@ -366,6 +434,17 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
         );
         return false;
       }
+      final item = _itemForRow(row);
+      if (item != null && _qtyJadiOutOfRange(row, item)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Qty Jadi harus antara ${_formatBomNumber(_qtyJadiMin(row, item))} dan ${_formatBomNumber(_qtyJadiMax(row, item))} (±10% dari nilai master)',
+            ),
+          ),
+        );
+        return false;
+      }
     }
     final productions = _buildProductions();
     if (productions.isEmpty) {
@@ -381,10 +460,12 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
       final r = _rows[i];
       final itemId = r.selectedItemId;
       if (itemId == null) continue;
+      final item = _itemForRow(r);
       final qty = r.qty;
       final qtyJadi = r.qtyJadi;
       final unitId = r.selectedUnitId;
       if (unitId == null || qty <= 0 || qtyJadi < 0) continue;
+      if (_qtyJadiOutOfRange(r, item)) continue;
       list.add({
         'item_id': itemId,
         'qty': qty,
@@ -579,6 +660,7 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                             _selectedWarehouseId = v;
                             for (final r in _rows) {
                               r.bomData = null;
+                              r.bomTotalCost = 0;
                               r.selectedItemId = null;
                               r.selectedUnitId = null;
                               r.qty = 0;
@@ -759,6 +841,7 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                                 _selectedWarehouseId = null;
                                 for (final r in _rows) {
                                   r.bomData = null;
+                                  r.bomTotalCost = 0;
                                   r.selectedItemId = null;
                                   r.selectedUnitId = null;
                                   r.qty = 0;
@@ -908,6 +991,7 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
               onChanged: (v) {
                 row.qty = double.tryParse(v.replaceAll(',', '.')) ?? 0;
                 row.bomData = null;
+                row.bomTotalCost = 0;
                 if (selectedItem != null) _applyAutoQtyJadi(row, selectedItem);
                 _notifyFormChanged();
                 if (row.qty > 0 && row.selectedItemId != null) {
@@ -947,16 +1031,21 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: _inputDecoration().copyWith(
                           labelText: smallUnit != '-' ? 'Qty Jadi ($smallUnit)' : 'Qty Jadi',
+                          errorText: selectedItem != null && _qtyJadiOutOfRange(row, selectedItem)
+                              ? 'Batas ±10%: ${_formatBomNumber(_qtyJadiMin(row, selectedItem))} – ${_formatBomNumber(_qtyJadiMax(row, selectedItem))}'
+                              : null,
                         ),
                         onChanged: (v) {
                           row.qtyJadi = double.tryParse(v.replaceAll(',', '.')) ?? 0;
                           _notifyFormChanged();
                         },
+                        onFieldSubmitted: (_) => _clampQtyJadi(row, selectedItem),
+                        onTapOutside: (_) => _clampQtyJadi(row, selectedItem),
                       ),
                       if (selectedItem != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Otomatis: ${row.qty == row.qty.roundToDouble() ? row.qty.toInt() : row.qty} × ${_formatBomNumber(selectedItem.smallConversionQty)} — masih bisa diedit',
+                          'Otomatis: ${row.qty == row.qty.roundToDouble() ? row.qty.toInt() : row.qty} × ${_formatBomNumber(selectedItem.smallConversionQty)} (batas ±10%: ${_formatBomNumber(_qtyJadiMin(row, selectedItem))} – ${_formatBomNumber(_qtyJadiMax(row, selectedItem))})',
                           style: const TextStyle(fontSize: 11, color: Color(0xFF2563EB)),
                         ),
                       ],
@@ -1076,41 +1165,78 @@ class _OutletWIPCreateScreenState extends State<OutletWIPCreateScreen> {
                     ],
                   ),
                 )
-              else
-                Table(
-                  columnWidths: const {
-                    0: FlexColumnWidth(2),
-                    1: FlexColumnWidth(1.5),
-                    2: FlexColumnWidth(1.5),
-                    3: FlexColumnWidth(0.8),
-                  },
-                  border: TableBorder.all(color: Colors.grey.shade300, width: 0.5),
-                  children: [
-                    TableRow(
-                      decoration: BoxDecoration(color: Colors.grey.shade200),
-                      children: const [
-                        Padding(padding: EdgeInsets.all(6), child: Text('Material', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
-                        Padding(padding: EdgeInsets.all(6), child: Text('Qty Dibutuhkan', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
-                        Padding(padding: EdgeInsets.all(6), child: Text('Stok Tersedia', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
-                        Padding(padding: EdgeInsets.all(6), child: Text('Status', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
-                      ],
+              else ...[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Estimasi Biaya: ${_formatBomCurrency(row.bomTotalCost)}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.blue.shade700),
                     ),
-                    ...row.bomData!.map((b) => TableRow(
-                      children: [
-                        Padding(padding: const EdgeInsets.all(6), child: Text(b.materialName, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
-                        Padding(padding: const EdgeInsets.all(6), child: Text('${_formatBomNumber(b.qtyNeeded)} ${b.materialUnitName}', style: const TextStyle(fontSize: 11))),
-                        Padding(padding: const EdgeInsets.all(6), child: Text('${_formatBomNumber(b.stock)} ${b.materialUnitName}', style: const TextStyle(fontSize: 11))),
-                        Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Text(
-                            b.sufficient ? '✓ Cukup' : '✗ Kurang',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: b.sufficient ? Colors.green.shade700 : Colors.red.shade700),
-                          ),
-                        ),
-                      ],
-                    )),
-                  ],
+                  ),
                 ),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Table(
+                    columnWidths: const {
+                      0: FixedColumnWidth(140),
+                      1: FixedColumnWidth(110),
+                      2: FixedColumnWidth(110),
+                      3: FixedColumnWidth(90),
+                      4: FixedColumnWidth(100),
+                      5: FixedColumnWidth(70),
+                    },
+                    border: TableBorder.all(color: Colors.grey.shade300, width: 0.5),
+                    children: [
+                      TableRow(
+                        decoration: BoxDecoration(color: Colors.grey.shade200),
+                        children: const [
+                          Padding(padding: EdgeInsets.all(6), child: Text('Material', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
+                          Padding(padding: EdgeInsets.all(6), child: Text('Qty Dibutuhkan', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
+                          Padding(padding: EdgeInsets.all(6), child: Text('Stok Tersedia', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
+                          Padding(padding: EdgeInsets.all(6), child: Text('MAC', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
+                          Padding(padding: EdgeInsets.all(6), child: Text('Biaya', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
+                          Padding(padding: EdgeInsets.all(6), child: Text('Status', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11))),
+                        ],
+                      ),
+                      ...row.bomData!.map((b) => TableRow(
+                        children: [
+                          Padding(padding: const EdgeInsets.all(6), child: Text(b.materialName, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
+                          Padding(padding: const EdgeInsets.all(6), child: Text('${_formatBomNumber(b.qtyNeeded)} ${b.materialUnitName}', style: const TextStyle(fontSize: 11))),
+                          Padding(padding: const EdgeInsets.all(6), child: Text('${_formatBomNumber(b.stock)} ${b.materialUnitName}', style: const TextStyle(fontSize: 11))),
+                          Padding(padding: const EdgeInsets.all(6), child: Text(_formatBomCurrency(b.mac), style: const TextStyle(fontSize: 11))),
+                          Padding(padding: const EdgeInsets.all(6), child: Text(_formatBomCurrency(b.lineCost), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600))),
+                          Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Text(
+                              b.sufficient ? '✓ Cukup' : '✗ Kurang',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: b.sufficient ? Colors.green.shade700 : Colors.red.shade700),
+                            ),
+                          ),
+                        ],
+                      )),
+                      TableRow(
+                        decoration: BoxDecoration(color: Colors.blue.shade50),
+                        children: [
+                          const Padding(padding: EdgeInsets.all(6), child: Text('Total Biaya', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11))),
+                          const Padding(padding: EdgeInsets.all(6), child: Text('')),
+                          const Padding(padding: EdgeInsets.all(6), child: Text('')),
+                          const Padding(padding: EdgeInsets.all(6), child: Text('')),
+                          Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Text(
+                              _formatBomCurrency(row.bomTotalCost),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.blue.shade700),
+                            ),
+                          ),
+                          const Padding(padding: EdgeInsets.all(6), child: Text('')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ),
@@ -1124,6 +1250,8 @@ class _BomLine {
   final double qtyNeeded;
   final String materialUnitName;
   final double stock;
+  final double mac;
+  final double lineCost;
   final bool sufficient;
 
   _BomLine({
@@ -1131,6 +1259,8 @@ class _BomLine {
     required this.qtyNeeded,
     required this.materialUnitName,
     required this.stock,
+    required this.mac,
+    required this.lineCost,
     required this.sufficient,
   });
 }
@@ -1143,5 +1273,6 @@ class _ProductionRow {
   int fieldSeed = 0;
   bool showBom = false;
   List<_BomLine>? bomData;
+  double bomTotalCost = 0;
   bool loadingBom = false;
 }

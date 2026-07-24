@@ -149,6 +149,8 @@ class MenuService {
         {'name': 'Report Attendance', 'icon': 'fa-solid fa-fingerprint', 'route': '/attendance-report', 'code': 'attendance_report'},
         {'name': 'Attendance per Outlet', 'icon': 'fa-solid fa-fingerprint', 'route': '/attendance-report/employee-summary', 'code': 'attendance_outlet_summary'},
         {'name': 'Holiday Attendance', 'icon': 'fa-solid fa-calendar-day', 'route': '/holiday-attendance', 'code': 'holiday_attendance'},
+        {'name': 'Pengajuan Lembur', 'icon': 'fa-solid fa-business-time', 'route': '/overtime-submissions', 'code': 'overtime_submission'},
+        {'name': 'Pengajuan WFH', 'icon': 'fa-solid fa-house-laptop', 'route': '/wfh-requests', 'code': 'wfh_request'},
         {'name': 'Extra Off & PH Report', 'icon': 'fa-solid fa-chart-line', 'route': '/extra-off-report', 'code': 'extra_off_report'},
         {'name': 'Master Payroll', 'icon': 'fa-solid fa-money-check-dollar', 'route': '/payroll/master', 'code': 'payroll_master'},
         {'name': 'Payroll', 'icon': 'fa-solid fa-file-invoice-dollar', 'route': '/payroll/report', 'code': 'payroll_report'},
@@ -288,7 +290,8 @@ class MenuService {
       'menus': [
         {'name': 'Laporan Perubahan Harga PO', 'icon': 'fa-solid fa-arrow-trend-up', 'route': '/inventory/po-price-change-report', 'code': 'po_price_change_report_view'},
         {'name': 'MAC Report', 'icon': 'fa-solid fa-chart-line', 'route': '/mac-report', 'code': 'mac_report'},
-        {'name': 'Outlet MAC Tracking', 'icon': 'fa-solid fa-triangle-exclamation', 'route': '/mac-anomaly-tracking', 'code': 'mac_anomaly_tracking'},
+        {'name': 'Anomali MAC Outlet', 'icon': 'fa-solid fa-triangle-exclamation', 'route': '/mac-anomaly-tracking', 'code': 'mac_anomaly_tracking'},
+        {'name': 'Pelacakan MAC Outlet', 'icon': 'fa-solid fa-clock-rotate-left', 'route': '/outlet-mac-tracking', 'code': 'outlet_mac_tracking'},
         {'name': 'Warehouse MAC Tracking', 'icon': 'fa-solid fa-warehouse', 'route': '/warehouse-mac-tracking', 'code': 'warehouse_mac_tracking'},
         {'name': 'Outlet Stock Report', 'icon': 'fa-solid fa-chart-line', 'route': '/outlet-stock-report', 'code': 'outlet_stock_report'},
         {'name': 'Cost Report', 'icon': 'fa-solid fa-coins', 'route': '/cost-report', 'code': 'cost_report'},

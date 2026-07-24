@@ -44,6 +44,9 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
   
   // Approved absents
   List<Map<String, dynamic>> _approvedAbsents = [];
+
+  // Approved WFH
+  List<Map<String, dynamic>> _approvedWfhs = [];
   
   // User leave requests
   List<Map<String, dynamic>> _userLeaveRequests = [];
@@ -199,6 +202,17 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
             _approvedAbsents = List<Map<String, dynamic>>.from(
               data['approvedAbsents'].map((a) => Map<String, dynamic>.from(a)),
             );
+          } else {
+            _approvedAbsents = [];
+          }
+
+          // Parse approved WFH
+          if (data['approvedWfhs'] != null) {
+            _approvedWfhs = List<Map<String, dynamic>>.from(
+              data['approvedWfhs'].map((w) => Map<String, dynamic>.from(w)),
+            );
+          } else {
+            _approvedWfhs = [];
           }
           
           // Parse user leave requests
@@ -772,6 +786,21 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
           }
         }
       }
+
+      Map<String, dynamic>? approvedWfh;
+      for (var wfh in _approvedWfhs) {
+        final wfhDateRaw = wfh['wfh_date']?.toString();
+        if (wfhDateRaw == null || wfhDateRaw.isEmpty) continue;
+        try {
+          final wfhDate = DateTime.parse(wfhDateRaw);
+          final wfhDateOnly = DateTime(wfhDate.year, wfhDate.month, wfhDate.day);
+          final currentDateOnly = DateTime(currentDate.year, currentDate.month, currentDate.day);
+          if (wfhDateOnly.isAtSameMomentAs(currentDateOnly)) {
+            approvedWfh = wfh;
+            break;
+          }
+        } catch (_) {}
+      }
       
       payrollDays.add({
         'date': dateStr,
@@ -779,6 +808,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
         'schedules': schedules,
         'holiday': holiday,
         'approvedLeave': approvedLeave,
+        'approvedWfh': approvedWfh,
         'isToday': dateStr == DateFormat('yyyy-MM-dd').format(DateTime.now()),
       });
     }
@@ -849,6 +879,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
     final isToday = day['isToday'] as bool;
     final holiday = day['holiday'] as Map<String, dynamic>?;
     final approvedLeave = day['approvedLeave'] as Map<String, dynamic>?;
+    final approvedWfh = day['approvedWfh'] as Map<String, dynamic>?;
     final schedulesList = day['schedules'];
     final schedules = schedulesList is List ? schedulesList : (schedulesList != null ? [schedulesList] : []);
     
@@ -856,34 +887,33 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
     final date = DateTime.parse(dateStr);
     final dayName = DateFormat('EEEE', 'id_ID').format(date);
     
-    // Determine if this date has approved leave
     final hasApprovedLeave = approvedLeave != null;
+    final hasApprovedWfh = approvedWfh != null;
+    final accentColor = isToday
+        ? Colors.blue
+        : holiday != null
+            ? Colors.red
+            : hasApprovedLeave
+                ? Colors.purple
+                : hasApprovedWfh
+                    ? Colors.teal
+                    : Colors.grey;
     
     return Container(
       decoration: BoxDecoration(
-        gradient: isToday
-            ? LinearGradient(
-                colors: [Colors.blue.shade50, Colors.blue.shade100],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : holiday != null
-                ? LinearGradient(
-                    colors: [Colors.red.shade50, Colors.red.shade100],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                : hasApprovedLeave
-                    ? LinearGradient(
-                        colors: [Colors.purple.shade50, Colors.purple.shade100],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : LinearGradient(
-                        colors: [Colors.white, Colors.grey.shade50],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+        gradient: LinearGradient(
+          colors: isToday
+              ? [Colors.blue.shade50, Colors.blue.shade100]
+              : holiday != null
+                  ? [Colors.red.shade50, Colors.red.shade100]
+                  : hasApprovedLeave
+                      ? [Colors.purple.shade50, Colors.purple.shade100]
+                      : hasApprovedWfh
+                          ? [Colors.teal.shade50, Colors.teal.shade100]
+                          : [Colors.white, Colors.grey.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         border: Border.all(
           color: isToday
               ? Colors.blue.shade300
@@ -891,20 +921,15 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                   ? Colors.red.shade300
                   : hasApprovedLeave
                       ? Colors.purple.shade300
-                      : Colors.grey.shade200,
-          width: isToday || holiday != null || hasApprovedLeave ? 2 : 1,
+                      : hasApprovedWfh
+                          ? Colors.teal.shade300
+                          : Colors.grey.shade200,
+          width: isToday || holiday != null || hasApprovedLeave || hasApprovedWfh ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: (isToday 
-                ? Colors.blue 
-                : holiday != null 
-                    ? Colors.red 
-                    : hasApprovedLeave
-                        ? Colors.purple
-                        : Colors.grey)
-                .withOpacity(0.1),
+            color: accentColor.withOpacity(0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -922,32 +947,21 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    gradient: isToday
-                        ? LinearGradient(
-                            colors: [Colors.blue.shade400, Colors.blue.shade600],
-                          )
-                        : holiday != null
-                            ? LinearGradient(
-                                colors: [Colors.red.shade400, Colors.red.shade600],
-                              )
-                            : hasApprovedLeave
-                                ? LinearGradient(
-                                    colors: [Colors.purple.shade400, Colors.purple.shade600],
-                                  )
-                                : LinearGradient(
-                                    colors: [Colors.grey.shade300, Colors.grey.shade400],
-                                  ),
+                    gradient: LinearGradient(
+                      colors: isToday
+                          ? [Colors.blue.shade400, Colors.blue.shade600]
+                          : holiday != null
+                              ? [Colors.red.shade400, Colors.red.shade600]
+                              : hasApprovedLeave
+                                  ? [Colors.purple.shade400, Colors.purple.shade600]
+                                  : hasApprovedWfh
+                                      ? [Colors.teal.shade400, Colors.teal.shade600]
+                                      : [Colors.grey.shade300, Colors.grey.shade400],
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: (isToday 
-                            ? Colors.blue 
-                            : holiday != null 
-                                ? Colors.red 
-                                : hasApprovedLeave
-                                    ? Colors.purple
-                                    : Colors.grey)
-                            .withOpacity(0.3),
+                        color: accentColor.withOpacity(0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -1028,6 +1042,33 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                           ],
                         ),
                       ),
+                    if (hasApprovedWfh)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.teal[100],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.home_work_outlined, size: 12, color: Colors.teal[700]),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'WFH${approvedWfh!['number'] != null ? ' · ${approvedWfh['number']}' : ''}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.teal[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1038,6 +1079,55 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
             const SizedBox(height: 12),
             const Divider(),
             const SizedBox(height: 8),
+            if (hasApprovedWfh)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.teal.shade50, Colors.teal.shade100],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(
+                    color: Colors.teal.shade300,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.home_work_outlined, size: 18, color: Colors.teal[700]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Work From Home',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.teal[700],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (approvedWfh!['reason'] != null &&
+                        approvedWfh['reason'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        approvedWfh['reason'].toString(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.teal[600],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ...schedules.map((schedule) {
               // Ensure schedule is a Map
               final scheduleMap = schedule is Map<String, dynamic> 
@@ -1091,6 +1181,55 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.purple[600],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              )
+            else if (hasApprovedWfh)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.teal.shade50, Colors.teal.shade100],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(
+                    color: Colors.teal.shade300,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.home_work_outlined, size: 18, color: Colors.teal[700]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Work From Home',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.teal[700],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (approvedWfh!['reason'] != null &&
+                        approvedWfh['reason'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        approvedWfh['reason'].toString(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.teal[600],
                         ),
                       ),
                     ],

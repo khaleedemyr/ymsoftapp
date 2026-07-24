@@ -40,6 +40,8 @@ import '../widgets/approvals/pr_food_approval_card.dart';
 import '../widgets/approvals/po_food_approval_card.dart';
 import '../widgets/approvals/ro_khusus_approval_card.dart';
 import '../widgets/approvals/employee_resignation_approval_card.dart';
+import '../widgets/approvals/overtime_submission_approval_card.dart';
+import '../widgets/approvals/wfh_request_approval_card.dart';
 import '../widgets/approvals/lost_breakage_approval_card.dart';
 import '../widgets/approvals/qa2_cap_approval_card.dart';
 import '../widgets/approvals/npd_plan_report_approval_card.dart';
@@ -71,6 +73,8 @@ import 'approvals/pr_food_approval_detail_screen.dart';
 import 'approvals/po_food_approval_detail_screen.dart';
 import 'approvals/ro_khusus_approval_detail_screen.dart';
 import 'approvals/employee_resignation_approval_detail_screen.dart';
+import 'approvals/overtime_submission_approval_detail_screen.dart';
+import 'approvals/wfh_request_approval_detail_screen.dart';
 import 'asset_inventory_transfer/asset_inventory_transfer_detail_screen.dart';
 import 'asset_owner_transfer/asset_owner_transfer_detail_screen.dart';
 import 'asset_inventory_adjustment/asset_inventory_adjustment_detail_screen.dart';
@@ -131,6 +135,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<POFoodApproval> _poFoodApprovals = [];
   List<ROKhususApproval> _roKhususApprovals = [];
   List<EmployeeResignationApproval> _employeeResignationApprovals = [];
+  List<OvertimeSubmissionApproval> _overtimeSubmissionApprovals = [];
+  List<WfhRequestApproval> _wfhRequestApprovals = [];
   List<LostBreakageApproval> _lostBreakageApprovals = [];
   List<Qa2CapApproval> _qa2CapApprovals = [];
   List<NpdPendingApproval> _npdPlanReportApprovals = [];
@@ -744,6 +750,40 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _loadPendingOvertimeSubmissionApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingOvertimeSubmissionApprovals();
+      final rawCache = _approvalService.getRawJsonCache();
+      if (rawCache.containsKey('overtime_submission')) {
+        _cachedApprovalsJson['overtime_submission'] = rawCache['overtime_submission']!;
+      }
+      if (mounted) {
+        setState(() {
+          _overtimeSubmissionApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading Overtime Submission approvals: $e');
+    }
+  }
+
+  Future<void> _loadPendingWfhRequestApprovals() async {
+    try {
+      final approvals = await _approvalService.getPendingWfhRequestApprovals();
+      final rawCache = _approvalService.getRawJsonCache();
+      if (rawCache.containsKey('wfh_request')) {
+        _cachedApprovalsJson['wfh_request'] = rawCache['wfh_request']!;
+      }
+      if (mounted) {
+        setState(() {
+          _wfhRequestApprovals = approvals;
+        });
+      }
+    } catch (e) {
+      print('Error loading WFH Request approvals: $e');
+    }
+  }
+
   Future<void> _loadPendingLostBreakageApprovals() async {
     try {
       final approvals = await _approvalService.getPendingLostBreakageApprovals();
@@ -1173,6 +1213,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               _employeeResignationApprovals = (_cachedApprovalsJson['employee_resignation'] as List<dynamic>?)
                       ?.map((e) => EmployeeResignationApproval.fromJson(e))
                       .toList() ?? [];
+              _overtimeSubmissionApprovals = (_cachedApprovalsJson['overtime_submission'] as List<dynamic>?)
+                      ?.map((e) => OvertimeSubmissionApproval.fromJson(e as Map<String, dynamic>))
+                      .toList() ?? [];
+              _wfhRequestApprovals = (_cachedApprovalsJson['wfh_request'] as List<dynamic>?)
+                      ?.map((e) => WfhRequestApproval.fromJson(e as Map<String, dynamic>))
+                      .toList() ?? [];
               _lostBreakageApprovals = (_cachedApprovalsJson['lost_breakage'] as List<dynamic>?)
                       ?.map((e) => LostBreakageApproval.fromJson(e))
                       .toList() ?? [];
@@ -1286,6 +1332,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'employee_resignation':
           await _loadPendingEmployeeResignationApprovals();
           break;
+        case 'overtime_submission':
+          await _loadPendingOvertimeSubmissionApprovals();
+          break;
+        case 'wfh_request':
+          await _loadPendingWfhRequestApprovals();
+          break;
         case 'lost_breakage':
           await _loadPendingLostBreakageApprovals();
           break;
@@ -1384,6 +1436,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _loadPendingPoFoodApprovals(),
         _loadPendingROKhususApprovals(),
         _loadPendingEmployeeResignationApprovals(),
+        _loadPendingOvertimeSubmissionApprovals(),
+        _loadPendingWfhRequestApprovals(),
       ], eagerError: false);
 
       // Batch 5: Asset approvals
@@ -1438,6 +1492,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _poFoodApprovals.length +
         _roKhususApprovals.length +
         _employeeResignationApprovals.length +
+        _overtimeSubmissionApprovals.length +
+        _wfhRequestApprovals.length +
         _lostBreakageApprovals.length +
         _qa2CapApprovals.length +
         _npdPlanReportApprovals.length +
@@ -3598,6 +3654,58 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ],
 
+            // Overtime Submission Approvals
+            if (_overtimeSubmissionApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'Overtime Submission',
+                _overtimeSubmissionApprovals.length,
+                Colors.indigo,
+                _overtimeSubmissionApprovals.map((approval) => OvertimeSubmissionApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => OvertimeSubmissionApprovalDetailScreen(submissionId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('overtime_submission');
+                      }
+                    });
+                  },
+                )).toList(),
+                'overtime_submission',
+              ),
+            ],
+
+            // WFH Request Approvals
+            if (_wfhRequestApprovals.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildModernApprovalSection(
+                'WFH Approval',
+                _wfhRequestApprovals.length,
+                const Color(0xFF0D9488),
+                _wfhRequestApprovals.map((approval) => WfhRequestApprovalCard(
+                  approval: approval,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => WfhRequestApprovalDetailScreen(requestId: approval.id),
+                      ),
+                    ).then((result) {
+                      if (result == true) {
+                        _refreshApprovalType('wfh_request');
+                      }
+                    });
+                  },
+                )).toList(),
+                'wfh_request',
+              ),
+            ],
+
             // Asset Lost & Breakage Approvals
             if (_lostBreakageApprovals.isNotEmpty) ...[
               const SizedBox(height: 20),
@@ -4089,6 +4197,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         break;
       case 'employee_resignation':
         approvals = _employeeResignationApprovals;
+        break;
+      case 'overtime_submission':
+        approvals = _overtimeSubmissionApprovals;
+        break;
+      case 'wfh_request':
+        approvals = _wfhRequestApprovals;
         break;
       case 'lost_breakage':
         approvals = _lostBreakageApprovals;

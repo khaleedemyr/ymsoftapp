@@ -37,6 +37,22 @@ class ItWorkReportUi {
     return '${AuthService.storageUrl}/storage/$url';
   }
 
+  /// Ambil tanggal kalender Y-m-d dari API (dukung ISO UTC lama tanpa geser ±1 hari).
+  static String dateOnly(dynamic value) {
+    final s = value?.toString().trim() ?? '';
+    if (s.isEmpty) return '';
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(s)) return s;
+    if (s.contains('T')) {
+      try {
+        final dt = DateTime.parse(s).toLocal();
+        final m = dt.month.toString().padLeft(2, '0');
+        final d = dt.day.toString().padLeft(2, '0');
+        return '${dt.year}-$m-$d';
+      } catch (_) {}
+    }
+    return s.length >= 10 ? s.substring(0, 10) : s;
+  }
+
   static int? outletId(Map<String, dynamic> outlet) {
     final raw = outlet['id_outlet'] ?? outlet['id'];
     if (raw is int) return raw;

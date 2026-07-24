@@ -19,6 +19,8 @@ import '../screens/approvals/pr_food_approval_detail_screen.dart';
 import '../screens/approvals/po_food_approval_detail_screen.dart';
 import '../screens/approvals/ro_khusus_approval_detail_screen.dart';
 import '../screens/approvals/employee_resignation_approval_detail_screen.dart';
+import '../screens/approvals/overtime_submission_approval_detail_screen.dart';
+import '../screens/approvals/wfh_request_approval_detail_screen.dart';
 import '../screens/approvals/qa2_cap_approval_detail_screen.dart';
 import 'approvals/pr_approval_card.dart';
 import 'approvals/po_ops_approval_card.dart';
@@ -40,6 +42,8 @@ import 'approvals/pr_food_approval_card.dart';
 import 'approvals/po_food_approval_card.dart';
 import 'approvals/ro_khusus_approval_card.dart';
 import 'approvals/employee_resignation_approval_card.dart';
+import 'approvals/overtime_submission_approval_card.dart';
+import 'approvals/wfh_request_approval_card.dart';
 import 'approvals/qa2_cap_approval_card.dart';
 import 'approvals/pos_void_item_approval_card.dart';
 import '../services/approval_service.dart';
@@ -162,6 +166,12 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           break;
         case 'employee_resignation':
           approvals = await _approvalService.getPendingEmployeeResignationApprovals();
+          break;
+        case 'overtime_submission':
+          approvals = await _approvalService.getPendingOvertimeSubmissionApprovals();
+          break;
+        case 'wfh_request':
+          approvals = await _approvalService.getPendingWfhRequestApprovals();
           break;
         case 'qa2_cap':
           approvals = await _approvalService.getPendingQa2CapApprovals();
@@ -314,6 +324,19 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
               final er = approval as EmployeeResignationApproval;
               return er.employeeName.toLowerCase().contains(query) ||
                   (er.reason?.toLowerCase().contains(query) ?? false);
+            case 'overtime_submission':
+              final ot = approval as OvertimeSubmissionApproval;
+              return ot.number.toLowerCase().contains(query) ||
+                  (ot.creatorName?.toLowerCase().contains(query) ?? false) ||
+                  (ot.notes?.toLowerCase().contains(query) ?? false) ||
+                  (ot.approverName?.toLowerCase().contains(query) ?? false);
+            case 'wfh_request':
+              final wfh = approval as WfhRequestApproval;
+              return wfh.number.toLowerCase().contains(query) ||
+                  (wfh.userName?.toLowerCase().contains(query) ?? false) ||
+                  (wfh.reason?.toLowerCase().contains(query) ?? false) ||
+                  (wfh.shiftName?.toLowerCase().contains(query) ?? false) ||
+                  (wfh.approverName?.toLowerCase().contains(query) ?? false);
             case 'pos_void_item':
               final pv = approval as PosVoidItemApproval;
               return (pv.number?.toLowerCase().contains(query) ?? false) ||
@@ -370,6 +393,10 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         return 'Cari Number atau Outlet...';
       case 'employee_resignation':
         return 'Cari Nama Karyawan atau Alasan...';
+      case 'overtime_submission':
+        return 'Cari nomor, pembuat, atau catatan...';
+      case 'wfh_request':
+        return 'Cari nomor, nama, alasan, atau shift...';
       case 'pos_void_item':
         return 'Cari order, item, outlet, atau kasir...';
       default:
@@ -418,6 +445,10 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         return (approval as ROKhususApproval).id;
       case 'employee_resignation':
         return (approval as EmployeeResignationApproval).id;
+      case 'overtime_submission':
+        return (approval as OvertimeSubmissionApproval).id;
+      case 'wfh_request':
+        return (approval as WfhRequestApproval).id;
       case 'pos_void_item':
         return (approval as PosVoidItemApproval).id;
       default:
@@ -562,6 +593,12 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
             case 'employee_resignation':
               // Employee Resignation may require approvalFlowId, but for multi-approve we'll use null
               result = await _approvalService.approveEmployeeResignation(id, approvalFlowId: null);
+              break;
+            case 'overtime_submission':
+              result = await _approvalService.approveOvertimeSubmission(id);
+              break;
+            case 'wfh_request':
+              result = await _approvalService.approveWfhRequest(id);
               break;
             default:
               return {'success': false};
@@ -821,6 +858,18 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
           onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
         );
         break;
+      case 'overtime_submission':
+        card = OvertimeSubmissionApprovalCard(
+          approval: approval as OvertimeSubmissionApproval,
+          onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
+        );
+        break;
+      case 'wfh_request':
+        card = WfhRequestApprovalCard(
+          approval: approval as WfhRequestApproval,
+          onTap: _isSelecting ? () => _toggleSelection(id) : () => _navigateToDetail(approval),
+        );
+        break;
       case 'qa2_cap':
         card = Qa2CapApprovalCard(
           approval: approval as Qa2CapApproval,
@@ -930,6 +979,12 @@ class _ApprovalListModalState extends State<ApprovalListModal> {
         break;
       case 'employee_resignation':
         detailScreen = EmployeeResignationApprovalDetailScreen(resignationId: (approval as EmployeeResignationApproval).id);
+        break;
+      case 'overtime_submission':
+        detailScreen = OvertimeSubmissionApprovalDetailScreen(submissionId: (approval as OvertimeSubmissionApproval).id);
+        break;
+      case 'wfh_request':
+        detailScreen = WfhRequestApprovalDetailScreen(requestId: (approval as WfhRequestApproval).id);
         break;
       case 'qa2_cap':
         detailScreen = Qa2CapApprovalDetailScreen(auditId: (approval as Qa2CapApproval).id);

@@ -2106,6 +2106,256 @@ class ApprovalService {
     }
   }
 
+  Future<List<OvertimeSubmissionApproval>> getPendingOvertimeSubmissionApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/overtime-submissions/pending-approvals'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['submissions'] != null) {
+          final List<dynamic> approvalsJson = data['submissions'];
+          _rawJsonCache['overtime_submission'] = approvalsJson;
+          return approvalsJson
+              .map((json) => OvertimeSubmissionApproval.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading Overtime Submission approvals: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> getOvertimeSubmissionApprovalDetails(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/overtime-submissions/$id/approval-details'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Failed to load details',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> approveOvertimeSubmission(int id, {String? comments}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/overtime-submissions/$id/approve'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          if (comments != null) 'comments': comments,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Failed to approve',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> rejectOvertimeSubmission(int id, {required String rejectionReason}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/overtime-submissions/$id/reject'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'rejection_reason': rejectionReason,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Failed to reject',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<List<WfhRequestApproval>> getPendingWfhRequestApprovals() async {
+    try {
+      final token = await _getToken();
+      if (token == null) return [];
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/wfh-requests/pending-approvals'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['requests'] != null) {
+          final List<dynamic> approvalsJson = data['requests'];
+          _rawJsonCache['wfh_request'] = approvalsJson;
+          return approvalsJson
+              .map((json) => WfhRequestApproval.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error loading WFH Request approvals: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> getWfhRequestApprovalDetails(int id) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/wfh-requests/$id/approval-details'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Failed to load details',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> approveWfhRequest(int id, {String? comments}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/wfh-requests/$id/approve'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          if (comments != null) 'comments': comments,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Failed to approve',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<Map<String, dynamic>> rejectWfhRequest(int id, {required String rejectionReason}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/wfh-requests/$id/reject'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'rejection_reason': rejectionReason,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Failed to reject',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
   // Approve Food Payment
   Future<Map<String, dynamic>> approveFoodPayment(int id, {String? comment, String? note}) async {
     try {

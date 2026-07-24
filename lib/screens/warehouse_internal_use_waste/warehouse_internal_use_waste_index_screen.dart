@@ -145,6 +145,8 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
         return 'Spoil';
       case 'waste':
         return 'Waste';
+      case 'r_and_d':
+        return 'RnD';
       default:
         return type;
     }
@@ -397,6 +399,7 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
                       DropdownMenuItem(value: 'internal_use', child: Text('Internal Use')),
                       DropdownMenuItem(value: 'spoil', child: Text('Spoil')),
                       DropdownMenuItem(value: 'waste', child: Text('Waste')),
+                      DropdownMenuItem(value: 'r_and_d', child: Text('RnD')),
                     ],
                     onChanged: (v) => setState(() => _typeFilter = v ?? ''),
                   ),
@@ -739,6 +742,9 @@ class _WarehouseInternalUseWasteIndexScreenState extends State<WarehouseInternal
     } else if (type == 'waste') {
       bg = Colors.red.withOpacity(0.15);
       fg = Colors.red.shade700;
+    } else if (type == 'r_and_d') {
+      bg = Colors.indigo.withOpacity(0.15);
+      fg = Colors.indigo.shade700;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

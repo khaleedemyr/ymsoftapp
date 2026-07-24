@@ -122,6 +122,8 @@ class _WarehouseInternalUseWasteDetailScreenState extends State<WarehouseInterna
         return 'Spoil';
       case 'waste':
         return 'Waste';
+      case 'r_and_d':
+        return 'RnD';
       default:
         return type;
     }

@@ -28,6 +28,7 @@ class _LostBreakageReplacementBacklogScreenState
   bool _preparing = false;
   bool _prIntegrationReady = true;
   bool _isAdmin = false;
+  bool _filterExpanded = false;
 
   String _typeFilter = '';
   int? _ownerFilter;
@@ -111,6 +112,41 @@ class _LostBreakageReplacementBacklogScreenState
     _load();
   }
 
+  bool get _hasActiveFilters {
+    return _searchController.text.trim().isNotEmpty ||
+        _typeFilter.isNotEmpty ||
+        _ownerFilter != null ||
+        _locationFilter != null ||
+        _dateFrom != null ||
+        _dateTo != null;
+  }
+
+  List<DropdownMenuItem<int?>> _outletDropdownItems() {
+    final seen = <int>{};
+    final items = <DropdownMenuItem<int?>>[
+      const DropdownMenuItem<int?>(value: null, child: Text('Semua')),
+    ];
+    for (final o in _outlets) {
+      final id = int.tryParse('${o['id'] ?? o['id_outlet'] ?? ''}');
+      if (id == null || seen.contains(id)) continue;
+      seen.add(id);
+      items.add(DropdownMenuItem<int?>(
+        value: id,
+        child: Text(o['name']?.toString() ?? o['nama_outlet']?.toString() ?? '-'),
+      ));
+    }
+    return items;
+  }
+
+  int? _safeOutletValue(int? selected) {
+    if (selected == null) return null;
+    final exists = _outlets.any((o) {
+      final id = int.tryParse('${o['id'] ?? o['id_outlet'] ?? ''}');
+      return id == selected;
+    });
+    return exists ? selected : null;
+  }
+
   Future<void> _createPr() async {
     if (_selectedIds.isEmpty) return;
     setState(() => _preparing = true);
@@ -161,115 +197,171 @@ class _LostBreakageReplacementBacklogScreenState
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Container(
-              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'No. dokumen, item, SKU...',
-                      isDense: true,
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  InkWell(
+                    onTap: () => setState(() => _filterExpanded = !_filterExpanded),
+                    borderRadius: BorderRadius.vertical(
+                      top: const Radius.circular(12),
+                      bottom: Radius.circular(_filterExpanded ? 0 : 12),
                     ),
-                    onSubmitted: (_) => _load(),
-                  ),
-                  const SizedBox(height: 10),
-                  if (_isAdmin) ...[
-                    DropdownButtonFormField<int?>(
-                      initialValue: _ownerFilter,
-                      decoration: InputDecoration(
-                        labelText: 'Pemilik',
-                        isDense: true,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.tune_rounded, size: 18, color: _primaryColor),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Filter',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                          ),
+                          if (_hasActiveFilters && !_filterExpanded)
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _primaryColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'Aktif',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _primaryColor,
+                                ),
+                              ),
+                            ),
+                          Icon(
+                            _filterExpanded ? Icons.expand_less : Icons.expand_more,
+                            color: Colors.grey.shade600,
+                          ),
+                        ],
                       ),
-                      items: [
-                        const DropdownMenuItem<int?>(value: null, child: Text('Semua')),
-                        ..._outlets.map((o) => DropdownMenuItem<int?>(
-                              value: int.tryParse(o['id'].toString()),
-                              child: Text(o['name']?.toString() ?? '-'),
-                            )),
-                      ],
-                      onChanged: (v) => setState(() => _ownerFilter = v),
                     ),
-                    const SizedBox(height: 10),
-                  ],
-                  DropdownButtonFormField<int?>(
-                    initialValue: _locationFilter,
-                    decoration: InputDecoration(
-                      labelText: 'Lokasi',
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  if (_filterExpanded)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Column(
+                        children: [
+                          TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'No. dokumen, item, SKU...',
+                              isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onSubmitted: (_) => _load(),
+                          ),
+                          const SizedBox(height: 10),
+                          if (_isAdmin) ...[
+                            DropdownButtonFormField<int?>(
+                              key: ValueKey('owner-${_outlets.length}-$_ownerFilter'),
+                              value: _safeOutletValue(_ownerFilter),
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                labelText: 'Pemilik',
+                                isDense: true,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              items: _outletDropdownItems(),
+                              onChanged: (v) => setState(() => _ownerFilter = v),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          DropdownButtonFormField<int?>(
+                            key: ValueKey('location-${_outlets.length}-$_locationFilter'),
+                            value: _safeOutletValue(_locationFilter),
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Lokasi',
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            items: _outletDropdownItems(),
+                            onChanged: (v) => setState(() => _locationFilter = v),
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            key: ValueKey('type-$_typeFilter'),
+                            value: _typeFilter,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Tipe',
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: '', child: Text('Semua')),
+                              DropdownMenuItem(value: 'lost', child: Text('Hilang')),
+                              DropdownMenuItem(value: 'breakage', child: Text('Rusak')),
+                            ],
+                            onChanged: (v) => setState(() => _typeFilter = v ?? ''),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _pickDate(true),
+                                  icon: const Icon(Icons.date_range, size: 16),
+                                  label: Text(_dateFrom ?? 'Dari'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _pickDate(false),
+                                  icon: const Icon(Icons.event, size: 16),
+                                  label: Text(_dateTo ?? 'Sampai'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _load,
+                                  style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
+                                  child: const Text('Filter', style: TextStyle(color: Colors.white)),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _resetFilters,
+                                  child: const Text('Reset'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                    items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('Semua')),
-                      ..._outlets.map((o) => DropdownMenuItem<int?>(
-                            value: int.tryParse(o['id'].toString()),
-                            child: Text(o['name']?.toString() ?? '-'),
-                          )),
-                    ],
-                    onChanged: (v) => setState(() => _locationFilter = v),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: _typeFilter,
-                    decoration: InputDecoration(
-                      labelText: 'Tipe',
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('Semua')),
-                      DropdownMenuItem(value: 'lost', child: Text('Hilang')),
-                      DropdownMenuItem(value: 'breakage', child: Text('Rusak')),
-                    ],
-                    onChanged: (v) => setState(() => _typeFilter = v ?? ''),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _pickDate(true),
-                          icon: const Icon(Icons.date_range, size: 16),
-                          label: Text(_dateFrom ?? 'Dari'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _pickDate(false),
-                          icon: const Icon(Icons.event, size: 16),
-                          label: Text(_dateTo ?? 'Sampai'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _load,
-                          style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
-                          child: const Text('Filter', style: TextStyle(color: Colors.white)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _resetFilters,
-                          child: const Text('Reset'),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),

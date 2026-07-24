@@ -78,7 +78,7 @@ class OutletWIPService {
   }
 
   /// POST getBomAndStock: item_id, qty, outlet_id, warehouse_outlet_id.
-  /// Returns List<dynamic> (array of BOM lines) on success.
+  /// Returns Map with keys `items` (List) and `total_cost`, or legacy List.
   Future<dynamic> getBomAndStock({
     required int itemId,
     required double qty,
@@ -108,7 +108,13 @@ class OutletWIPService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        return decoded; // API returns array of BOM lines
+        if (decoded is List) {
+          return {'items': decoded, 'total_cost': 0};
+        }
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+        return null;
       }
       return null;
     } catch (e) {

@@ -71,10 +71,12 @@ class _ItWorkReportShowScreenState extends State<ItWorkReportShowScreen> {
 
   String _formatDate(dynamic v) {
     if (v == null || '$v'.isEmpty) return '-';
+    final ymd = ItWorkReportUi.dateOnly(v);
+    if (ymd.isEmpty) return '-';
     try {
-      return DateFormat('dd MMM yyyy', 'id_ID').format(DateTime.parse('$v'));
+      return DateFormat('dd MMM yyyy', 'id_ID').format(DateTime.parse(ymd));
     } catch (_) {
-      return '$v'.toString().length >= 10 ? '$v'.toString().substring(0, 10) : '$v';
+      return ymd;
     }
   }
 
