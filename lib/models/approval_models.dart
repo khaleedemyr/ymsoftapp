@@ -666,6 +666,8 @@ class CorrectionApproval {
   final DateTime tanggal;
   final String? reason;
   final String? approverName;
+  final String? approvalStage;
+  final String? approvalStageLabel;
   final Map<String, dynamic>? employee;
   final Map<String, dynamic>? outlet;
   final DateTime? createdAt;
@@ -678,6 +680,8 @@ class CorrectionApproval {
     required this.tanggal,
     this.reason,
     this.approverName,
+    this.approvalStage,
+    this.approvalStageLabel,
     this.employee,
     this.outlet,
     this.createdAt,
@@ -692,6 +696,8 @@ class CorrectionApproval {
       tanggal: DateTime.parse(json['tanggal']),
       reason: json['reason'],
       approverName: json['approver_name'],
+      approvalStage: json['approval_stage']?.toString(),
+      approvalStageLabel: json['approval_stage_label']?.toString(),
       employee: json['employee'],
       outlet: json['outlet'],
       createdAt: json['created_at'] != null

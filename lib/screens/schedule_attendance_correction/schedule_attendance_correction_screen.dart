@@ -245,9 +245,9 @@ class _ScheduleAttendanceCorrectionScreenState extends State<ScheduleAttendanceC
                   'Tipe Koreksi',
                   _correctionType,
                   [
-                    {'id': 'schedule', 'name': 'Schedule Correction'},
-                    {'id': 'attendance', 'name': 'Attendance Correction'},
-                    {'id': 'manual_attendance', 'name': 'Manual Attendance Entry'},
+                    {'id': 'schedule', 'name': 'Working schedule correction'},
+                    {'id': 'attendance', 'name': 'Working time correction'},
+                    {'id': 'manual_attendance', 'name': 'No fingerprint in/out correction'},
                   ],
                   (v) => setState(() => _correctionType = v ?? 'schedule'),
                   'id',
@@ -609,7 +609,7 @@ class _ScheduleAttendanceCorrectionScreenState extends State<ScheduleAttendanceC
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Manual Attendance Entry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const Text('No fingerprint in/out correction', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           const Text('Input absen manual untuk karyawan yang lupa absen', style: TextStyle(color: Colors.grey)),
           const SizedBox(height: 16),

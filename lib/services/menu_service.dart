@@ -264,6 +264,7 @@ class MenuService {
         {'name': 'Stock Adjustment', 'icon': 'fa-solid fa-boxes-stacked', 'route': '/food-inventory-adjustment', 'code': 'stock_adjustment'},
         {'name': 'Packing List', 'icon': 'fa-solid fa-box', 'route': '/packing-list', 'code': 'packing_list'},
         {'name': 'Delivery Order', 'icon': 'fa-solid fa-truck-arrow-right', 'route': '/delivery-order', 'code': 'delivery_order'},
+        {'name': 'Logbook Driver', 'icon': 'fa-solid fa-truck', 'route': '/logbook-drivers', 'code': 'logbook_driver'},
         {'name': 'Penjualan Warehouse Retail', 'icon': 'fa-solid fa-store', 'route': '/retail-warehouse-sale', 'code': 'retail_warehouse_sale'},
         {'name': 'Warehouse Retail Food', 'icon': 'fa-solid fa-warehouse', 'route': '/retail-warehouse-food', 'code': 'view-retail-warehouse-food'},
         {'name': 'Saldo Awal Stok', 'icon': 'fa-solid fa-money-bill-wave', 'route': '/food-stock-balances', 'code': 'food_stock_balances'},

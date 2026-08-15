@@ -1600,7 +1600,14 @@ class ApprovalService {
   }
 
   // Approve Movement
-  Future<Map<String, dynamic>> approveMovement(int id, {String? comment, String? notes, int? approvalFlowId}) async {
+  Future<Map<String, dynamic>> approveMovement(
+    int id, {
+    String? comment,
+    String? notes,
+    int? approvalFlowId,
+    int? gajiPokok,
+    int? tunjangan,
+  }) async {
     try {
       final token = await _getToken();
       if (token == null) {
@@ -1621,6 +1628,8 @@ class ApprovalService {
           'status': 'approved', // Employee Movement uses status: 'approved'
           if (approvalFlowId != null) 'approval_flow_id': approvalFlowId,
           if (notesValue != null) 'notes': notesValue, // Employee Movement uses 'notes' parameter
+          if (gajiPokok != null) 'gaji_pokok': gajiPokok,
+          if (tunjangan != null) 'tunjangan': tunjangan,
         }),
       );
 

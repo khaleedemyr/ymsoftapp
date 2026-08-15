@@ -284,7 +284,7 @@ class _NpdPlanReportIndexScreenState extends State<NpdPlanReportIndexScreen> {
                 )
               else
                 ..._reports.map((report) {
-                  final canEdit = report.status == 'rejected' || report.status == 'requires_revision';
+                  final canEdit = ['submitted', 'approved', 'rejected', 'requires_revision'].contains(report.status);
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: NpdPlanReportUi.cardDecoration,

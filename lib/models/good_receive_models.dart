@@ -76,6 +76,7 @@ class FoodGoodReceiveItem {
   final String itemName;
   final double qtyOrdered;
   final double qtyReceived;
+  final double? qtyRejected;
   final int unitId;
   final String unitName;
   final String? warehouseDivisionName;
@@ -90,6 +91,7 @@ class FoodGoodReceiveItem {
     required this.itemName,
     required this.qtyOrdered,
     required this.qtyReceived,
+    this.qtyRejected,
     required this.unitId,
     required this.unitName,
     this.warehouseDivisionName,
@@ -106,6 +108,9 @@ class FoodGoodReceiveItem {
       itemName: json['item_name']?.toString() ?? '',
       qtyOrdered: double.tryParse(json['qty_ordered']?.toString() ?? '0') ?? 0.0,
       qtyReceived: double.tryParse(json['qty_received']?.toString() ?? '0') ?? 0.0,
+      qtyRejected: json['qty_rejected'] == null
+          ? null
+          : double.tryParse(json['qty_rejected'].toString()),
       unitId: int.tryParse(json['unit_id'].toString()) ?? 0,
       unitName: json['unit_name']?.toString() ?? '',
       warehouseDivisionName: json['warehouse_division_name']?.toString(),
@@ -123,6 +128,7 @@ class FoodGoodReceiveItem {
       'item_name': itemName,
       'qty_ordered': qtyOrdered,
       'qty_received': qtyReceived,
+      'qty_rejected': qtyRejected,
       'unit_id': unitId,
       'unit_name': unitName,
       'warehouse_division_name': warehouseDivisionName,

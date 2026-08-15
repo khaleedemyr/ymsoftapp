@@ -428,6 +428,9 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     final isApprovedAbsent = row['is_approved_absent'] == true;
     final approvedAbsentName = row['approved_absent_name']?.toString();
     final hasNoCheckout = row['has_no_checkout'] == true;
+    final isAlpha = row['is_alpha'] == true || row['is_alpha'] == 1;
+    final otHours = row['overtime_submission_hours'];
+    final otReason = row['overtime_submission_reason']?.toString();
 
     String jamMasukStr = '-';
     if (jamMasuk != null && jamMasuk.isNotEmpty) {
@@ -436,6 +439,8 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
       jamMasukStr = 'OFF';
     } else if (isApprovedAbsent && approvedAbsentName != null) {
       jamMasukStr = approvedAbsentName;
+    } else if (isAlpha) {
+      jamMasukStr = 'ALPHA';
     }
 
     String jamKeluarStr = '-';
@@ -445,6 +450,8 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
       jamKeluarStr = 'OFF';
     } else if (isApprovedAbsent && approvedAbsentName != null) {
       jamKeluarStr = approvedAbsentName;
+    } else if (isAlpha) {
+      jamKeluarStr = 'ALPHA';
     } else if (hasNoCheckout) {
       jamKeluarStr = 'TIDAK CHECKOUT';
     }
@@ -457,6 +464,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     if (isHoliday) bgColor = Colors.red.shade50;
     if (isApprovedAbsent) bgColor = Colors.green.shade50;
     if (isOff) bgColor = Colors.grey.shade200;
+    if (isAlpha) bgColor = Colors.red.shade50;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -486,6 +494,16 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                           child: Chip(
                             label: Text(holidayName, style: const TextStyle(fontSize: 10)),
                             backgroundColor: Colors.red.shade100,
+                            padding: EdgeInsets.zero,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      if (isAlpha)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Chip(
+                            label: const Text('⚠ ALPHA', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                            backgroundColor: Colors.red.shade600,
                             padding: EdgeInsets.zero,
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -540,21 +558,30 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                 _pairLabel('Lembur', '${lemburStr} j'),
               ],
             ),
+            if (otHours != null && otHours is num && otHours > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Pengajuan lembur: ${otHours is int ? otHours : (otHours as num).floor()} jam${otReason != null && otReason.isNotEmpty ? ' — $otReason' : ''}',
+                  style: TextStyle(fontSize: 12, color: Colors.indigo.shade700, fontWeight: FontWeight.w600),
+                ),
+              ),
             if (!isOff) ...[
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton.icon(
-                    onPressed: () => _openDetailSheet(row, nama),
-                    icon: const Icon(Icons.list_alt, size: 18),
-                    label: const Text('Detail'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.blue.shade700,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  if (!isAlpha)
+                    TextButton.icon(
+                      onPressed: () => _openDetailSheet(row, nama),
+                      icon: const Icon(Icons.list_alt, size: 18),
+                      label: const Text('Detail'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.blue.shade700,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
+                  if (!isAlpha) const SizedBox(width: 8),
                   TextButton.icon(
                     onPressed: () => _openShiftSheet(row, nama),
                     icon: const Icon(Icons.schedule, size: 18),

@@ -47,8 +47,7 @@ class _GoodReceiveFormScreenState extends State<GoodReceiveFormScreen> {
     _notesController.dispose();
     _scrollController.dispose();
     for (var item in _formItems) {
-      item.qtyReceivedController.dispose();
-      item.notesController.dispose();
+      item.dispose();
     }
     super.dispose();
   }
@@ -208,12 +207,14 @@ class _GoodReceiveFormScreenState extends State<GoodReceiveFormScreen> {
 
     try {
       final itemsData = _formItems.map((item) {
+        final rejectedText = item.qtyRejectedController.text.trim();
         return {
           'po_item_id': item.poItem.id,
           'item_id': item.poItem.itemId,
           'unit_id': item.poItem.unitId,
           'qty_ordered': item.qtyOrdered,
           'qty_received': double.parse(item.qtyReceivedController.text),
+          if (rejectedText.isNotEmpty) 'qty_rejected': double.tryParse(rejectedText) ?? 0,
           if (item.notesController.text.isNotEmpty) 'notes': item.notesController.text,
         };
       }).toList();
@@ -598,6 +599,20 @@ class _GoodReceiveFormScreenState extends State<GoodReceiveFormScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: item.qtyRejectedController,
+            decoration: InputDecoration(
+              labelText: 'Qty Ditolak (opsional)',
+              hintText: 'Tidak mempengaruhi stok',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            style: const TextStyle(fontSize: 14),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
           if (item.poItem.warehouseDivisionName != null) ...[
             const SizedBox(height: 8),
             Row(
@@ -672,6 +687,7 @@ class POFoodItemForm {
   final double qtyOrdered;
   final double qtyReceived;
   final TextEditingController qtyReceivedController;
+  final TextEditingController qtyRejectedController;
   final TextEditingController notesController;
 
   POFoodItemForm({
@@ -679,10 +695,12 @@ class POFoodItemForm {
     required this.qtyOrdered,
     required this.qtyReceived,
   })  : qtyReceivedController = TextEditingController(text: qtyReceived.toString()),
+        qtyRejectedController = TextEditingController(),
         notesController = TextEditingController();
 
   void dispose() {
     qtyReceivedController.dispose();
+    qtyRejectedController.dispose();
     notesController.dispose();
   }
 }

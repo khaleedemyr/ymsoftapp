@@ -556,6 +556,42 @@ class PendingCapaVerificationItem {
   }
 }
 
+/// Kasus CVCC yang di-tag ke regional user dan masih perlu CAPA (belum isi + approved).
+class CvccRegionalCapaPendingItem {
+  final int id;
+  final String? eventAt;
+  final String? summaryId;
+  final String status;
+  final String severity;
+  final String namaOutlet;
+  final String capaStatus;
+  final String capaStatusLabel;
+
+  CvccRegionalCapaPendingItem({
+    required this.id,
+    required this.eventAt,
+    required this.summaryId,
+    required this.status,
+    required this.severity,
+    required this.namaOutlet,
+    required this.capaStatus,
+    required this.capaStatusLabel,
+  });
+
+  factory CvccRegionalCapaPendingItem.fromJson(Map<String, dynamic> json) {
+    return CvccRegionalCapaPendingItem(
+      id: _asInt(json['id']),
+      eventAt: json['event_at']?.toString(),
+      summaryId: json['summary_id']?.toString(),
+      status: json['status']?.toString() ?? '',
+      severity: json['severity']?.toString() ?? '',
+      namaOutlet: json['nama_outlet']?.toString() ?? '',
+      capaStatus: json['capa_status']?.toString() ?? 'needs_fill',
+      capaStatusLabel: json['capa_status_label']?.toString() ?? 'Belum diisi CAPA',
+    );
+  }
+}
+
 int _asInt(dynamic value, {int fallback = 0}) {
   if (value is int) {
     return value;

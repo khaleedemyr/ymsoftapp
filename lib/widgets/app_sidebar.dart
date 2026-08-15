@@ -30,6 +30,7 @@ import '../screens/schedule_attendance_correction/schedule_attendance_correction
 import '../screens/user_shift_input_screen.dart';
 import '../screens/packing_list/packing_list_index_screen.dart';
 import '../screens/delivery_order/delivery_order_index_screen.dart';
+import '../screens/logbook_driver/logbook_driver_index_screen.dart';
 import '../screens/pr_food/pr_food_index_screen.dart';
 import '../screens/good_receive/good_receive_index_screen.dart';
 import '../screens/outlet_food_good_receive/outlet_food_good_receive_index_screen.dart';
@@ -879,6 +880,7 @@ class _AppSidebarState extends State<AppSidebar> {
       '/user-shifts', // Input Shift Mingguan
       '/packing-list', // Packing List
       '/delivery-order', // Delivery Order
+      '/logbook-drivers', // Logbook Driver
       '/pr-foods', // PR Foods
       '/food-good-receive', // Good Receive
       '/outlet-food-good-receives', // Outlet Good Receive
@@ -1469,6 +1471,13 @@ class _AppSidebarState extends State<AppSidebar> {
         context,
         MaterialPageRoute(
           builder: (context) => const DeliveryOrderIndexScreen(),
+        ),
+      );
+    } else if (route == '/logbook-drivers') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LogbookDriverIndexScreen(),
         ),
       );
     } else if (route == '/pr-foods') {

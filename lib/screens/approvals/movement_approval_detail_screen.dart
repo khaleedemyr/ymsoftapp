@@ -25,6 +25,8 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
   bool _isLoading = true;
   bool _isProcessing = false;
   final TextEditingController _rejectReasonController = TextEditingController();
+  final TextEditingController _gajiPokokController = TextEditingController();
+  final TextEditingController _tunjanganController = TextEditingController();
 
   @override
   void initState() {
@@ -35,6 +37,8 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
   @override
   void dispose() {
     _rejectReasonController.dispose();
+    _gajiPokokController.dispose();
+    _tunjanganController.dispose();
     super.dispose();
   }
 
@@ -70,8 +74,15 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
         final data = jsonDecode(response.body);
         print('Movement Detail: Parsed data = $data');
         if (data['success'] == true && data['movement'] != null) {
+          final movement = data['movement'] as Map<String, dynamic>;
           setState(() {
-            _approvalData = data['movement'];
+            _approvalData = movement;
+            _gajiPokokController.text = _formatAmountPlain(
+              movement['gaji_pokok_to'] ?? movement['payroll_gaji_pokok'],
+            );
+            _tunjanganController.text = _formatAmountPlain(
+              movement['tunjangan_to'] ?? movement['payroll_tunjangan'],
+            );
             _isLoading = false;
           });
           print('Movement Detail: Data loaded successfully');
@@ -129,6 +140,8 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
       final result = await _approvalService.approveMovement(
         widget.movementId,
         approvalFlowId: approvalFlowId != null ? int.tryParse(approvalFlowId.toString()) : null,
+        gajiPokok: _parseAmount(_gajiPokokController.text),
+        tunjangan: _parseAmount(_tunjanganController.text),
       );
 
       if (!mounted) return;
@@ -267,9 +280,25 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
     }
   }
 
-  String _formatCurrency(double? amount) {
-    if (amount == null) return 'Rp 0';
-    return 'Rp ${NumberFormat('#,##0', 'id_ID').format(amount)}';
+  String _formatCurrency(dynamic amount) {
+    return 'Rp ${_formatAmountPlain(amount)}';
+  }
+
+  String _formatAmountPlain(dynamic amount) {
+    final value = _toAmount(amount);
+    return NumberFormat('#,##0', 'id_ID').format(value);
+  }
+
+  double _toAmount(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    final parsed = double.tryParse(value.toString().replaceAll(RegExp(r'[^\d.-]'), ''));
+    return parsed ?? 0;
+  }
+
+  int _parseAmount(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
+    return int.tryParse(digits) ?? 0;
   }
 
   String _getEmploymentTypeDisplay(String? type) {
@@ -362,6 +391,31 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSalaryField({
+    required String label,
+    required TextEditingController controller,
+    required bool enabled,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: TextField(
+        controller: controller,
+        enabled: enabled,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixText: 'Rp ',
+          filled: true,
+          fillColor: enabled ? Colors.white : Colors.grey.shade100,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onChanged: (_) {
+          if (mounted) setState(() {});
+        },
       ),
     );
   }
@@ -595,16 +649,45 @@ class _MovementApprovalDetailScreenState extends State<MovementApprovalDetailScr
                   _buildInfoRow('Outlet', '${movement['outlet_from'] ?? '-'} → ${movement['outlet_to'] ?? '-'}', icon: Icons.store),
                 if (movement['division_from'] != null || movement['division_to'] != null)
                   _buildInfoRow('Division', '${movement['division_from'] ?? '-'} → ${movement['division_to'] ?? '-'}', icon: Icons.business),
-                if (movement['gaji_pokok_from'] != null || movement['gaji_pokok_to'] != null)
-                  _buildInfoRow('Basic Salary', '${_formatCurrency(movement['gaji_pokok_from']?.toDouble())} → ${_formatCurrency(movement['gaji_pokok_to']?.toDouble())}', icon: Icons.attach_money, valueColor: const Color(0xFF10B981)),
-                if (movement['tunjangan_from'] != null || movement['tunjangan_to'] != null)
-                  _buildInfoRow('Allowance', '${_formatCurrency(movement['tunjangan_from']?.toDouble())} → ${_formatCurrency(movement['tunjangan_to']?.toDouble())}', icon: Icons.account_balance_wallet, valueColor: const Color(0xFF10B981)),
                 if (movement['notes'] != null && movement['notes'].toString().isNotEmpty)
                   _buildInfoRow('Notes', movement['notes'] ?? '-', icon: Icons.note),
                 if (movement['created_at'] != null)
                   _buildInfoRow('Created At', _formatDateTime(movement['created_at']), icon: Icons.access_time),
               ],
               icon: Icons.info_outline,
+            ),
+
+            _buildSection(
+              'Gaji (Master Payroll)',
+              [
+                _buildInfoRow(
+                  'Gaji Pokok saat ini',
+                  _formatCurrency(movement['payroll_gaji_pokok'] ?? movement['gaji_pokok_from']),
+                  icon: Icons.payments,
+                ),
+                _buildInfoRow(
+                  'Tunjangan saat ini',
+                  _formatCurrency(movement['payroll_tunjangan'] ?? movement['tunjangan_from']),
+                  icon: Icons.account_balance_wallet,
+                ),
+                _buildSalaryField(
+                  label: 'Gaji Pokok diajukan',
+                  controller: _gajiPokokController,
+                  enabled: status == 'pending' && movement['current_approval_flow_id'] != null,
+                ),
+                _buildSalaryField(
+                  label: 'Tunjangan diajukan',
+                  controller: _tunjanganController,
+                  enabled: status == 'pending' && movement['current_approval_flow_id'] != null,
+                ),
+                _buildInfoRow(
+                  'Total',
+                  _formatCurrency(_parseAmount(_gajiPokokController.text) + _parseAmount(_tunjanganController.text)),
+                  icon: Icons.summarize,
+                  valueColor: const Color(0xFF10B981),
+                ),
+              ],
+              icon: Icons.attach_money,
             ),
 
             // Approval Flow

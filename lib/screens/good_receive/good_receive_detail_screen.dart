@@ -537,6 +537,10 @@ class _GoodReceiveDetailScreenState extends State<GoodReceiveDetailScreen> {
               _buildItemInfo('Qty Received', '${NumberFormat('#,##0.##').format(item.qtyReceived)} ${item.unitName}'),
             ],
           ),
+          if (item.qtyRejected != null) ...[
+            const SizedBox(height: 8),
+            _buildItemInfo('Qty Ditolak', '${NumberFormat('#,##0.##').format(item.qtyRejected)} ${item.unitName}'),
+          ],
           if (item.warehouseDivisionName != null) ...[
             const SizedBox(height: 8),
             Row(

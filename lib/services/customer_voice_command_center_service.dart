@@ -323,6 +323,28 @@ class CustomerVoiceCommandCenterService {
         .toList();
   }
 
+  /// Home widget: kasus yang di-tag ke user regional & masih butuh CAPA.
+  Future<List<CvccRegionalCapaPendingItem>> getRegionalCapaPending() async {
+    final headers = await _headers();
+    final uri = Uri.parse('$baseUrl/home/cvcc-regional-capa-pending');
+    final response = await http.get(uri, headers: headers);
+    final jsonBody = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || jsonBody['success'] != true) {
+      throw Exception(
+        jsonBody['message']?.toString() ?? 'Gagal memuat CAPA regional CVCC',
+      );
+    }
+
+    final items = jsonBody['items'] as List<dynamic>? ?? <dynamic>[];
+    return items
+        .whereType<Map>()
+        .map((e) => CvccRegionalCapaPendingItem.fromJson(
+              e.map((k, v) => MapEntry(k.toString(), v)),
+            ))
+        .toList();
+  }
+
   /// Same shape as web `caseBriefJson` → `data.case` is `presentVoiceCaseRow`.
   Future<Map<String, dynamic>> getCaseBrief(int caseId) async {
     final headers = await _headers();

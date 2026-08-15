@@ -15,11 +15,12 @@ class CorrectionApprovalCard extends StatelessWidget {
   String _getTypeText(String type) {
     switch (type) {
       case 'schedule':
-        return 'Koreksi Schedule';
+        return 'Working schedule correction';
       case 'attendance':
-        return 'Koreksi Attendance';
+        return 'Working time correction';
       case 'manual':
-        return 'Input Absen Manual';
+      case 'manual_attendance':
+        return 'No fingerprint in/out correction';
       default:
         return type;
     }
@@ -81,6 +82,19 @@ class CorrectionApprovalCard extends StatelessWidget {
                 color: Colors.grey.shade600,
               ),
             ),
+            if (approval.approvalStageLabel != null && approval.approvalStageLabel!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                approval.approvalStageLabel!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: approval.approvalStage == 'supervisor'
+                      ? Colors.blue.shade700
+                      : Colors.purple.shade700,
+                ),
+              ),
+            ],
             if (approval.reason != null && approval.reason!.isNotEmpty) ...[
               const SizedBox(height: 6),
               Container(

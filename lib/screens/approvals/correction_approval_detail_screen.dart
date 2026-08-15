@@ -239,11 +239,11 @@ class _CorrectionApprovalDetailScreenState extends State<CorrectionApprovalDetai
   String _getTypeDisplay(String? type) {
     switch (type?.toLowerCase()) {
       case 'schedule':
-        return 'Schedule Correction';
+        return 'Working schedule correction';
       case 'manual_attendance':
-        return 'Manual Attendance';
+        return 'No fingerprint in/out correction';
       case 'attendance':
-        return 'Attendance Correction';
+        return 'Working time correction';
       default:
         return type ?? '-';
     }

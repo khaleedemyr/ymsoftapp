@@ -485,5 +485,93 @@ class AttendanceService {
       return [];
     }
   }
+
+  Future<Map<String, dynamic>> getCorrectionForm({required String tanggal}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/approval-app/attendance/correction-form').replace(
+          queryParameters: {'tanggal': tanggal},
+        ),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'success': false, 'message': 'Gagal memuat form koreksi'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> submitCorrectionRequest({
+    required String type,
+    required String tanggal,
+    required String reason,
+    required List<int> approvers,
+    int? shiftId,
+    String? sn,
+    String? pin,
+    String? oldScanDate,
+    String? scanDate,
+    int? inoutmode,
+    int? outletId,
+  }) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final body = <String, dynamic>{
+        'type': type,
+        'tanggal': tanggal,
+        'reason': reason,
+        'approvers': approvers,
+      };
+      if (shiftId != null) body['shift_id'] = shiftId;
+      if (sn != null) body['sn'] = sn;
+      if (pin != null) body['pin'] = pin;
+      if (oldScanDate != null) body['old_scan_date'] = oldScanDate;
+      if (scanDate != null) body['scan_date'] = scanDate;
+      if (inoutmode != null) body['inoutmode'] = inoutmode;
+      if (outletId != null) body['outlet_id'] = outletId;
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/approval-app/attendance/correction-request'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        return {'success': false, 'message': 'Gagal mengirim pengajuan koreksi'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }
 

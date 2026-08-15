@@ -6,6 +6,7 @@ import '../services/attendance_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/leave_request_modal.dart';
+import '../widgets/attendance_correction_request_modal.dart';
 import '../widgets/app_loading_indicator.dart';
 
 class MyAttendanceScreen extends StatefulWidget {
@@ -149,15 +150,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
             if (calendar is Map) {
               calendar.forEach((dateKey, dateValue) {
                 final dateStr = dateKey.toString();
-                List<dynamic> schedules = [];
-                
-                if (dateValue is List) {
-                  schedules = dateValue;
-                } else {
-                  schedules = [dateValue];
-                }
-                
-                _calendarData[dateStr] = schedules;
+                _calendarData[dateStr] = _schedulesFromCalendarValue(dateValue);
               });
             }
             print('✅ Parsed calendar: ${_calendarData.length} dates');
@@ -276,6 +269,28 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
     } catch (e) {
       return 0;
     }
+  }
+
+  List<dynamic> _schedulesFromCalendarValue(dynamic dateValue) {
+    if (dateValue is List) {
+      return dateValue;
+    }
+    if (dateValue is Map) {
+      final map = Map<String, dynamic>.from(dateValue);
+      if (map.containsKey('shift_name') || map.containsKey('first_in') || map.containsKey('is_alpha')) {
+        return [map];
+      }
+      return map.values.toList();
+    }
+    return [dateValue];
+  }
+
+  bool _flag(dynamic value) => value == true || value == 1 || value == '1';
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.floor();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   // Calculate payroll period dates
@@ -750,12 +765,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
       // Get schedules for this date
       List<dynamic> schedules = [];
       if (_calendarData.containsKey(dateStr)) {
-        final dateData = _calendarData[dateStr];
-        if (dateData is List) {
-          schedules = dateData;
-        } else {
-          schedules = [dateData];
-        }
+        schedules = _schedulesFromCalendarValue(_calendarData[dateStr]);
         print('📅 Found ${schedules.length} schedules for $dateStr');
       }
       
@@ -1258,45 +1268,81 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                 ),
               ),
           ],
+            if (_canCorrectDate(dateStr)) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openCorrectionModal(dateStr),
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Koreksi'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade600,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
         ],
       ),
       ),
     );
   }
 
+  bool _canCorrectDate(String dateStr) {
+    final day = DateTime.parse(dateStr);
+    final start = DateTime(day.year, day.month, day.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (start.isAfter(today)) return false;
+    return now.difference(start).inHours <= 48;
+  }
+
+  void _openCorrectionModal(String dateStr) {
+    showDialog(
+      context: context,
+      builder: (context) => AttendanceCorrectionRequestModal(
+        tanggal: dateStr,
+        onSubmitted: _loadAttendanceData,
+      ),
+    );
+  }
+
   Widget _buildScheduleCard(Map<String, dynamic> schedule) {
     final shiftName = schedule['shift_name'] ?? 'OFF';
-    final hasAttendance = schedule['has_attendance'] ?? false;
+    final hasAttendance = _flag(schedule['has_attendance']);
     final firstIn = schedule['first_in'] ?? schedule['check_in_time'];
     final lastOut = schedule['last_out'] ?? schedule['check_out_time'];
-    final telat = schedule['telat'] ?? 0;
-    final lembur = schedule['lembur'] ?? 0;
+    final telat = _asInt(schedule['telat']);
+    final lembur = _asInt(schedule['total_lembur'] ?? schedule['lembur']);
     final timeStart = schedule['time_start'] ?? schedule['start_time'];
     final timeEnd = schedule['time_end'] ?? schedule['end_time'];
-    final hasNoCheckout = schedule['has_no_checkout'] ?? false;
+    final hasNoCheckout = _flag(schedule['has_no_checkout']);
+    final isAlpha = _flag(schedule['is_alpha']);
+    final isOff = _flag(schedule['is_off']) || shiftName.toString().toLowerCase() == 'off';
+    final otHours = _asInt(schedule['overtime_submission_hours']);
+    final otReason = schedule['overtime_submission_reason']?.toString();
+
+    MaterialColor cardColor = hasAttendance ? Colors.green : Colors.grey;
+    if (isAlpha) cardColor = Colors.red;
+    if (isOff) cardColor = Colors.grey;
     
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        gradient: hasAttendance
-            ? LinearGradient(
-                colors: [Colors.green.shade50, Colors.green.shade100],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : LinearGradient(
-                colors: [Colors.grey.shade50, Colors.grey.shade100],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+        gradient: LinearGradient(
+          colors: [cardColor.shade50, cardColor.shade100],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         border: Border.all(
-          color: hasAttendance ? Colors.green.shade300 : Colors.grey.shade300,
+          color: cardColor.shade300,
           width: 1.5,
         ),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: (hasAttendance ? Colors.green : Colors.grey).withOpacity(0.1),
+            color: cardColor.withOpacity(0.1),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -1313,17 +1359,13 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    gradient: hasAttendance
-                        ? LinearGradient(
-                            colors: [Colors.green.shade600, Colors.green.shade800],
-                          )
-                        : LinearGradient(
-                            colors: [Colors.grey.shade500, Colors.grey.shade700],
-                          ),
+                    gradient: LinearGradient(
+                      colors: [cardColor.shade600, cardColor.shade800],
+                    ),
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
-                        color: (hasAttendance ? Colors.green : Colors.grey).withOpacity(0.3),
+                        color: cardColor.withOpacity(0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -1348,6 +1390,24 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                     color: Colors.grey[600],
                   ),
                 ),
+              if (isAlpha) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade600,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    '⚠ ALPHA',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
               ],
             ),
             // Attendance info
@@ -1408,7 +1468,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                   ],
                 ],
               ),
-            if (telat > 0 || lembur > 0) ...[
+            if (telat > 0 || lembur > 0 || otHours > 0) ...[
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -1452,9 +1512,38 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                         ],
                       ),
                     ),
+                  if (otHours > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo[100],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Pengajuan $otHours jam${otReason != null && otReason.isNotEmpty ? ': $otReason' : ''}',
+                        style: TextStyle(fontSize: 10, color: Colors.indigo[900]),
+                      ),
+                    ),
                 ],
               ),
             ],
+          ] else if (isAlpha) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red.shade600,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                '⚠ ALPHA — ada shift, tidak ada absen',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ] else ...[
             const SizedBox(height: 8),
             Row(
@@ -1462,7 +1551,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                 Icon(Icons.cancel, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(
-                  'Tidak hadir',
+                  isOff ? 'OFF' : 'Tidak hadir',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey[600],
@@ -1959,9 +2048,9 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
                   ),
                 ),
               ),
-            ],
           ],
-        ),
+        ],
+      ),
       ),
     );
   }
@@ -2299,19 +2388,35 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
     );
   }
 
+  String _correctionTypeLabel(dynamic type) {
+    switch (type?.toString()) {
+      case 'schedule':
+        return 'Working schedule correction';
+      case 'attendance':
+        return 'Working time correction';
+      case 'manual_attendance':
+        return 'No fingerprint in/out correction';
+      default:
+        return type?.toString() ?? '-';
+    }
+  }
+
   Widget _buildCorrectionRequestCard(Map<String, dynamic> request) {
     final status = request['status'] ?? 'pending';
     Color statusColor = Colors.orange;
+    String statusLabel = request['status_text']?.toString() ?? status.toString().toUpperCase();
     if (status == 'approved') {
       statusColor = Colors.green;
     } else if (status == 'rejected') {
       statusColor = Colors.red;
+    } else if (status == 'supervisor_approved') {
+      statusColor = Colors.purple;
     }
     
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text('${request['type']} - ${request['tanggal']}'),
+        title: Text('${_correctionTypeLabel(request['type'])} - ${request['tanggal']}'),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2321,7 +2426,7 @@ class _MyAttendanceScreenState extends State<MyAttendanceScreen> {
           ],
         ),
         trailing: Chip(
-          label: Text(status.toUpperCase()),
+          label: Text(statusLabel),
           backgroundColor: statusColor,
           labelStyle: const TextStyle(color: Colors.white, fontSize: 10),
         ),

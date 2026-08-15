@@ -29,7 +29,6 @@ import '../widgets/approvals/stock_opname_approval_card.dart';
 import '../widgets/approvals/warehouse_stock_opname_approval_card.dart';
 import '../widgets/approvals/cctv_access_request_approval_card.dart';
 import '../widgets/approvals/outlet_transfer_approval_card.dart';
-import '../widgets/approvals/contra_bon_approval_card.dart';
 import '../widgets/approvals/movement_approval_card.dart';
 import '../widgets/approvals/coaching_approval_card.dart';
 import '../widgets/approvals/correction_approval_card.dart';
@@ -63,7 +62,6 @@ import 'outlet_transfer/outlet_transfer_detail_screen.dart';
 import 'stock_opname/stock_opname_detail_screen.dart';
 import 'warehouse_stock_opname/warehouse_stock_opname_detail_screen.dart';
 import 'approvals/cctv_access_request_approval_detail_screen.dart';
-import 'approvals/contra_bon_approval_detail_screen.dart';
 import 'approvals/movement_approval_detail_screen.dart';
 import 'approvals/coaching_approval_detail_screen.dart';
 import 'approvals/correction_approval_detail_screen.dart';
@@ -85,6 +83,7 @@ import 'approvals/qa2_cap_approval_detail_screen.dart';
 import '../widgets/approval_list_modal.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/customer_voice/capa_home_verification_card.dart';
+import '../widgets/customer_voice/cvcc_regional_capa_home_card.dart';
 import '../widgets/just_academy/just_academy_home_card.dart';
 import 'login_screen.dart';
 import 'web_only_feature_screen.dart';
@@ -160,6 +159,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   /// Remount CAPA home card so pull-to-refresh reloads pending list.
   int _capaHomeRefreshKey = 0;
+  int _cvccRegionalCapaRefreshKey = 0;
 
   @override
   void initState() {
@@ -608,19 +608,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
     } catch (e) {
       print('Error loading Outlet Transfer approvals: $e');
-    }
-  }
-
-  Future<void> _loadPendingContraBonApprovals() async {
-    try {
-      final approvals = await _approvalService.getPendingContraBonApprovals();
-      if (mounted) {
-        setState(() {
-          _contraBonApprovals = approvals;
-        });
-      }
-    } catch (e) {
-      print('Error loading Contra Bon approvals: $e');
     }
   }
 
@@ -1183,9 +1170,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               _outletTransferApprovals = (_cachedApprovalsJson['outlet_transfer'] as List<dynamic>?)
                       ?.map((e) => OutletTransferApproval.fromJson(e))
                       .toList() ?? [];
-              _contraBonApprovals = (_cachedApprovalsJson['contra_bon'] as List<dynamic>?)
-                      ?.map((e) => ContraBonApproval.fromJson(e))
-                      .toList() ?? [];
+              _contraBonApprovals = [];
               _movementApprovals = (_cachedApprovalsJson['movement'] as List<dynamic>?)
                       ?.map((e) => EmployeeMovementApproval.fromJson(e))
                       .toList() ?? [];
@@ -1302,9 +1287,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         case 'outlet_transfer':
           await _loadPendingOutletTransferApprovals();
           break;
-        case 'contra_bon':
-          await _loadPendingContraBonApprovals();
-          break;
         case 'movement':
           await _loadPendingMovementApprovals();
           break;
@@ -1418,7 +1400,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _loadPendingWarehouseStockOpnameApprovals(),
         _loadPendingCctvAccessRequestApprovals(),
         _loadPendingOutletTransferApprovals(),
-        _loadPendingContraBonApprovals(),
         _loadPendingMovementApprovals(),
       ], eagerError: false);
 
@@ -1641,7 +1622,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       title: 'Home',
       body: RefreshIndicator(
         onRefresh: () async {
-          setState(() => _capaHomeRefreshKey++);
+          setState(() {
+            _capaHomeRefreshKey++;
+            _cvccRegionalCapaRefreshKey++;
+          });
           await _loadAllApprovals(showLoading: false, backgroundRefresh: true);
           await _loadAnnouncements();
           await _loadBirthdays();
@@ -1951,6 +1935,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           ),
                         ],
                       ),
+                    ),
+
+                    // CVCC CAPA untuk regional yang di-tag
+                    CvccRegionalCapaHomeCard(
+                      key: ValueKey<int>(_cvccRegionalCapaRefreshKey),
                     ),
                   ],
                 ),
@@ -3394,31 +3383,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
             ],
             
-            // Contra Bon Approvals
-            if (_contraBonApprovals.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              _buildModernApprovalSection(
-                'Contra Bon',
-                _contraBonApprovals.length,
-                const Color(0xFF6366F1),
-                _contraBonApprovals.map((approval) => ContraBonApprovalCard(
-                  approval: approval,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ContraBonApprovalDetailScreen(cbId: approval.id),
-                      ),
-                    ).then((result) {
-                      if (result == true) {
-                        _refreshApprovalType('contra_bon');
-                      }
-                    });
-                  },
-                )).toList(),
-                'contra_bon',
-              ),
-            ],
+            // Contra Bon approval dihapus — dokumen langsung approved saat dibuat
             
             // Movement Approvals
             if (_movementApprovals.isNotEmpty) ...[

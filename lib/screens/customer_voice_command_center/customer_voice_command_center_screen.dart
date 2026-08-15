@@ -10,7 +10,17 @@ import 'customer_voice_archive_sheet.dart';
 import 'customer_voice_case_detail_sheet.dart';
 
 class CustomerVoiceCommandCenterScreen extends StatefulWidget {
-  const CustomerVoiceCommandCenterScreen({super.key});
+  const CustomerVoiceCommandCenterScreen({
+    super.key,
+    this.initialOpenCaseId,
+    this.initialShowAll = false,
+  });
+
+  /// Buka detail case setelah dashboard load (deep link dari Home).
+  final int? initialOpenCaseId;
+
+  /// Set filter show_all seperti web `?show_all=1`.
+  final bool initialShowAll;
 
   @override
   State<CustomerVoiceCommandCenterScreen> createState() =>
@@ -27,6 +37,7 @@ class _CustomerVoiceCommandCenterScreenState
   bool _isLoading = true;
   bool _isSyncing = false;
   String? _errorMessage;
+  bool _didOpenInitialCase = false;
 
   String _statusFilter = 'all';
   String _followUpStatusFilter = 'all';
@@ -76,6 +87,9 @@ class _CustomerVoiceCommandCenterScreenState
   @override
   void initState() {
     super.initState();
+    if (widget.initialShowAll) {
+      _showAll = true;
+    }
     _loadDashboard();
   }
 
@@ -132,6 +146,8 @@ class _CustomerVoiceCommandCenterScreenState
         _dateTo =
             echoTo != null && echoTo.isNotEmpty ? DateTime.tryParse(echoTo) : null;
       });
+
+      await _maybeOpenInitialCase();
     } catch (error) {
       if (!mounted) {
         return;
@@ -142,6 +158,42 @@ class _CustomerVoiceCommandCenterScreenState
         _errorMessage = error.toString().replaceFirst('Exception: ', '');
       });
     }
+  }
+
+  Future<void> _maybeOpenInitialCase() async {
+    final caseId = widget.initialOpenCaseId;
+    if (caseId == null || _didOpenInitialCase || !mounted) {
+      return;
+    }
+    _didOpenInitialCase = true;
+
+    final dashboard = _dashboard;
+    if (dashboard == null) {
+      return;
+    }
+
+    CustomerVoiceCaseItem? item;
+    for (final c in dashboard.cases) {
+      if (c.id == caseId) {
+        item = c;
+        break;
+      }
+    }
+
+    if (item == null) {
+      try {
+        final brief = await _service.getCaseBrief(caseId);
+        item = CustomerVoiceCaseItem.fromJson(brief);
+      } catch (_) {
+        return;
+      }
+    }
+
+    if (!mounted || item == null) {
+      return;
+    }
+
+    await _openCaseSheet(item);
   }
 
   void _openArchiveSheet() {

@@ -163,8 +163,7 @@ class _ContraBonDetailScreenState extends State<ContraBonDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final data = _detail ?? {};
-    final status = data['status']?.toString();
-    final canApprove = status == 'draft';
+    const canApprove = false;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
