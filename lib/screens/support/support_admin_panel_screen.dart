@@ -6,7 +6,9 @@ import '../../widgets/app_loading_indicator.dart';
 import 'support_conversation_detail_screen.dart';
 
 class SupportAdminPanelScreen extends StatefulWidget {
-  const SupportAdminPanelScreen({super.key});
+  final int? openConversationId;
+
+  const SupportAdminPanelScreen({super.key, this.openConversationId});
 
   @override
   State<SupportAdminPanelScreen> createState() => _SupportAdminPanelScreenState();
@@ -40,7 +42,7 @@ class _SupportAdminPanelScreenState extends State<SupportAdminPanelScreen> with 
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _loadConversations();
+    _loadConversations().then((_) => _openFromQuery());
   }
 
   @override
@@ -111,6 +113,49 @@ class _SupportAdminPanelScreenState extends State<SupportAdminPanelScreen> with 
           _isRefreshing = false;
         });
       }
+    }
+  }
+
+  Future<void> _openFromQuery() async {
+    final targetId = widget.openConversationId;
+    if (targetId == null || targetId <= 0 || !mounted) return;
+
+    SupportConversation? conv;
+    for (final item in _conversations) {
+      if (item.id == targetId) {
+        conv = item;
+        break;
+      }
+    }
+
+    if (conv == null) {
+      final result = await _supportService.getAllConversations(
+        conversationId: targetId,
+        perPage: 1,
+      );
+      if (result['success'] == true) {
+        final data = result['data'];
+        final list = data?['data'] as List<dynamic>? ?? [];
+        if (list.isNotEmpty) {
+          conv = SupportConversation.fromJson(
+            Map<String, dynamic>.from(list.first as Map),
+          );
+        }
+      }
+    }
+
+    if (conv != null && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SupportConversationDetailScreen(
+            conversationId: conv!.id,
+            conversation: conv,
+          ),
+        ),
+      ).then((_) {
+        _loadConversations(refresh: true);
+      });
     }
   }
 

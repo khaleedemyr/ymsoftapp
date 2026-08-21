@@ -72,6 +72,7 @@ class SupportMessage {
   final DateTime createdAt;
   final String? senderName;
   final String? senderAvatar;
+  final List<int> mentionedUserIds;
 
   SupportMessage({
     required this.id,
@@ -84,6 +85,7 @@ class SupportMessage {
     required this.createdAt,
     this.senderName,
     this.senderAvatar,
+    this.mentionedUserIds = const [],
   });
 
   factory SupportMessage.fromJson(Map<String, dynamic> json) {
@@ -98,7 +100,27 @@ class SupportMessage {
       createdAt: DateTime.parse(json['created_at'] as String),
       senderName: json['sender_name'] as String?,
       senderAvatar: json['sender_avatar'] as String?,
+      mentionedUserIds: _parseMentionedUserIds(json['mentioned_user_ids']),
     );
+  }
+
+  static List<int> _parseMentionedUserIds(dynamic raw) {
+    if (raw == null) return const [];
+    dynamic value = raw;
+    if (value is String && value.isNotEmpty) {
+      try {
+        value = jsonDecode(value);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (value is List) {
+      return value
+          .map((e) => int.tryParse('$e') ?? 0)
+          .where((id) => id > 0)
+          .toList();
+    }
+    return const [];
   }
 
   List<Map<String, dynamic>> getFileAttachments() {
@@ -122,6 +144,39 @@ class SupportMessage {
     }
     
     return [];
+  }
+}
+
+class SupportMentionUser {
+  final int id;
+  final String name;
+  final String? email;
+  final String? jabatan;
+  final String? outlet;
+  final String? avatar;
+
+  SupportMentionUser({
+    required this.id,
+    required this.name,
+    this.email,
+    this.jabatan,
+    this.outlet,
+    this.avatar,
+  });
+
+  String get subtitle {
+    return [jabatan, outlet, email].where((v) => v != null && v.trim().isNotEmpty).join(' · ');
+  }
+
+  factory SupportMentionUser.fromJson(Map<String, dynamic> json) {
+    return SupportMentionUser(
+      id: (json['id'] as num).toInt(),
+      name: (json['name'] ?? json['nama_lengkap'] ?? '') as String,
+      email: json['email'] as String?,
+      jabatan: json['jabatan'] as String?,
+      outlet: json['outlet'] as String?,
+      avatar: json['avatar'] as String?,
+    );
   }
 }
 

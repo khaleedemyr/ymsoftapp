@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'dart:async';
 import 'dart:io';
 import '../../services/support_service.dart';
 import '../../models/support_models.dart';
@@ -43,22 +44,61 @@ class _SupportConversationDetailScreenState
   List<File> _selectedFiles = [];
   Map<String, dynamic>? _userData;
   bool _isAdmin = false;
+  bool _mentionOnly = false;
+
+  List<SupportMentionUser> _mentionUsers = [];
+  final List<SupportMentionUser> _pendingMentions = [];
+  bool _mentionMenuOpen = false;
+  Timer? _mentionDebounce;
 
   @override
   void initState() {
     super.initState();
     _conversation = widget.conversation;
+    _messageController.addListener(_onMessageChanged);
     _bootstrap();
   }
 
   Future<void> _bootstrap() async {
     await _loadUserData();
     if (!mounted) return;
+    await _loadConversationMeta();
+    if (!mounted) return;
     await _loadMessages();
+  }
+
+  Future<void> _loadConversationMeta() async {
+    if (_conversation != null) return;
+    try {
+      final own = await _supportService.getUserConversations();
+      for (final item in own) {
+        if (item.id == widget.conversationId) {
+          if (mounted) setState(() => _conversation = item);
+          return;
+        }
+      }
+      final result = await _supportService.getAllConversations(
+        conversationId: widget.conversationId,
+        perPage: 1,
+      );
+      if (result['success'] == true) {
+        final data = result['data'];
+        final list = data?['data'] as List<dynamic>? ?? [];
+        if (list.isNotEmpty && mounted) {
+          setState(() {
+            _conversation = SupportConversation.fromJson(
+              Map<String, dynamic>.from(list.first as Map),
+            );
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _mentionDebounce?.cancel();
+    _messageController.removeListener(_onMessageChanged);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -76,13 +116,29 @@ class _SupportConversationDetailScreenState
           _userData = userData;
           _isAdmin = isAdmin;
         });
+        if (!isAdmin) {
+          await _detectMentionOnly();
+        }
       }
     } catch (e) {
       print('Error loading user data: $e');
     }
   }
 
+  Future<void> _detectMentionOnly() async {
+    try {
+      final list = await _supportService.getUserConversations();
+      final owns = list.any((c) => c.id == widget.conversationId);
+      if (!owns && mounted) {
+        setState(() {
+          _mentionOnly = true;
+        });
+      }
+    } catch (_) {}
+  }
+
   bool _userCannotSendMessage() {
+    if (_mentionOnly) return true;
     if (_isAdmin) return false;
     final s = _conversation?.status.toLowerCase();
     return s == 'closed';
@@ -132,6 +188,81 @@ class _SupportConversationDetailScreenState
       _selectedFiles = [];
     });
     _messageController.clear();
+  }
+
+  void _onMessageChanged() {
+    if (!_isAdmin) return;
+    final match = RegExp(r'@([^\n@]*)$').firstMatch(_messageController.text);
+    if (match == null) {
+      if (_mentionMenuOpen) {
+        setState(() => _mentionMenuOpen = false);
+      }
+      return;
+    }
+    final query = match.group(1) ?? '';
+    setState(() => _mentionMenuOpen = true);
+    _mentionDebounce?.cancel();
+    _mentionDebounce = Timer(const Duration(milliseconds: 220), () {
+      _searchMentions(query.trim());
+    });
+  }
+
+  Future<void> _searchMentions(String query) async {
+    final users = await _supportService.searchMentionUsers(query: query);
+    if (!mounted) return;
+    setState(() {
+      _mentionUsers = users;
+    });
+  }
+
+  void _applyMention(SupportMentionUser user) {
+    final text = _messageController.text;
+    final newText = text.replaceFirst(RegExp(r'@[^\n@]*$'), '@${user.name} ');
+    if (_pendingMentions.every((item) => item.id != user.id)) {
+      _pendingMentions.add(user);
+    }
+    setState(() {
+      _mentionMenuOpen = false;
+      _mentionUsers = [];
+    });
+    _messageController.removeListener(_onMessageChanged);
+    _messageController.text = newText;
+    _messageController.selection = TextSelection.collapsed(offset: newText.length);
+    _messageController.addListener(_onMessageChanged);
+  }
+
+  Widget _buildMentionText(String text, bool isAdminBubble) {
+    final regex = RegExp(r"@([A-Za-zÀ-ÿ0-9._'\-]+(?:\s+[A-Za-zÀ-ÿ0-9._'\-]+){0,4})");
+    final spans = <TextSpan>[];
+    var start = 0;
+    for (final match in regex.allMatches(text)) {
+      if (match.start > start) {
+        spans.add(TextSpan(text: text.substring(start, match.start)));
+      }
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: isAdminBubble ? Colors.white : const Color(0xFF4338CA),
+          backgroundColor: isAdminBubble
+              ? Colors.white.withOpacity(0.18)
+              : const Color(0xFFEEF2FF),
+        ),
+      ));
+      start = match.end;
+    }
+    if (start < text.length) {
+      spans.add(TextSpan(text: text.substring(start)));
+    }
+    return Text.rich(
+      TextSpan(
+        style: TextStyle(
+          color: isAdminBubble ? Colors.white : Colors.black87,
+          fontSize: 14,
+        ),
+        children: spans.isEmpty ? [TextSpan(text: text)] : spans,
+      ),
+    );
   }
 
   Future<void> _loadMessages() async {
@@ -207,6 +338,7 @@ class _SupportConversationDetailScreenState
               widget.conversationId,
               _messageController.text.trim(),
               files: _selectedFiles.isNotEmpty ? _selectedFiles : null,
+              mentionedUserIds: _pendingMentions.map((u) => u.id).toList(),
             )
           : await _supportService.sendMessage(
               widget.conversationId,
@@ -218,6 +350,9 @@ class _SupportConversationDetailScreenState
         _messageController.clear();
         setState(() {
           _selectedFiles = [];
+          _pendingMentions.clear();
+          _mentionMenuOpen = false;
+          _mentionUsers = [];
         });
 
         // Reload messages
@@ -864,7 +999,23 @@ class _SupportConversationDetailScreenState
               color: Colors.white,
               child: SafeArea(
                 top: false,
-                child: _userCannotSendMessage()
+                child: _mentionOnly
+                    ? Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF2FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFC7D2FE)),
+                        ),
+                        child: const Text(
+                          'Anda di-mention pada percakapan ini. Mode lihat saja.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF3730A3),
+                          ),
+                        ),
+                      )
+                    : _userCannotSendMessage()
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -901,7 +1052,83 @@ class _SupportConversationDetailScreenState
                           ),
                         ],
                       )
-                    : Row(
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_pendingMentions.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: _pendingMentions.map((user) {
+                                  return Chip(
+                                    label: Text('@${user.name}', style: const TextStyle(fontSize: 11)),
+                                    deleteIcon: const Icon(Icons.close, size: 14),
+                                    onDeleted: () {
+                                      setState(() {
+                                        _pendingMentions.removeWhere((item) => item.id == user.id);
+                                      });
+                                    },
+                                    visualDensity: VisualDensity.compact,
+                                    backgroundColor: const Color(0xFFEEF2FF),
+                                    labelStyle: const TextStyle(color: Color(0xFF4338CA)),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          if (_isAdmin && _mentionMenuOpen)
+                            Container(
+                              constraints: const BoxConstraints(maxHeight: 220),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFC7D2FE)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.08),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: _mentionUsers.isEmpty
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: Text(
+                                        'Tidak ada user yang cocok.',
+                                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: _mentionUsers.length,
+                                      itemBuilder: (context, index) {
+                                        final user = _mentionUsers[index];
+                                        return ListTile(
+                                          dense: true,
+                                          leading: CircleAvatar(
+                                            radius: 14,
+                                            backgroundColor: const Color(0xFFEEF2FF),
+                                            child: Text(
+                                              _getInitials(user.name),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF4338CA),
+                                              ),
+                                            ),
+                                          ),
+                                          title: Text(user.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                          subtitle: user.subtitle.isEmpty
+                                              ? null
+                                              : Text(user.subtitle, style: const TextStyle(fontSize: 11)),
+                                          onTap: () => _applyMention(user),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           IconButton(
@@ -925,7 +1152,9 @@ class _SupportConversationDetailScreenState
                               maxLines: null,
                               textInputAction: TextInputAction.newline,
                               decoration: InputDecoration(
-                                hintText: 'Type your reply...',
+                                hintText: _isAdmin
+                                    ? 'Tulis balasan... ketik @ untuk mention'
+                                    : 'Type your reply...',
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(24),
                                 ),
@@ -951,6 +1180,8 @@ class _SupportConversationDetailScreenState
                             onPressed: _isSending ? null : _sendReply,
                             color: const Color(0xFF6366F1),
                           ),
+                        ],
+                      ),
                         ],
                       ),
               ),
@@ -1024,13 +1255,7 @@ class _SupportConversationDetailScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (message.message.isNotEmpty)
-                        Text(
-                          message.message,
-                          style: TextStyle(
-                            color: isAdmin ? Colors.white : Colors.black87,
-                            fontSize: 14,
-                          ),
-                        ),
+                        _buildMentionText(message.message, isAdmin),
                       // File Attachments
                       if (attachments.isNotEmpty) ...[
                         if (message.message.isNotEmpty)

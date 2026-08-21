@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/notification_service.dart';
 import '../../models/notification_model.dart';
 import '../../widgets/app_loading_indicator.dart';
+import '../support/support_conversation_detail_screen.dart';
 
 class NotificationListScreen extends StatefulWidget {
   const NotificationListScreen({super.key});
@@ -144,7 +145,35 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
 
   void _handleNotificationTap(NotificationModel notification) async {
     await _markAsRead(notification);
+    final conversationId = _supportConversationId(notification);
+    if (conversationId != null && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SupportConversationDetailScreen(
+            conversationId: conversationId,
+          ),
+        ),
+      );
+      return;
+    }
     _showNotificationDetail(notification);
+  }
+
+  int? _supportConversationId(NotificationModel notification) {
+    final type = notification.type.toLowerCase();
+    if (type.startsWith('live_support')) {
+      if (notification.taskId != null && notification.taskId! > 0) {
+        return notification.taskId;
+      }
+    }
+    final url = notification.url ?? '';
+    if (url.contains('/support/admin')) {
+      final uri = Uri.tryParse(url);
+      final fromQuery = int.tryParse(uri?.queryParameters['conversation'] ?? '');
+      if (fromQuery != null && fromQuery > 0) return fromQuery;
+    }
+    return null;
   }
 
   void _showNotificationDetail(NotificationModel notification) {
@@ -270,6 +299,11 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
         return Colors.red;
       case 'warning':
         return Colors.orange;
+      case 'live_support_mention':
+        return const Color(0xFF6366F1);
+      case 'live_support_chat':
+      case 'live_support_conversation':
+        return const Color(0xFF0EA5E9);
       default:
         return Colors.blue;
     }
@@ -283,6 +317,11 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
         return Icons.error;
       case 'warning':
         return Icons.warning;
+      case 'live_support_mention':
+        return Icons.alternate_email;
+      case 'live_support_chat':
+      case 'live_support_conversation':
+        return Icons.support_agent;
       default:
         return Icons.info;
     }

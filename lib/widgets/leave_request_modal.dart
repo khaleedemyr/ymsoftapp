@@ -120,19 +120,36 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
     return 0;
   }
 
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTime get _today => _dateOnly(DateTime.now());
+
+  /// Izin/cuti boleh backdate H+1 (kemarin), sama seperti My Attendance web.
+  DateTime get _earliestLeaveDate => _today.subtract(const Duration(days: 1));
+
+  DateTime _clampDate(DateTime value, DateTime first, DateTime last) {
+    if (value.isBefore(first)) return first;
+    if (value.isAfter(last)) return last;
+    return value;
+  }
+
   DateTime _effectiveMaxDateFromBalance(DateTime fromDate) {
     // Default upper bound: 1 year ahead.
-    DateTime maxDate = DateTime.now().add(const Duration(days: 365));
+    DateTime maxDate = _today.add(const Duration(days: 365));
 
     // For leave types that consume balance, cap selectable range by balance.
     if (_isRestrictedByBalanceType) {
       final balance = _currentSelectedBalance();
       if (balance > 0) {
-        final maxByBalance = fromDate.add(Duration(days: balance - 1));
+        final maxByBalance = _dateOnly(fromDate).add(Duration(days: balance - 1));
         if (maxByBalance.isBefore(maxDate)) {
           maxDate = maxByBalance;
         }
       }
+    }
+
+    if (maxDate.isBefore(_earliestLeaveDate)) {
+      maxDate = _earliestLeaveDate;
     }
 
     return maxDate;
@@ -419,12 +436,14 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
 
   Future<void> _selectDateFrom() async {
     if (!_canPickDateForSelectedType()) return;
-    final maxDate = _effectiveMaxDateFromBalance(DateTime.now());
-    
+    final firstDate = _earliestLeaveDate;
+    final maxDate = _effectiveMaxDateFromBalance(_today);
+    final initialDate = _clampDate(_dateFrom ?? _today, firstDate, maxDate);
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dateFrom ?? DateTime.now(),
-      firstDate: DateTime.now(),
+      initialDate: initialDate,
+      firstDate: firstDate,
       lastDate: maxDate,
     );
     if (picked != null) {
@@ -487,13 +506,14 @@ class _LeaveRequestModalState extends State<LeaveRequestModal> {
 
   Future<void> _selectDateTo() async {
     if (!_canPickDateForSelectedType()) return;
-    final baseDate = _dateFrom ?? DateTime.now();
-    final maxDate = _effectiveMaxDateFromBalance(baseDate);
-    
+    final firstDate = _dateFrom ?? _earliestLeaveDate;
+    final maxDate = _effectiveMaxDateFromBalance(firstDate);
+    final initialDate = _clampDate(_dateTo ?? firstDate, firstDate, maxDate);
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dateTo ?? _dateFrom ?? DateTime.now(),
-      firstDate: _dateFrom ?? DateTime.now(),
+      initialDate: initialDate,
+      firstDate: firstDate,
       lastDate: maxDate,
     );
     if (picked != null) {

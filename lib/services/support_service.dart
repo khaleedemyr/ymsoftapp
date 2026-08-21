@@ -22,6 +22,7 @@ class SupportService {
     String? dateTo,
     int perPage = 15,
     int page = 1,
+    int? conversationId,
   }) async {
     try {
       final token = await _getToken();
@@ -39,6 +40,9 @@ class SupportService {
       if (search.isNotEmpty) queryParams['search'] = search;
       if (dateFrom != null && dateFrom.isNotEmpty) queryParams['date_from'] = dateFrom;
       if (dateTo != null && dateTo.isNotEmpty) queryParams['date_to'] = dateTo;
+      if (conversationId != null && conversationId > 0) {
+        queryParams['conversation'] = conversationId.toString();
+      }
 
       final uri = Uri.parse('$baseUrl/api/approval-app/support/admin/conversations')
           .replace(queryParameters: queryParams);
@@ -347,6 +351,7 @@ class SupportService {
     int conversationId,
     String message, {
     List<File>? files,
+    List<int>? mentionedUserIds,
   }) async {
     try {
       final token = await _getToken();
@@ -365,6 +370,12 @@ class SupportService {
       });
 
       request.fields['message'] = message;
+
+      if (mentionedUserIds != null && mentionedUserIds.isNotEmpty) {
+        for (var i = 0; i < mentionedUserIds.length; i++) {
+          request.fields['mentioned_user_ids[$i]'] = mentionedUserIds[i].toString();
+        }
+      }
 
       if (files != null && files.isNotEmpty) {
         for (int i = 0; i < files.length; i++) {
@@ -401,6 +412,41 @@ class SupportService {
       };
     } catch (e) {
       return {'success': false, 'message': 'Error: ${e.toString()}'};
+    }
+  }
+
+  Future<List<SupportMentionUser>> searchMentionUsers({String query = ''}) async {
+    try {
+      final token = await _getToken();
+      if (token == null) {
+        return [];
+      }
+
+      final uri = Uri.parse('$baseUrl/api/approval-app/support/admin/mention-users')
+          .replace(queryParameters: {
+        if (query.trim().isNotEmpty) 'q': query.trim(),
+      });
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final users = data['users'] as List<dynamic>? ?? [];
+        return users
+            .map((json) => SupportMentionUser.fromJson(Map<String, dynamic>.from(json as Map)))
+            .toList();
+      }
+
+      return [];
+    } catch (e) {
+      print('Error searching mention users: $e');
+      return [];
     }
   }
 
